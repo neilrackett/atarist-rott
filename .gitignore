@@ -1,5 +1,5 @@
 *.o
 *.layout
-/tmp
 /build
 /obj
+/tmp
