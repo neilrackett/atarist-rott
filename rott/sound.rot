@@ -7,13 +7,13 @@ Version            14
 ; Music Modes
 ; 0  -  Off
 ; 6  -  On
-MusicMode          6
+MusicMode          0
 
 ;
 ; FX Modes
 ; 0  -  Off
 ; 6  -  On
-FXMode             6
+FXMode             0
 
 ;
 ; Music Volume
@@ -23,12 +23,12 @@ MusicVolume      20
 ;
 ; FX Volume
 ; (low) 0 - 255 (high)
-FXVolume         254
+FXVolume         140
 
 ;
 ; Number of Voices
 ; 1 - 8
-NumVoices          4
+NumVoices          1
 
 ;
 ; Stereo or Mono

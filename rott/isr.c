@@ -756,7 +756,8 @@ static int ticbase;      /* game-supplied base */
 
 int GetTicCount (void)
 {
-	return (I_GetTime());
+	int now = I_GetTime();
+	return (now - ticoffset) + ticbase;
 }
 
 /*
@@ -818,6 +819,8 @@ void I_Delay ( int delay )
 void I_StartupTimer (void)
 {
     I_InitTimer();
+    ticoffset = I_GetTime();
+    ticbase = 0;
 }
 
 void I_ShutdownTimer (void)

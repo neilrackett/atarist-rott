@@ -361,7 +361,6 @@ void SetViewSize
    }
 
    if ((G_weaponscale > 150)&&(G_weaponscale <600)){height = G_weaponscale;}
-   G_weaponscale=G_weaponscale/2;
    weaponscale = ( height << 16 ) / 168;//( height << 16 ) = 170 * 65536
 
   
@@ -390,6 +389,14 @@ void SetViewSize
 #else
    screenofs = screenx + ylookup[ screeny ];
 #endif
+
+   /*
+    * If viewheight was clamped to fit status bars, keep center/projection in sync.
+    */
+   centerx     = viewwidth >> 1;
+   centery     = viewheight >> 1;
+   centeryfrac = ( centery << 16 );
+   yzangleconverter = ( 0xaf85 * viewheight ) / iGLOBAL_SCREENHEIGHT;
 
 //
 // calculate trace angles and projection constants
@@ -673,6 +680,13 @@ int GetLightRateTile ( void )
 */
 void UpdateLightLevel (int area)
 {
+#if defined(__MINT__)
+#ifndef ATARI_SKIP_LIGHTLEVEL
+#define ATARI_SKIP_LIGHTLEVEL 0
+#endif
+   if (ATARI_SKIP_LIGHTLEVEL)
+      return;
+#endif
    int numlights;
    int targetmin;
    int targetmax;
@@ -893,4 +907,3 @@ void SetModemLightLevel ( int type )
          break;
       }
 }
-

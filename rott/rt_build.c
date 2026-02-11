@@ -71,6 +71,7 @@ static int readytoflip;
 static boolean MenuBufStarted=false;
 static int mindist=0x2700;
 static boolean BackgroundDrawn=false;
+static boolean MenuDirty=true;
 
 static plane_t planelist[MAXPLANES],*planeptr;
 
@@ -79,6 +80,11 @@ static int StringShade=16;
 extern void (*USL_MeasureString)(const char *, int *, int *, font_t *);
 
 static char strbuf[MaxString];
+
+static void MarkMenuDirty(void)
+{
+   MenuDirty=true;
+}
 
 //******************************************************************************
 //
@@ -421,6 +427,7 @@ void ClearMenuBuf ( void )
    shape=W_CacheLumpName(MENUBACKNAME,PU_CACHE, Cvt_patch_t, 1);
    shape+=8;
    memcpy (menubuf,shape,TEXTUREW*TEXTUREHEIGHT);
+   MarkMenuDirty();
 }
 
 //******************************************************************************
@@ -512,6 +519,7 @@ void SetupMenuBuf ( void )
    menubuf=menubuffers[0];
    ClearMenuBuf();
    BackgroundDrawn=false;
+   MenuDirty=true;
 }
 
 
@@ -573,11 +581,26 @@ void RefreshMenuBuf( int time )
    if (readytoflip)
       return;
 
+#if defined(__MINT__)
+   if (time<=0)
+      {
+      if (!MenuDirty)
+         return;
+      if (!ATARI_BeginRenderFrame())
+         return;
+      PositionMenuBuf(0,NORMALVIEW,true);
+      MenuDirty=false;
+      return;
+      }
+#endif
+
    for (i=0;i<=time;i+=tics)
       {
       //PositionMenuBuf (0,NORMALVIEW,false);
       PositionMenuBuf (0,NORMALVIEW,true);//bna++ in not true bg in menu is no redrawn
       }
+
+   MenuDirty=false;
 }
 
 //******************************************************************************
@@ -624,6 +647,7 @@ void SetAlternateMenuBuf ( void )
   alternatemenubuf^=1;
   readytoflip=1;
   menubuf=menubuffers[alternatemenubuf];
+  MarkMenuDirty();
 }
 
 //******************************************************************************
@@ -639,6 +663,7 @@ void SetMenuTitle ( const char * menutitle )
   strcpy(menutitles[alternatemenubuf],menutitle);
   if (readytoflip==0)
      strcpy(titlestring,menutitle);
+  MarkMenuDirty();
 }
 
 //******************************************************************************
@@ -659,6 +684,8 @@ void DrawMenuBufPicture (int x, int y, const byte * pic, int w, int h)
       Error ("DrawMenuBufPicture: x is out of range\n");
    if ((y<0) || (y+h>=TEXTUREHEIGHT))
       Error ("DrawMenuBufPicture: y is out of range\n");
+
+   MarkMenuDirty();
 
    for (i=0;i<w;i++)
       {
@@ -691,6 +718,8 @@ void DrawMenuBufItem (int x, int y, int shapenum)
       Error ("DrawMenuBufItem: x is out of range\n");
    if (((y-p->topoffset)<0) || ((y-p->topoffset+p->height)>=TEXTUREHEIGHT))
       Error ("DrawMenuBufItem: y is out of range\n");
+
+   MarkMenuDirty();
 
    buffer = (byte*)menubuf+y+((x-p->leftoffset)*TEXTUREHEIGHT);
 
@@ -754,6 +783,8 @@ void DrawIMenuBufItem (int x, int y, int shapenum, int color)
       Error ("DrawIMenuBufItem: x is out of range\n");
    if (((y-p->topoffset)<0) || ((y-p->topoffset+p->height)>=TEXTUREHEIGHT))
       Error ("DrawIMenuBufItem: y is out of range\n");
+
+   MarkMenuDirty();
 
    buffer = (byte*)menubuf+y+((x-p->leftoffset)*TEXTUREHEIGHT);
 
@@ -853,6 +884,8 @@ void EraseMenuBufRegion (int x, int y, int width, int height)
    if ((y<0) || (y+height>=TEXTUREHEIGHT))
       Error ("EraseMenuBufRegion: y is out of range\n");
 
+   MarkMenuDirty();
+
    shape=W_CacheLumpName(MENUBACKNAME,PU_CACHE, Cvt_patch_t, 1);
    shape+=8;
    shape+=(x*TEXTUREHEIGHT)+y;
@@ -897,6 +930,8 @@ void DrawTMenuBufPic (int x, int y, int shapenum)
       Error ("DrawTMenuBufPic: x is out of range\n");
    if ((y<0) || ((y+p->height)>=TEXTUREHEIGHT))
       Error ("DrawTMenuBufPic: y is out of range\n");
+
+   MarkMenuDirty();
 
    buffer = (byte*)menubuf+(x*TEXTUREHEIGHT)+y;
 
@@ -944,6 +979,8 @@ void DrawTMenuBufItem (int x, int y, int shapenum)
    if (((y-p->topoffset)<0) || ((y-p->topoffset+p->height)>=TEXTUREHEIGHT))
       Error ("DrawTMenuBufItem: y is out of range\n");
 
+   MarkMenuDirty();
+
    buffer = (byte*)menubuf+y+((x-p->leftoffset)*TEXTUREHEIGHT);
 
    for (cnt = 0; cnt < p->width; cnt++,buffer+=TEXTUREHEIGHT)
@@ -978,6 +1015,8 @@ void DrawColoredMenuBufItem (int x, int y, int shapenum, int color)
    if (((y-p->topoffset)<0) || ((y-p->topoffset+p->height)>=TEXTUREHEIGHT))
       Error ("DrawColoredMenuBufItem: y is out of range\n");
 
+   MarkMenuDirty();
+
    buffer = (byte*)menubuf+y+((x-p->leftoffset)*TEXTUREHEIGHT);
 
    for (cnt = 0; cnt < p->width; cnt++,buffer+=TEXTUREHEIGHT)
@@ -1011,6 +1050,8 @@ void DrawMenuBufPic (int x, int y, int shapenum)
       Error ("DrawTMenuBufPic: x is out of range\n");
    if ((y<0) || ((y+p->height)>=TEXTUREHEIGHT))
       Error ("DrawTMenuBufPic: y is out of range\n");
+
+   MarkMenuDirty();
 
 
    buffer = (byte*)menubuf+(x*TEXTUREHEIGHT)+y;
@@ -1054,6 +1095,8 @@ void DrawTMenuBufBox ( int x, int y, int width, int height )
    if ( ( y < 0 ) || ( y + height ) >= TEXTUREHEIGHT )
       Error ("DrawTMenuBar : y is out of range\n");
 
+   MarkMenuDirty();
+
    buffer = ( byte * )menubuf + ( x * TEXTUREHEIGHT ) + y;
 
    for ( xx = 0; xx < width; xx++ )
@@ -1090,6 +1133,8 @@ void DrawTMenuBufHLine (int x, int y, int width, boolean up)
       Error ("DrawTMenuBufBox: x is out of range\n");
    if (y<0)
       Error ("DrawTMenuBufBox: y is out of range\n");
+
+   MarkMenuDirty();
 
    buffer = (byte*)menubuf+(x*TEXTUREHEIGHT)+y;
 
@@ -1146,6 +1191,8 @@ void DrawTMenuBufVLine (int x, int y, int height, boolean up)
    if ((y<0) || ((y+height)>=TEXTUREHEIGHT))
       Error ("DrawTMenuBufBox: y is out of range\n");
 
+   MarkMenuDirty();
+
    buffer = (byte*)menubuf+(x*TEXTUREHEIGHT)+y;
 
    if (up)
@@ -1187,6 +1234,8 @@ void DrawMenuBufPropString (int px, int py, const char *string)
 
    if (MenuBufStarted==false)
       Error("Called DrawMenuBufPropString without menubuf started\n");
+
+   MarkMenuDirty();
 
    ht = CurrentFont->height;
    dest = origdest = (byte*)menubuf+(px*TEXTUREHEIGHT)+py;
@@ -1238,6 +1287,8 @@ void DrawMenuBufIString (int px, int py, const char *string, int color)
       {
       Error( "Intensity Color out of range\n" );
       }
+
+   MarkMenuDirty();
 
    ht = IFont->height;
    dest = origdest = (byte*)menubuf+(px*TEXTUREHEIGHT)+py;
@@ -1308,6 +1359,8 @@ void DrawTMenuBufPropString (int px, int py, const char *string)
 
    if (MenuBufStarted==false)
       Error("Called DrawTMenuBufPropString without menubuf started\n");
+
+   MarkMenuDirty();
 
    ht = CurrentFont->height;
    dest = origdest = (byte*)menubuf+(px*TEXTUREHEIGHT)+py;
@@ -1540,6 +1593,7 @@ void FlipMenuBuf ( void )
       }
    titleyoffset=0;
    BackgroundDrawn=false;
+   MenuDirty=true;
 }
 
 

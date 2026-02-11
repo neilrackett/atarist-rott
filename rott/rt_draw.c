@@ -63,8 +63,17 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_rand.h"
 #include "rt_net.h"
 #include "rt_sc_a.h"
+#include "i_timer.h"
 //MED
 #include "memcheck.h"
+
+#ifndef ATARI_TIC_WAIT_MS
+#define ATARI_TIC_WAIT_MS 1
+#endif
+
+#ifndef ATARI_SKIP_FIZZLE
+#define ATARI_SKIP_FIZZLE 0
+#endif
 
 
 extern void VH_UpdateScreen (void);
@@ -1553,7 +1562,14 @@ void CalcTics (void)
 //
 
    tc=GetTicCount();
-	while (tc==oldtime) { tc=GetTicCount(); } /* endwhile */
+   while (tc==oldtime)
+      {
+      IN_UpdateKeyboard();
+#if (ATARI_TIC_WAIT_MS > 0)
+      I_Sleep(ATARI_TIC_WAIT_MS);
+#endif
+      tc=GetTicCount();
+      }
    tics=tc-oldtime;
 
 //   SoftError("CT GetTicCount()=%ld\n",GetTicCount());
@@ -2829,6 +2845,9 @@ void      ThreeDRefresh (void)
 //
    if ((fizzlein==true) && (modemgame==false))
    {
+#if defined(__MINT__) && ATARI_SKIP_FIZZLE
+      fizzlein = false;
+#else
       if (newlevel==true)
          ShutdownClientControls();
       bufferofs-=screenofs;
@@ -2837,6 +2856,7 @@ void      ThreeDRefresh (void)
       bufferofs+=screenofs;
       fizzlein = false;
       StartupClientControls();
+#endif
    }
 
    bufferofs -= screenofs;
@@ -3083,10 +3103,12 @@ void DoLoadGameSequence ( void )
 //******************************************************************************
 byte * RotatedImage;
 boolean RotateBufferStarted = false;
+static boolean RotateBufferViaMalloc = false;
 void StartupRotateBuffer ( int masked)
 {
 	int k;////zxcv
    int a,b;
+   int rot_size;
 
 //   int Xres = 320;//org
 //   int Yres = 200;//org
@@ -3101,35 +3123,28 @@ void StartupRotateBuffer ( int masked)
 
    RotateBufferStarted = true;
 
-   //   RotatedImage=SafeMalloc(131072);org
-   //RotatedImage=SafeMalloc(131072*8);
-   if (iGLOBAL_SCREENWIDTH == 320) {
-		RotatedImage=SafeMalloc(131072);
-   }else if (iGLOBAL_SCREENWIDTH == 640) { 
-		RotatedImage=SafeMalloc(131072*4);
-   }else if (iGLOBAL_SCREENWIDTH == 800) { 
-		RotatedImage=SafeMalloc(131072*8);
+   rot_size = 131072;
+   if (iGLOBAL_SCREENWIDTH == 640)
+      rot_size = 131072 * 4;
+   else if (iGLOBAL_SCREENWIDTH == 800)
+      rot_size = 131072 * 8;
+
+#if defined(__MINT__)
+   RotatedImage = (byte *)malloc(rot_size);
+   RotateBufferViaMalloc = true;
+   if (RotatedImage == NULL)
+   {
+      RotateBufferStarted = false;
+      RotateBufferViaMalloc = false;
+      return;
    }
+#else
+   RotatedImage = SafeMalloc(rot_size);
+   RotateBufferViaMalloc = false;
+#endif
 //SetupScreen(false);//used these 2 to test screen size
 //VW_UpdateScreen ();
-   if (masked==0) {
-	   if (iGLOBAL_SCREENWIDTH == 320) {
-		  memset(RotatedImage,0,131072);
-	   }else if (iGLOBAL_SCREENWIDTH == 640) { 
-		  memset(RotatedImage,0,131072*4);
-	   }else if (iGLOBAL_SCREENWIDTH == 800) { 
-		  //memset(RotatedImage,0,131072);//org
-		  memset(RotatedImage,0,131072*8);
-	   }
-   } else {
-	   if (iGLOBAL_SCREENWIDTH == 320) {
-		  memset(RotatedImage,0xff,131072);
-	   }else if (iGLOBAL_SCREENWIDTH == 640) { 
-		  memset(RotatedImage,0xff,131072*4);
-	   }else if (iGLOBAL_SCREENWIDTH == 800) { 
-		  memset(RotatedImage,0xff,131072*8);
-	   }
-   }
+   memset(RotatedImage, masked ? 0xff : 0, rot_size);
       //memset(RotatedImage,0xff,131072);//org
       //memset(RotatedImage,0xff,131072*8);
 
@@ -3185,7 +3200,16 @@ void ShutdownRotateBuffer ( void )
       return;
 
    RotateBufferStarted = false;
+#if defined(__MINT__)
+   if (RotateBufferViaMalloc)
+      free(RotatedImage);
+   else
+      SafeFree(RotatedImage);
+#else
    SafeFree(RotatedImage);
+#endif
+   RotatedImage = NULL;
+   RotateBufferViaMalloc = false;
 }
 
 //******************************************************************************
@@ -3271,6 +3295,11 @@ void RotateBuffer (int startangle, int endangle, int startscale, int endscale, i
    savetics=GetFastTics();
 
    StartupRotateBuffer (0);
+   if ((RotateBufferStarted == false) || (RotatedImage == NULL))
+   {
+      SetFastTics(savetics);
+      return;
+   }
 
    ScaleAndRotateBuffer (startangle, endangle, startscale, endscale, time);
 
@@ -6453,4 +6482,3 @@ void ParticleIntro (void)
 }
 
 #endif
-

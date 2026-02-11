@@ -292,7 +292,11 @@ int SD_Startup ( boolean bombonerror )
       soundstart = 0;
       }
 
+   #if defined(__MINT__)
+   NumVoices = 1;
+   #else
    NumVoices = 4;
+   #endif
    NumChannels = 1;
    NumBits = 8;
    

@@ -313,6 +313,14 @@ static int DangerNums[ 3 ] =
    };
 
 static int MenuNum = 0;
+#if defined(__MINT__)
+static void ATARI_MenuForceRender(void)
+{
+   ATARI_ForceRender();
+}
+#else
+#define ATARI_MenuForceRender() do { } while (0)
+#endif
 static int handlewhich;
 static int CSTactive = 0;
 static boolean INFXSETUP = false;
@@ -1982,6 +1990,9 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
    {
       ReadAnyControl (&ci);
       RefreshMenuBuf (0);
+
+      if (LastScan || ci.button0 || ci.button1 || ci.dir != dir_None)
+         ATARI_MenuForceRender();
       
      // Change Cursor Shape
       if ((GetTicCount() > (timer+count)) && (MenuNum != 5))
@@ -2052,6 +2063,7 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
          switch (ci.dir)
          {
             case dir_North:
+               ATARI_MenuForceRender();
                HideCursor (item_i, items, x, y, handlewhich);
 
 
@@ -2100,6 +2112,7 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
             break;
 
             case dir_South:
+               ATARI_MenuForceRender();
                HideCursor (item_i, items, x, y, handlewhich);
 
                CursorNum++;
@@ -2152,6 +2165,7 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
       ReadAnyControl (&ci);
       if (ci.button0 || Keyboard[sc_Space] || Keyboard[sc_Enter])
       {
+         ATARI_MenuForceRender();
             
  
          exit = 1;
@@ -2161,12 +2175,14 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
 
       if (ci.button1 || Keyboard[sc_Escape])
       {
+         ATARI_MenuForceRender();
          WaitKeyUp ();
          exit = 2;
       }
 
       if ( ( Keyboard[ sc_Home ] ) && ( numactive > 1 ) )
          {
+         ATARI_MenuForceRender();
          newpos = 0;
          while( ( items[ newpos ].active == CP_Inactive ) ||
             ( items[ newpos ].active == CP_Active3 ) )
@@ -2202,6 +2218,7 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
          }
       else if ( ( Keyboard[ sc_End ] ) && ( numactive > 1 ) )
          {
+         ATARI_MenuForceRender();
          newpos = item_i->amount - 1;
          while( ( items[ newpos ].active == CP_Inactive ) ||
             ( items[ newpos ].active == CP_Active3 ) )

@@ -1,4 +1,4 @@
-// Emacs style mode select   -*- C++ -*- 
+// Emacs style mode select   -*- C++ -*-
 //-----------------------------------------------------------------------------
 //
 // Copyright(C) 1993-1996 Id Software, Inc.
@@ -24,101 +24,108 @@
 //
 //-----------------------------------------------------------------------------
 
-// Lantus 3/1/2013 - AmigaOS native
+#include <sys/time.h>
+#include <unistd.h>
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <time.h>
+#if defined(__MINT__)
+#include <mint/osbind.h>
+#endif
 
-#include <devices/timer.h>
-#include <proto/exec.h>
- 
 #include "i_timer.h"
- 
-static ULONG basetime = 0;
-struct MsgPort *timer_msgport;
-struct timerequest *timer_ioreq;
-struct Library *TimerBase;
 
-static int opentimer(ULONG unit){
-	timer_msgport = CreateMsgPort();
-	timer_ioreq = CreateIORequest(timer_msgport, sizeof(*timer_ioreq));
-	if (timer_ioreq){
-		if (OpenDevice(TIMERNAME, unit, (APTR) timer_ioreq, 0) == 0){
-			TimerBase = (APTR) timer_ioreq->tr_node.io_Device;
-			return 1;
-		}
-	}
-	return 0;
-}
-static void closetimer(void){
-	if (TimerBase){
-		CloseDevice((APTR) timer_ioreq);
-	}
-	DeleteIORequest(timer_ioreq);
-	DeleteMsgPort(timer_msgport);
-	TimerBase = 0;
-	timer_ioreq = 0;
-	timer_msgport = 0;
-}
+static unsigned long basetime = 0;
 
-static struct timeval startTime;
+#if defined(__MINT__)
+#define ATARI_TIMER_HZ 200UL
+#define TOS_HZ_200_ADDR 0x4BA
 
-void startup(){
-	GetSysTime(&startTime);
-}
-
-ULONG getMilliseconds(){
-	struct timeval endTime;
-
-	GetSysTime(&endTime);
-	SubTime(&endTime,&startTime);
-
-	return (endTime.tv_secs * 1000 + endTime.tv_micro / 1000);
-}
-
-int  I_GetTime (void)
+static unsigned long mint_hz200(void)
 {
-    ULONG ticks;
+    long old = Super(0L);
+    volatile unsigned long *hz200 = (volatile unsigned long *)TOS_HZ_200_ADDR;
+    unsigned long ticks = *hz200;
 
-    ticks = getMilliseconds();
+    if (old)
+        Super(old);
+
+    return ticks;
+}
+
+#else
+
+static unsigned long now_ms(void)
+{
+    struct timeval tv;
+
+    gettimeofday(&tv, NULL);
+    return ((unsigned long)tv.tv_sec * 1000UL) + ((unsigned long)tv.tv_usec / 1000UL);
+}
+#endif
+
+int I_GetTime(void)
+{
+#if defined(__MINT__)
+    unsigned long ticks = mint_hz200();
 
     if (basetime == 0)
         basetime = ticks;
 
     ticks -= basetime;
-
-    return (ticks * TICRATE) / 1000;
-}
-
-//
-// Same as I_GetTime, but returns time in milliseconds
-//
-
-int I_GetTimeMS(void)
-{
-    ULONG ticks;
-
-    ticks = getMilliseconds();
+    return (int)((ticks * TICRATE) / ATARI_TIMER_HZ);
+#else
+    unsigned long ticks = now_ms();
 
     if (basetime == 0)
         basetime = ticks;
 
-    return ticks - basetime;
+    ticks -= basetime;
+    return (int)((ticks * TICRATE) / 1000UL);
+#endif
 }
 
-// Sleep for a specified number of ms
-
-
-void I_ExitTimer()
+int I_GetTimeMS(void)
 {
-    closetimer();
+#if defined(__MINT__)
+    unsigned long ticks = mint_hz200();
+
+    if (basetime == 0)
+        basetime = ticks;
+
+    ticks -= basetime;
+    return (int)((ticks * 1000UL) / ATARI_TIMER_HZ);
+#else
+    unsigned long ticks = now_ms();
+
+    if (basetime == 0)
+        basetime = ticks;
+
+    return (int)(ticks - basetime);
+#endif
 }
 
 void I_Sleep(int ms)
 {
-    usleep(ms);
+#if defined(__MINT__)
+    unsigned long start;
+    unsigned long wait;
+
+    if (ms <= 0)
+        return;
+
+    wait = ((unsigned long)ms * ATARI_TIMER_HZ + 999UL) / 1000UL;
+    if (wait == 0)
+        wait = 1;
+
+    start = mint_hz200();
+    while ((mint_hz200() - start) < wait)
+    {
+        /* Yield without busy-spinning while waiting for the next tick. */
+        usleep(1000UL);
+    }
+#else
+    if (ms > 0)
+        usleep((unsigned long)ms * 1000UL);
+#endif
 }
 
 void I_WaitVBL(int count)
@@ -126,12 +133,7 @@ void I_WaitVBL(int count)
     I_Sleep((count * 1000) / 70);
 }
 
-
 void I_InitTimer(void)
 {
-    // initialize timer
-
-   opentimer(UNIT_VBLANK);
-   startup();
+    basetime = 0;
 }
-

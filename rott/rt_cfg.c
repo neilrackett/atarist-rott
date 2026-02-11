@@ -131,9 +131,9 @@ boolean spaceballenabled = false;
 boolean AutoDetailOn     = true;
 int     DoubleClickSpeed = 20;
 boolean BobbinOn         = true;
-int     Menuflipspeed    = 15;
-int     DetailLevel      = 2;         //HI DETAIL
-int     fandc            = 1;
+int     Menuflipspeed    = 5;
+int     DetailLevel      = 0;         //LOW DETAIL
+int     fandc            = 0;
 int     blanktime        = (2*60*VBLCOUNTER);
 boolean ConfigLoaded     = false;
 boolean stereoreversed   = false;
@@ -946,7 +946,8 @@ void SetConfigDefaultValues (void)
    joystickenabled = false;
    joypadenabled   = false;
    joystickport    = 0;
-   viewsize        = 7;
+   viewsize        = 5;
+   DetailLevel     = 0; /* low detail default */
    mouseadjustment = 5;
    gammaindex      = 0;
    gamestate.violence = 3;
@@ -2185,4 +2186,3 @@ void ReadSETUPFiles (void)
 }
 
 #endif
-

@@ -29,12 +29,17 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  
 #include <signal.h>
 
+#if defined(__MINT__)
+#include "atari_megaste.h"
+#endif
 
+#if !defined(__MINT__)
 #include <exec/exec.h>
 #include <exec/execbase.h>  
 #include <workbench/startup.h>
 #include <workbench/workbench.h>
 #include <workbench/icon.h>
+#endif
 #include "rt_def.h"
 #include "lumpy.h"
 #include "watcom.h"
@@ -85,7 +90,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  
 int cpu_type;
 int broken_pipe;
+#if !defined(__MINT__)
 extern struct ExecBase *SysBase;
+#endif
 
 volatile int    oldtime;
 volatile int    gametime;
@@ -200,7 +207,13 @@ int main (int argc, char *argv[])
     
     _argc = argc;
     _argv = argv;
+
+#if defined(__MINT__)
+    if (is_megaste())
+        megaste_enable_16mhz_cache();
+#endif
          
+#if !defined(__MINT__)
     /* parse icon tooltypes and convert them to argc/argv format */
     
     if (argc <= 1)
@@ -239,6 +252,9 @@ int main (int argc, char *argv[])
             printf ("\n\n");
     }
 
+#endif
+
+#if !defined(__MINT__)
     Disable();
     
     if ((SysBase->AttnFlags & AFF_68060) != 0)
@@ -294,6 +310,9 @@ int main (int argc, char *argv[])
 #endif
         
     Enable();
+#else
+    cpu_type = 68000;
+#endif
  
 #if defined(PLATFORM_MACOSX)
     {
@@ -2169,6 +2188,10 @@ fromloadedgame:
 
 	while( playstate == ex_stillplaying )
       {
+      int mint_should_render = 1;
+#if defined(__MINT__)
+      mint_should_render = ATARI_BeginRenderFrame();
+#endif
       UpdateClientControls();
 
       if ( GamePaused )
@@ -2179,11 +2202,13 @@ fromloadedgame:
 
          if ( RefreshPause )
             {
-            ThreeDRefresh();
+            if (mint_should_render)
+               ThreeDRefresh();
             }
          else
             {
-            UpdateScreenSaver();
+            if (mint_should_render)
+               UpdateScreenSaver();
             }
          }
       else
@@ -2193,7 +2218,8 @@ fromloadedgame:
 
          atime = GetFastTics();
 
-         ThreeDRefresh();
+         if (mint_should_render)
+            ThreeDRefresh();
          }
 
       SyncToServer();

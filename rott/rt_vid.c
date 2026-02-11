@@ -48,6 +48,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //MED
 #include "memcheck.h"
 
+#ifndef ATARI_SKIP_FADES
+#define ATARI_SKIP_FADES 0
+#endif
+
 
 //******************************************************************************
 //
@@ -218,6 +222,14 @@ void DrawTiledRegion
    int    HeightIndex;
    int    WidthIndex;
 
+#if defined(__MINT__) && !defined(DOS)
+   int    tilewidth;
+   int    row;
+   int    col;
+   int    sx;
+   int    sy;
+#endif
+
 #ifdef DOS
    start = ( byte * )( bufferofs + ( x>>2 ) + ylookup[ y ] );
 #else
@@ -227,6 +239,43 @@ void DrawTiledRegion
    source       = &tile->data;
    sourcewidth  = tile->width;
    sourceheight = tile->height;
+
+#if defined(__MINT__) && !defined(DOS)
+   if ((width <= 0) || (height <= 0) || (sourcewidth <= 0) || (sourceheight <= 0))
+      return;
+
+   tilewidth = sourcewidth << 2;
+   planesize = sourcewidth * sourceheight;
+
+   if (offx < 0)
+      offx = (tilewidth - ((-offx) % tilewidth)) % tilewidth;
+   else if (offx >= tilewidth)
+      offx %= tilewidth;
+
+   if (offy < 0)
+      offy = (sourceheight - ((-offy) % sourceheight)) % sourceheight;
+   else if (offy >= sourceheight)
+      offy %= sourceheight;
+
+   for (HeightIndex = 0; HeightIndex < height; ++HeightIndex)
+      {
+      byte *rowdest = (byte *)(bufferofs + ylookup[y + HeightIndex] + x);
+
+      sy = (offy + HeightIndex) % sourceheight;
+      row = sy * sourcewidth;
+
+      for (WidthIndex = 0; WidthIndex < width; ++WidthIndex)
+         {
+         sx = (offx + WidthIndex) % tilewidth;
+         col = sx >> 2;
+
+         rowdest[WidthIndex] = source[(sx & 3) * planesize + row + col];
+         }
+      }
+
+   return;
+#endif
+
 #ifdef DOS
    offx >>= 2;
 #endif
@@ -866,6 +915,12 @@ void VL_FadeOut (int start, int end, int red, int green, int blue, int steps)
    int      i,j,orig,delta;
    byte  *origptr, *newptr;
 
+#if defined(__MINT__) && ATARI_SKIP_FADES
+   VL_FillPalette (red,green,blue);
+   screenfaded = true;
+   return;
+#endif
+
    if (screenfaded)
       return;
 
@@ -922,6 +977,12 @@ void VL_FadeToColor (int time, int red, int green, int blue)
    int      i,j,orig,delta;
    byte  *origptr, *newptr;
    int dmax,dmin;
+
+#if defined(__MINT__) && ATARI_SKIP_FADES
+   VL_FillPalette (red>>2,green>>2,blue>>2);
+   screenfaded = true;
+   return;
+#endif
 
    if (screenfaded)
       return;
@@ -984,6 +1045,13 @@ void VL_FadeToColor (int time, int red, int green, int blue)
 void VL_FadeIn (int start, int end, byte *palette, int steps)
 {
    int      i,j,delta;
+
+#if defined(__MINT__) && ATARI_SKIP_FADES
+   VL_SetPalette (palette);
+   VW_UpdateScreen();
+   screenfaded = false;
+   return;
+#endif
 
    WaitVBL ();
    VL_GetPalette (&palette1[0][0]);

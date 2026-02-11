@@ -135,6 +135,9 @@ void  VL_CopyPlanarPageToMemory ( byte * src, byte * dest );
 void  XFlipPage ( void );
 void  WaitVBL( void );
 void  TurnOffTextCursor ( void );
+int   ATARI_BeginRenderFrame (void);
+void  ATARI_EndRenderFrame (void);
+void  ATARI_ForceRender (void);
 
 #ifdef __WATCOMC__
 #pragma aux VGAWRITEMAP =      \

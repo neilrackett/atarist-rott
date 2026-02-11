@@ -21,6 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 
@@ -40,6 +41,30 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "rt_crc.h"
 #include "rt_main.h"
+
+#if defined(__MINT__)
+static int wad_name_eq(const char *lumpname, const char *name8)
+{
+        int i;
+
+        for (i = 0; i < 8; ++i)
+        {
+                unsigned char a = (unsigned char)lumpname[i];
+                unsigned char b = (unsigned char)name8[i];
+
+                if (a == ' ' || a == '\0')
+                        a = 0;
+                if (b == ' ' || b == '\0')
+                        b = 0;
+                if (a == 0 || b == 0)
+                        return a == b;
+                if (toupper(a) != toupper(b))
+                        return 0;
+        }
+
+        return 1;
+}
+#endif
 
 //=============
 // GLOBALS
@@ -86,7 +111,7 @@ void W_AddFile (char *_filename)
         unsigned                i;
         int                     handle, length;
         int                     startlump;
-        filelump_t              *fileinfo, singleinfo;
+        filelump_t              *fileinfo, *fileinfo_base, singleinfo;
 
         char filename[MAX_PATH];
         char buf[MAX_PATH+100];//bna++
@@ -124,6 +149,7 @@ void W_AddFile (char *_filename)
                 if (!quiet)
                    printf("    Adding single file %s.\n",filename);
                 fileinfo = &singleinfo;
+                fileinfo_base = &singleinfo;
                 singleinfo.filepos = 0;
                 singleinfo.size = LONG(filelength(handle));
                 ExtractFileBase (filename, singleinfo.name);
@@ -139,10 +165,19 @@ void W_AddFile (char *_filename)
                         Error ("Wad file %s doesn't have IWAD id\n",filename);
                 header.numlumps = IntelLong(LONG(header.numlumps));
                 header.infotableofs = IntelLong(LONG(header.infotableofs));
+                if (header.numlumps < 0 || header.numlumps > 20000)
+                        Error ("Wad file %s has invalid lump count %d\n", filename, header.numlumps);
                 length = header.numlumps*sizeof(filelump_t);
+#if defined(__MINT__)
+                fileinfo = (filelump_t *)SafeMalloc(length);
+                if (!fileinfo)
+                   Error ("Wad file could not allocate header info");
+#else
                 fileinfo = alloca (length);
                 if (!fileinfo)
                    Error ("Wad file could not allocate header info on stack");
+#endif
+                fileinfo_base = fileinfo;
                 lseek (handle, header.infotableofs, SEEK_SET);
                 read (handle, fileinfo, length);
                 
@@ -167,6 +202,10 @@ void W_AddFile (char *_filename)
                 lump_p->size = LONG(fileinfo->size);
                 strncpy (lump_p->name, fileinfo->name, 8);
         }
+#if defined(__MINT__)
+        if (fileinfo_base && fileinfo_base != &singleinfo)
+                SafeFree((void *)fileinfo_base);
+#endif
 }
 
 
@@ -308,7 +347,6 @@ int     W_NumLumps (void)
 int     W_CheckNumForName (char *name)
 {
         char    name8[9];
-        int             v1,v2;
         lumpinfo_t      *lump_p;
         lumpinfo_t      *endlump;
 
@@ -318,9 +356,6 @@ int     W_CheckNumForName (char *name)
         name8[8] = 0;                   // in case the name was a fill 8 chars
         strupr (name8);                 // case insensitive
 
-        v1 = *(int *)name8;
-        v2 = *(int *)&name8[4];
-
 
 // scan backwards so patch lump files take precedence
 
@@ -329,7 +364,11 @@ int     W_CheckNumForName (char *name)
 
         while (lump_p != endlump)
            {
-           if ( *(int *)lump_p->name == v1 && *(int *)&lump_p->name[4] == v2)
+#if defined(__MINT__)
+           if (wad_name_eq(lump_p->name, name8))
+#else
+           if (!memcmp(lump_p->name, name8, 8))
+#endif
               return lump_p - lumpinfo;
            lump_p++;
            }
@@ -356,6 +395,19 @@ int     W_GetNumForName (char *name)
         i = W_CheckNumForName (name);
         if (i != -1)
                 return i;
+
+#if defined(__MINT__)
+        if (!strcmpi(name, "mmbk"))
+        {
+                int fb = W_CheckNumForName("backtile");
+                if (fb == -1)
+                        fb = W_CheckNumForName("eraseb");
+                if (fb == -1)
+                        fb = W_CheckNumForName("erase");
+                if (fb != -1)
+                        return fb;
+        }
+#endif
 
         Error ("W_GetNumForName: %s not found!",name);
         return -1;

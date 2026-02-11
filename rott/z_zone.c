@@ -27,6 +27,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <dos.h>
 #include <conio.h>
 #endif
+#if defined(__MINT__)
+#include <mint/osbind.h>
+#endif
 
 #include "rt_def.h"
 #include "_z_zone.h"
@@ -140,6 +143,7 @@ void Z_Init (int size, int min)
 {
    int maxsize;
    int sz;
+   long avail;
 
    if (zonememorystarted==1)
       return;
@@ -154,11 +158,30 @@ void Z_Init (int size, int min)
    else
       levelzonesize+=(numplayers+1)*sz;
 
-   maxsize=((int)(Z_AvailHeap())-size-levelzonesize);
+   avail = Z_AvailHeap();
+   maxsize=((int)avail-size-levelzonesize);
    if (maxsize<min)
       {
       UL_DisplayMemoryError (min-maxsize);
       }
+
+#if defined(__MINT__)
+   {
+      /*
+       * Keep headroom for SDL/GEM/system allocations that happen after
+       * zone setup (video mode creation, surfaces, driver internals).
+       */
+      long reserve = 1024L * 1024L;
+      long cap = avail - reserve - levelzonesize;
+
+      if (cap < (long)(min >> 1))
+         cap = (long)(min >> 1);
+      if (cap < 0)
+         cap = 0;
+      if (maxsize > (int)cap)
+         maxsize = (int)cap;
+   }
+#endif
       
    if (CheckParm("LOMEM"))
    {
@@ -182,6 +205,7 @@ void Z_Init (int size, int min)
       {
       lowmemory = 1;
 
+#if !defined(__MINT__)
       printf("==============================================================================\n");
       printf("WARNING: You are running ROTT with very little memory.  ROTT runs best with\n");
       printf("8 Megabytes of memory and no TSR's loaded in memory.  If you can free up more\n");
@@ -191,6 +215,7 @@ void Z_Init (int size, int min)
       printf("                        Press any key to continue\n");
       printf("==============================================================================\n");
       getch();
+#endif
       }
 }
 
@@ -775,6 +800,15 @@ int Z_AvailHeap ( void )
    int386x( DPMI_INT, &zregs, &zregs, &zsregs );
 
    return ((int)MemInfo.LargestBlockAvail);
+#elif defined(__MINT__)
+   long avail = Malloc(-1L);
+
+   if (avail <= 0)
+      return (1024 * 1024);
+   if (avail > MAXMEMORYSIZE)
+      avail = MAXMEMORYSIZE;
+
+   return (int)avail;
 #else
 	return MAXMEMORYSIZE;
 #endif
@@ -805,4 +839,3 @@ void Z_Realloc (void ** ptr, int newsize)
    SafeFree( *ptr );
    *ptr = newptr;
 }
-
