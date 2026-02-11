@@ -25,8 +25,13 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <stddef.h>
 #include <fcntl.h>
 #include <string.h>
+#include <unistd.h>
+#if PLATFORM_ATARI
+#include <mint/osbind.h>
+#endif
  
  
+#if !PLATFORM_ATARI
 #include <signal.h>
 
 
@@ -35,6 +40,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <workbench/startup.h>
 #include <workbench/workbench.h>
 #include <workbench/icon.h>
+#endif
 #include "rt_def.h"
 #include "lumpy.h"
 #include "watcom.h"
@@ -82,10 +88,33 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //MED
 #include "memcheck.h"
 #include "m_fixed.h"
+#if PLATFORM_ATARI
+#ifndef ATARI_MAX_CATCHUP_STEPS
+#define ATARI_MAX_CATCHUP_STEPS 2
+#endif
+#ifndef ATARI_CATCHUP_POLL_INTERVAL
+#define ATARI_CATCHUP_POLL_INTERVAL 4
+#endif
+#ifndef ATARI_RENDER_DIVISOR
+#define ATARI_RENDER_DIVISOR 1
+#endif
+#ifndef ATARI_ACTOR_THROTTLE_DIV
+#define ATARI_ACTOR_THROTTLE_DIV 1
+#endif
+#ifndef ATARI_SKIP_FIZZLE
+#define ATARI_SKIP_FIZZLE 0
+#endif
+#endif
+#if PLATFORM_ATARI
+extern int __argc;
+extern char **__argv;
+#endif
  
 int cpu_type;
 int broken_pipe;
+#if !PLATFORM_ATARI
 extern struct ExecBase *SysBase;
+#endif
 
 volatile int    oldtime;
 volatile int    gametime;
@@ -140,6 +169,9 @@ static boolean turbo;
 static int NoWait;
 static int startlevel=0;
 static int demonumber=-1;
+#if PLATFORM_ATARI
+static boolean atari_first_title_menu_after_logo = true;
+#endif
 
 char CWD[40];                          // curent working directory
 static boolean quitactive = false;
@@ -200,7 +232,12 @@ int main (int argc, char *argv[])
     
     _argc = argc;
     _argv = argv;
+#if PLATFORM_ATARI
+    __argc = argc;
+    __argv = argv;
+#endif
          
+#if !PLATFORM_ATARI
     /* parse icon tooltypes and convert them to argc/argv format */
     
     if (argc <= 1)
@@ -239,6 +276,9 @@ int main (int argc, char *argv[])
             printf ("\n\n");
     }
 
+#endif
+
+#if !PLATFORM_ATARI
     Disable();
     
     if ((SysBase->AttnFlags & AFF_68060) != 0)
@@ -260,7 +300,7 @@ int main (int argc, char *argv[])
     else
         cpu_type = 68000;
  
-#if !defined C_FIXED_MATH 
+#if !defined C_FIXED_MATH && !PLATFORM_ATARI
     if (cpu_type >= 68060)
     {
     	__asm
@@ -294,6 +334,9 @@ int main (int argc, char *argv[])
 #endif
         
     Enable();
+#else
+    cpu_type = 68000;
+#endif
  
 #if defined(PLATFORM_MACOSX)
     {
@@ -315,7 +358,7 @@ int main (int argc, char *argv[])
     }
 #endif
 
-#ifndef DOS
+#if !PLATFORM_ATARI && !defined(DOS)
    signal (11, crash_print);
 
    if (setup_homedir() == -1) return 1;
@@ -352,12 +395,19 @@ int main (int argc, char *argv[])
    InitializeGameCommands();
    if (standalone==false)
       {
+#if PLATFORM_ATARI
+      doublestep=0;
+      SetupWads();
+      BuildTables ();
+      GetMenuInfo ();
+#else
       ReadConfig ();
       ReadSETUPFiles ();
       doublestep=0;
       SetupWads();
       BuildTables ();
       GetMenuInfo ();
+#endif
       }
 
     iGLOBAL_SCREENWIDTH = 320;
@@ -491,7 +541,7 @@ int main (int argc, char *argv[])
 //   VL_SetVGAPlaneMode();
 //   VL_SetPalette(origpal);
 //   SetBorderColor(155);
-   SetViewSize(8);
+   SetViewSize(viewsize);
 
 #ifdef DOS
    if ( SOUNDSETUP )
@@ -530,12 +580,24 @@ int main (int argc, char *argv[])
          }
       else if ( NoWait == false )
          {
-         
          ApogeeTitle();
          }
 #else
       if ( NoWait == false )
          {
+#if PLATFORM_ATARI
+         if (W_CheckNumForName("svendor") != -1)
+            {
+            lbm_t * LBM;
+
+            LBM = (lbm_t *) W_CacheLumpName( "svendor", PU_CACHE, Cvt_lbm_t, 1);
+
+            VL_DecompressLBM (LBM,true);
+            I_Delay(40);
+            MenuFadeOut();
+            }
+         ApogeeTitle();
+#else
          if (W_CheckNumForName("svendor") != -1)
             {
             lbm_t * LBM;
@@ -548,6 +610,7 @@ int main (int argc, char *argv[])
             }
 //         ParticleIntro ();
          ApogeeTitle();
+#endif
          }
 #endif
       }
@@ -1139,12 +1202,53 @@ void Init_Tables (void)
 		 y;
 	unsigned *blockstart;
 	byte * shape;
+	byte *pal_lump;
+	int pal_num;
 
    memset (&CWD[0], 0, 40);
    getcwd (CWD, 40);                      // get the current directory
 
    origpal=SafeMalloc(768);
-   memcpy (origpal, W_CacheLumpName("pal",PU_CACHE, CvtNull, 1), 768);
+   pal_num = W_CheckNumForName("pal");
+   if (pal_num == -1)
+      pal_num = W_CheckNumForName("palette");
+   if (pal_num == -1)
+      pal_num = W_CheckNumForName("playpal");
+
+   if (pal_num == -1)
+   {
+#if PLATFORM_ATARI
+      int lbm_num = -1;
+      lbm_num = W_CheckNumForName("ap_titl");
+      if (lbm_num == -1)
+         lbm_num = W_CheckNumForName("trilogo");
+      if (lbm_num == -1)
+         lbm_num = W_CheckNumForName("bootnorm");
+      if (lbm_num == -1)
+         lbm_num = W_CheckNumForName("bootblod");
+      if (lbm_num == -1)
+         lbm_num = W_CheckNumForName("rotts10");
+      if (lbm_num != -1)
+      {
+         lbm_t *lbm = (lbm_t *)W_CacheLumpNum(lbm_num, PU_CACHE, Cvt_lbm_t, 1);
+         memcpy(origpal, lbm->palette, 768);
+      }
+      else
+#endif
+      {
+         for (i = 0; i < 256; ++i)
+         {
+            origpal[i * 3 + 0] = (byte)i;
+            origpal[i * 3 + 1] = (byte)i;
+            origpal[i * 3 + 2] = (byte)i;
+         }
+      }
+   }
+   else
+   {
+      pal_lump = W_CacheLumpNum(pal_num, PU_CACHE, CvtNull, 1);
+      memcpy(origpal, pal_lump, 768);
+   }
 
    FindEGAColors();
 
@@ -1158,8 +1262,20 @@ void Init_Tables (void)
 		for (x=0;x<UPDATEWIDE;x++)
 			*blockstart++ = iG_SCREENWIDTH*16*y+x*TILEWIDTH;
 
-	for (i = 0; i < 0x300; i++)
-		*(origpal+(unsigned int)i) = (*(origpal+(unsigned int)i))>>2;
+   {
+      int pal_max = 0;
+      for (i = 0; i < 0x300; i++)
+      {
+         int v = (int)origpal[i];
+         if (v > pal_max)
+            pal_max = v;
+      }
+      if (pal_max > 63)
+      {
+         for (i = 0; i < 0x300; i++)
+            origpal[i] = (byte)(origpal[i] >> 2);
+      }
+   }
 
 	// Cache in fonts
 	shape = W_CacheLumpNum (W_GetNumForName ("smallfont"), PU_STATIC, Cvt_font_t, 1);
@@ -1266,8 +1382,7 @@ void GameLoop (void)
 
 		switch (playstate)
 		   {
-         case ex_titles:
-		 
+        case ex_titles:
             BATTLE_Shutdown();
             MU_StartSong(song_title);
 			EnableScreenStretch();
@@ -1286,6 +1401,37 @@ void GameLoop (void)
                   {
                   int i;
                   byte *tempbuf;
+#if PLATFORM_ATARI
+                  int shartit2 = W_CheckNumForName("shartit2");
+                  int trilogo = W_CheckNumForName("trilogo");
+                  int hold_end;
+
+                  IN_ClearKeysDown();
+                  IN_ClearKeyboardQueue();
+                  LastScan = 0;
+                  ClearGraphicsScreen();
+                  SetPalette(origpal);
+                  if (shartit2 != -1)
+                     PlayMovie ("shartit2", true);
+                  else if (trilogo != -1)
+                     {
+                     VL_DrawPostPic(trilogo);
+                     VW_UpdateScreen();
+                     }
+                  else
+                     PlayMovie ("shartitl", true);
+
+                  hold_end = GetTicCount() + (3 * VBLCOUNTER);
+                  while (GetTicCount() < hold_end)
+                     IN_PumpEvents();
+                  LastScan = 0;
+
+                  if (atari_first_title_menu_after_logo)
+                     {
+                     atari_first_title_menu_after_logo = false;
+                     break;
+                     }
+#else
                   MenuFadeOut();
                   ClearGraphicsScreen();
                   SetPalette(&dimpal[0]);
@@ -1308,9 +1454,10 @@ void GameLoop (void)
                   tempbuf=bufferofs;
                   bufferofs=page1start; // fixed, was displayofs
                   DrawNormalSprite(320-94,200-41,W_GetNumForName("rsac"));
-						VW_UpdateScreen(); // fixed, was missing
+							VW_UpdateScreen(); // fixed, was missing
                   bufferofs=tempbuf;
                   I_Delay(30);
+#endif
 
                   if ( ( LastScan ) || ( IN_GetMouseButtons() ) )
                      {
@@ -1358,7 +1505,16 @@ void GameLoop (void)
                   QuitGame();
                   }
                NoWait = false;
+#if PLATFORM_ATARI
+               /*
+               Avoid showing the previous title/logo frame while menu setup runs.
+               */
+               ClearGraphicsScreen();
+               VW_UpdateScreen();
+               SetPalette(origpal);
+#else
                SwitchPalette(origpal,35);
+#endif
                CP_MainMenu();
 
                }
@@ -1749,7 +1905,9 @@ void ShutDown ( void )
 #endif
    )
       {
+#if !PLATFORM_ATARI
       WriteConfig ();
+#endif
       }
 
 //   if (
@@ -1869,7 +2027,7 @@ int temp;
       px = ERRORVERSIONCOL;
       py = ERRORVERSIONROW;
 #if (BETA == 1)
-      UL_printf ("á");
+      UL_printf ("");
 #else
       UL_printf (itoa(ROTTMAJORVERSION,&buf[0],10));
 #endif
@@ -1946,6 +2104,9 @@ void UpdateGameObjects ( void )
 	volatile int atime;
 	objtype * ob,*temp;
    battle_status BattleStatus;
+#if PLATFORM_ATARI
+   int catchup_steps = 0;
+#endif
 
    wami(2);
 
@@ -1961,14 +2122,28 @@ void UpdateGameObjects ( void )
 
    if (demoplayback == false)
        PollControls ();
-
    CalcTics ();
 
    UpdateClientControls ();
 
+#if PLATFORM_ATARI
+   if (demoplayback == false && oldtime > (oldpolltime + 1))
+      PollControls();
+#endif
 
    while (oldpolltime<oldtime)
 	   {
+#if PLATFORM_ATARI
+	      if (ATARI_MAX_CATCHUP_STEPS > 0 && catchup_steps >= ATARI_MAX_CATCHUP_STEPS)
+	      {
+	         oldpolltime = oldtime;
+	         break;
+	      }
+#if ATARI_CATCHUP_POLL_INTERVAL > 0
+      if (demoplayback == false && ((catchup_steps % ATARI_CATCHUP_POLL_INTERVAL) == 0))
+         PollControls();
+#endif
+#endif
       UpdateClientControls ();
 	   MoveDoors();
       ProcessElevators();
@@ -1984,7 +2159,25 @@ void UpdateGameObjects ( void )
 		for (ob = firstactive; ob;)
 			{
 			 temp = ob->nextactive;
+#if PLATFORM_ATARI && (ATARI_ACTOR_THROTTLE_DIV > 1)
+          if ((ob->obclass != playerobj) &&
+              ((ob->flags & FL_KEYACTOR) == 0) &&
+              !areabyplayer[ob->areanumber])
+          {
+             unsigned int div = (unsigned int)ATARI_ACTOR_THROTTLE_DIV;
+             unsigned int phase = ((unsigned int)ob->tilex +
+                                   ((unsigned int)ob->tiley << 1) +
+                                   (unsigned int)ob->obclass) % div;
+             if (((unsigned int)gamestate.TimeCount % div) == phase)
+                DoActor(ob);
+          }
+          else
+          {
+             DoActor(ob);
+          }
+#else
 			 DoActor (ob);
+#endif
 #if (DEVELOPMENT == 1)
 			 if ((ob->x<=0) || (ob->y<=0))
 				Error("object xy below zero obj->x=%ld obj->y=%ld obj->obclass=%ld\n",ob->x,ob->y,ob->obclass);
@@ -2034,6 +2227,9 @@ void UpdateGameObjects ( void )
       ResetCurrentCommand();
 
       oldpolltime++;
+#if PLATFORM_ATARI
+      catchup_steps++;
+#endif
       if (GamePaused==true)
          break;
 		}
@@ -2061,16 +2257,29 @@ void UpdateGameObjects ( void )
 void PauseLoop ( void )
 {
    StopWind();
+#if PLATFORM_ATARI
+   int catchup_steps = 0;
+#endif
 
    UpdateClientControls ();
 
    while (oldpolltime<oldtime)
 	   {
+#if PLATFORM_ATARI
+      if (ATARI_MAX_CATCHUP_STEPS > 0 && catchup_steps >= ATARI_MAX_CATCHUP_STEPS)
+      {
+         oldpolltime = oldtime;
+         break;
+      }
+#endif
       CheckUnPause();
 #if (SYNCCHECK == 1)
       CheckForSyncCheck();
 #endif
       oldpolltime++;
+#if PLATFORM_ATARI
+      catchup_steps++;
+#endif
       if (GamePaused==false)
          {
    			//bna++ section
@@ -2110,6 +2319,9 @@ void PlayLoop
 
    {
    volatile int atime;
+#if PLATFORM_ATARI && (ATARI_RENDER_DIVISOR > 1)
+   unsigned int atari_render_div_tick = 0;
+#endif
 
    boolean canquit = true;
    int     quittime = 0;
@@ -2143,7 +2355,11 @@ fromloadedgame:
 	tics      = 0;
 	SetFastTics(0);
 
-   if ( fizzlein == false )
+   if ( (fizzlein == false)
+#if PLATFORM_ATARI
+        || (ATARI_SKIP_FIZZLE != 0)
+#endif
+      )
       {
       StartupClientControls();
       }
@@ -2155,6 +2371,10 @@ fromloadedgame:
    // set detail level
    doublestep = 2 - DetailLevel;
 
+#if PLATFORM_ATARI
+   ResetMessageTime();
+   MessagesEnabled = false;
+#else
    ResetMessageTime();
    DeletePriorityMessage( MSG_SYSTEM );
 
@@ -2165,10 +2385,29 @@ fromloadedgame:
       AddMessage( "You will not be facing any", MSG_GAME );
       AddMessage( "opponents.  Have fun and explore.", MSG_GAME );
       }
+#endif
 
 
 	while( playstate == ex_stillplaying )
       {
+      int atari_should_render = 1;
+#if PLATFORM_ATARI
+      IN_PumpEvents();
+#endif
+#if PLATFORM_ATARI
+      atari_should_render = ATARI_BeginRenderFrame();
+#if (ATARI_RENDER_DIVISOR > 1)
+      if (atari_should_render)
+      {
+         atari_render_div_tick++;
+         if ((atari_render_div_tick % ATARI_RENDER_DIVISOR) != 0)
+         {
+            atari_should_render = 0;
+            ATARI_EndRenderFrame();
+         }
+      }
+#endif
+#endif
       UpdateClientControls();
 
       if ( GamePaused )
@@ -2179,26 +2418,35 @@ fromloadedgame:
 
          if ( RefreshPause )
             {
-            ThreeDRefresh();
+            if (atari_should_render)
+               ThreeDRefresh();
             }
          else
             {
-            UpdateScreenSaver();
+            if (atari_should_render)
+               UpdateScreenSaver();
             }
          }
-      else
-         {
-         if (controlupdatestarted == 1)
-            UpdateGameObjects();
-
+	      else
+	         {
+#if PLATFORM_ATARI
+         if (controlupdatestarted == 0)
+            StartupClientControls();
+#endif
+	         if (controlupdatestarted == 1)
+	            UpdateGameObjects();
          atime = GetFastTics();
 
-         ThreeDRefresh();
+         if (atari_should_render)
+            ThreeDRefresh();
          }
 
       SyncToServer();
 
-		drawtime = GetFastTics() - atime;
+      if (atari_should_render)
+         drawtime = GetFastTics() - atime;
+      else
+         drawtime = 0;
 
       // Don't allow player to quit if entering message
       canquit = !MSG.messageon;
@@ -2227,7 +2475,8 @@ fromloadedgame:
 
       UpdatePlayers();
 
-      DrawTime( false );
+      if (atari_should_render)
+         DrawTime( false );
 
       UpdateClientControls();
 
@@ -2296,8 +2545,8 @@ fromloadedgame:
             {
             MU_StartSong(song_level);
             MU_RestoreSongPosition();
-            }
-         }
+      }
+      }
 
       if ( BATTLEMODE )
          {
@@ -2443,6 +2692,12 @@ void PollKeyboard
       {
       IN_UpdateKeyboard();
       }
+#if PLATFORM_ATARI
+   else
+      {
+      IN_UpdateKeyboard();
+      }
+#endif
 
    if ( !BATTLEMODE )
       {

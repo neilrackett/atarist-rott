@@ -18,8 +18,11 @@ enum DSL_ERRORS
 
 char *DSL_ErrorString( int ErrorNumber );
 int   DSL_Init( void );
+int   DSL_HasDMASound( void );
 void  DSL_StopPlayback( void );
 unsigned DSL_GetPlaybackRate( void );
+void  DSL_Service( void );
+void  DSL_GetDebugStats( int *calls, int *misses );
 int   DSL_BeginBufferedPlayback( char *BufferStart,
       int BufferSize, int NumDivisions, unsigned SampleRate,
       int MixMode, void ( *CallBackFunc )( void ) );

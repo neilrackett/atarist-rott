@@ -296,10 +296,14 @@ void DrawCinematicActors ( void )
          }
       }
       if (flippage==true)
+         {
+#if PLATFORM_ATARI
+         ATARI_ForceRender();
+#endif
          XFlipPage ();
+         }
 #if DUMP
       printf("Total actors drawn=%ld\n",numactors);
 #endif
 }
-
 

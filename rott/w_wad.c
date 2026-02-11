@@ -21,8 +21,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#include <alloca.h>
+
+#if PLATFORM_ATARI
+#include <mint/osbind.h>
+#include "atari_tables.h"
+#endif
 
 #if PLATFORM_DOS
 #include <malloc.h>
@@ -37,6 +45,40 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "z_zone.h"
 #include "isr.h"
 #include "develop.h"
+
+#if PLATFORM_ATARI
+static void wad_dbg(const char *msg) { Cconws(msg); }
+#endif
+
+#if PLATFORM_ATARI
+static int wad_name_eq(const char *lumpname, const char *name8)
+{
+    int i;
+    for (i = 0; i < 8; ++i)
+    {
+        unsigned char a = (unsigned char)lumpname[i];
+        unsigned char b = (unsigned char)name8[i];
+        if (a == ' ' || a == '\0')
+            a = 0;
+        if (b == ' ' || b == '\0')
+            b = 0;
+        if (a == 0 || b == 0)
+            return a == b;
+        if (toupper(a) != toupper(b))
+            return 0;
+    }
+    return 1;
+}
+#endif
+
+#if PLATFORM_ATARI
+static void wad_dbg_num(const char *label, long v)
+{
+    char buf[64];
+    sprintf(buf, "%s%ld\r\n", label, v);
+    Cconws(buf);
+}
+#endif
 
 #include "rt_crc.h"
 #include "rt_main.h"
@@ -81,12 +123,17 @@ static byte *lumpcheck;
 
 void W_AddFile (char *_filename)
 {
+#if PLATFORM_ATARI
+    wad_dbg("W_AddFile: ");
+    wad_dbg(_filename);
+    wad_dbg("\r\n");
+#endif
         wadinfo_t               header;
         lumpinfo_t              *lump_p;
         unsigned                i;
         int                     handle, length;
         int                     startlump;
-        filelump_t              *fileinfo, singleinfo;
+        filelump_t              *fileinfo, *fileinfo_base, singleinfo;
 
         char filename[MAX_PATH];
         char buf[MAX_PATH+100];//bna++
@@ -96,24 +143,44 @@ void W_AddFile (char *_filename)
         FixFilePath(filename);
 
 		//bna section start
+#if !PLATFORM_ATARI
 		if (access (filename, 0) != 0) {
 			strcpy (buf,"Error, Could not find User file '");
 			strcat (buf,filename);
 			strcat (buf,"', ignoring file");
 			printf("%s", buf);
 		}
+#endif
 		//bna section end
 
 //
 // read the entire file in
 //      FIXME: shared opens
 
+#if PLATFORM_ATARI
+    wad_dbg("W_AddFile: open\r\n");
+#endif
 #ifdef PLATFORM_DOS
         if ( (handle = open (filename,O_RDWR | O_BINARY)) == -1)
 #else
         if ( (handle = open (filename,O_RDONLY | O_BINARY)) == -1)
 #endif
-                return;
+        {
+#if PLATFORM_ATARI
+            char cwd[64];
+            if (getcwd(cwd, sizeof(cwd)) == NULL)
+                strcpy(cwd, "?");
+            wad_dbg("W_AddFile: open failed ");
+            wad_dbg(filename);
+            wad_dbg(" cwd=");
+            wad_dbg(cwd);
+            wad_dbg("\r\n");
+#endif
+            return;
+        }
+#if PLATFORM_ATARI
+        wad_dbg("W_AddFile: open ok\r\n");
+#endif
 
         startlump = numlumps;
 
@@ -124,6 +191,7 @@ void W_AddFile (char *_filename)
                 if (!quiet)
                    printf("    Adding single file %s.\n",filename);
                 fileinfo = &singleinfo;
+                fileinfo_base = &singleinfo;
                 singleinfo.filepos = 0;
                 singleinfo.size = LONG(filelength(handle));
                 ExtractFileBase (filename, singleinfo.name);
@@ -135,14 +203,28 @@ void W_AddFile (char *_filename)
                 if (!quiet)
                    printf("    Adding %s.\n",filename);
                 read (handle, &header, sizeof(header));
+#if PLATFORM_ATARI
+                wad_dbg("W_AddFile: header ok\r\n");
+#endif
                 if (strncmp(header.identification,"IWAD",4))
                         Error ("Wad file %s doesn't have IWAD id\n",filename);
                 header.numlumps = IntelLong(LONG(header.numlumps));
                 header.infotableofs = IntelLong(LONG(header.infotableofs));
+#if PLATFORM_ATARI
+                if (header.numlumps < 0 || header.numlumps > 20000)
+                        Error ("Wad file %s has invalid lump count %d\n", filename, header.numlumps);
+#endif
                 length = header.numlumps*sizeof(filelump_t);
+#if PLATFORM_ATARI
+                fileinfo = (filelump_t *)SafeMalloc(length);
+                if (!fileinfo)
+                   Error ("Wad file could not allocate header info");
+#else
                 fileinfo = alloca (length);
                 if (!fileinfo)
                    Error ("Wad file could not allocate header info on stack");
+#endif
+                fileinfo_base = fileinfo;
                 lseek (handle, header.infotableofs, SEEK_SET);
                 read (handle, fileinfo, length);
                 
@@ -167,6 +249,12 @@ void W_AddFile (char *_filename)
                 lump_p->size = LONG(fileinfo->size);
                 strncpy (lump_p->name, fileinfo->name, 8);
         }
+#if PLATFORM_ATARI
+        if (fileinfo_base && fileinfo_base != &singleinfo)
+        {
+                SafeFree((void *)fileinfo_base);
+        }
+#endif
 }
 
 
@@ -225,6 +313,12 @@ void W_CheckWADIntegrity ( void )
 
 void W_InitMultipleFiles (char **filenames)
 {
+#if PLATFORM_ATARI
+    wad_dbg("W_InitMultipleFiles\r\n");
+#endif
+#if PLATFORM_ATARI
+    wad_dbg("W_InitMultipleFiles: begin\r\n");
+#endif
 //
 // open all the files, load headers, and count lumps
 //
@@ -232,10 +326,22 @@ void W_InitMultipleFiles (char **filenames)
         lumpinfo = SafeMalloc(5);   // will be realloced as lumps are added
 
         for ( ; *filenames ; filenames++)
-                W_AddFile (*filenames);
+        {
+#if PLATFORM_ATARI
+            wad_dbg("W_InitMultipleFiles: file ");
+            wad_dbg(*filenames);
+            wad_dbg("\r\n");
+#endif
+            W_AddFile (*filenames);
+        }
 
         if (!numlumps)
-                Error ("W_InitFiles: no files found");
+        {
+#if PLATFORM_ATARI
+            wad_dbg("W_InitFiles: no files found\r\n");
+#endif
+            Error ("W_InitFiles: no files found");
+        }
 
 //
 // set up caching
@@ -254,6 +360,9 @@ void W_InitMultipleFiles (char **filenames)
         if (!SOUNDSETUP)
 #endif
            W_CheckWADIntegrity ();
+#if PLATFORM_ATARI
+    wad_dbg("W_InitMultipleFiles: done\r\n");
+#endif
 }
 
 
@@ -308,18 +417,23 @@ int     W_NumLumps (void)
 int     W_CheckNumForName (char *name)
 {
         char    name8[9];
-        int             v1,v2;
         lumpinfo_t      *lump_p;
         lumpinfo_t      *endlump;
+
+#if PLATFORM_ATARI
+        if (!strcmp(name, "tables") || !strcmp(name, "TABLES"))
+        {
+                char buf[64];
+                sprintf(buf, "W_CheckNumForName: %s numlumps=%d\r\n", name, numlumps);
+                Cconws(buf);
+        }
+#endif
 
 // make the name into two integers for easy compares
 
         strncpy (name8,name,8);
         name8[8] = 0;                   // in case the name was a fill 8 chars
         strupr (name8);                 // case insensitive
-
-        v1 = *(int *)name8;
-        v2 = *(int *)&name8[4];
 
 
 // scan backwards so patch lump files take precedence
@@ -329,10 +443,31 @@ int     W_CheckNumForName (char *name)
 
         while (lump_p != endlump)
            {
-           if ( *(int *)lump_p->name == v1 && *(int *)&lump_p->name[4] == v2)
+#if PLATFORM_ATARI
+           if (wad_name_eq(lump_p->name, name8))
               return lump_p - lumpinfo;
+#else
+           if (!memcmp(lump_p->name, name8, 8))
+              return lump_p - lumpinfo;
+#endif
            lump_p++;
            }
+
+#if PLATFORM_ATARI
+        if (!strcmp(name8, "TABLES"))
+        {
+                int k;
+                char dump[16];
+                Cconws("W_CheckNumForName: TABLES not found, first 10 lumps:\r\n");
+                for (k = 0; k < numlumps && k < 10; ++k)
+                {
+                        memcpy(dump, lumpinfo[k].name, 8);
+                        dump[8] = 0;
+                        Cconws(dump);
+                        Cconws("\r\n");
+                }
+        }
+#endif
 
 
         return -1;
@@ -357,6 +492,25 @@ int     W_GetNumForName (char *name)
         if (i != -1)
                 return i;
 
+#if PLATFORM_ATARI
+        if (!strcmpi(name, "mmbk"))
+        {
+                int fb = W_CheckNumForName("backtile");
+                if (fb == -1)
+                        fb = W_CheckNumForName("eraseb");
+                if (fb == -1)
+                        fb = W_CheckNumForName("erase");
+                if (fb != -1)
+                        return fb;
+        }
+#endif
+#if PLATFORM_ATARI
+        {
+                char buf[80];
+                sprintf(buf, "W_GetNumForName missing: %s\r\n", name);
+                Cconws(buf);
+        }
+#endif
         Error ("W_GetNumForName: %s not found!",name);
         return -1;
 }
@@ -540,5 +694,90 @@ void    *W_CacheLumpNum (int lump, int tag, converter_t converter, int numrec)
 
 void    *W_CacheLumpName (char *name, int tag, converter_t converter, int numrec)
 {
+#if PLATFORM_ATARI
+        if (!strcmpi(name, "tables"))
+        {
+                static unsigned char *tables_blob = NULL;
+                if (!tables_blob)
+                {
+                        int i;
+                        int len = 0;
+                        len += 4 + ((ATARI_PANGLE_LEN + 1) * 4);
+                        len += 4 + (ATARI_SINTABLE_LEN * 4);
+                        len += 4 + (ATARI_TANTABLE_LEN * 2);
+                        len += 4 + (ATARI_GAMMATABLE_LEN);
+                        tables_blob = (unsigned char *)SafeMalloc(len);
+                        if (tables_blob)
+                        {
+                                unsigned char *p = tables_blob;
+                                int v;
+                                // write pangle
+                                v = ATARI_PANGLE_LEN;
+                                p[0] = (unsigned char)(v & 0xff);
+                                p[1] = (unsigned char)((v >> 8) & 0xff);
+                                p[2] = (unsigned char)((v >> 16) & 0xff);
+                                p[3] = (unsigned char)((v >> 24) & 0xff);
+                                p += 4;
+                                for (i = 0; i < ATARI_PANGLE_LEN; ++i)
+                                {
+                                        v = atari_pangle[i];
+                                        p[0] = (unsigned char)(v & 0xff);
+                                        p[1] = (unsigned char)((v >> 8) & 0xff);
+                                        p[2] = (unsigned char)((v >> 16) & 0xff);
+                                        p[3] = (unsigned char)((v >> 24) & 0xff);
+                                        p += 4;
+                                }
+                                // BuildTables expects length+1 ints for the first table.
+                                v = atari_pangle[ATARI_PANGLE_LEN - 1];
+                                p[0] = (unsigned char)(v & 0xff);
+                                p[1] = (unsigned char)((v >> 8) & 0xff);
+                                p[2] = (unsigned char)((v >> 16) & 0xff);
+                                p[3] = (unsigned char)((v >> 24) & 0xff);
+                                p += 4;
+                                // write sintable
+                                v = ATARI_SINTABLE_LEN;
+                                p[0] = (unsigned char)(v & 0xff);
+                                p[1] = (unsigned char)((v >> 8) & 0xff);
+                                p[2] = (unsigned char)((v >> 16) & 0xff);
+                                p[3] = (unsigned char)((v >> 24) & 0xff);
+                                p += 4;
+                                for (i = 0; i < ATARI_SINTABLE_LEN; ++i)
+                                {
+                                        v = atari_sintable[i];
+                                        p[0] = (unsigned char)(v & 0xff);
+                                        p[1] = (unsigned char)((v >> 8) & 0xff);
+                                        p[2] = (unsigned char)((v >> 16) & 0xff);
+                                        p[3] = (unsigned char)((v >> 24) & 0xff);
+                                        p += 4;
+                                }
+                                // write tantable
+                                v = ATARI_TANTABLE_LEN;
+                                p[0] = (unsigned char)(v & 0xff);
+                                p[1] = (unsigned char)((v >> 8) & 0xff);
+                                p[2] = (unsigned char)((v >> 16) & 0xff);
+                                p[3] = (unsigned char)((v >> 24) & 0xff);
+                                p += 4;
+                                for (i = 0; i < ATARI_TANTABLE_LEN; ++i)
+                                {
+                                        short s = atari_tantable[i];
+                                        p[0] = (unsigned char)(s & 0xff);
+                                        p[1] = (unsigned char)((s >> 8) & 0xff);
+                                        p += 2;
+                                }
+                                // write gammatable
+                                v = ATARI_GAMMATABLE_LEN;
+                                p[0] = (unsigned char)(v & 0xff);
+                                p[1] = (unsigned char)((v >> 8) & 0xff);
+                                p[2] = (unsigned char)((v >> 16) & 0xff);
+                                p[3] = (unsigned char)((v >> 24) & 0xff);
+                                p += 4;
+                                for (i = 0; i < ATARI_GAMMATABLE_LEN; ++i)
+                                        *p++ = atari_gammatable[i];
+                        }
+                }
+                if (tables_blob)
+                        return tables_blob;
+        }
+#endif
         return W_CacheLumpNum (W_GetNumForName(name), tag, converter, numrec);
 }

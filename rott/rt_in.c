@@ -81,6 +81,7 @@ word Joy_x,
 
 
 extern signed short mx, my;
+extern unsigned char atari_joy_buttons;
 
 int LastLetter = 0;
 char LetterQueue[MAXLETTERS];
@@ -335,7 +336,11 @@ void INL_GetJoyDelta (word joy, int *dx, int *dy)
 word INL_GetJoyButtons (word joy)
 {
    word  result = 0;
- 
+
+#if PLATFORM_ATARI
+   if (joy == 0)
+      result = (word)atari_joy_buttons;
+#endif
 
    return result;
 }
@@ -446,6 +451,14 @@ boolean INL_StartJoy (word joy)
 {
    word x,y;
 
+#if PLATFORM_ATARI
+   if (joy > 0) return false;
+   Joy_x = 32768;
+   Joy_y = 32768;
+   IN_SetupJoy(joy, 0, 65535, 0, 65535);
+   return true;
+#endif
+
    return false;
    
 #if USE_SDL
@@ -521,6 +534,11 @@ void IN_Startup (void)
 
    if (IN_Started==true)
       return;
+
+#if PLATFORM_ATARI
+   checkjoys = true;
+   checkmouse = false;
+#endif
 
 #if USE_SDL
 
@@ -1046,7 +1064,10 @@ boolean IN_UserInput (long delay)
 byte IN_JoyButtons (void)
 {
    unsigned joybits = 0;
- 
+
+#if PLATFORM_ATARI
+   joybits = atari_joy_buttons;
+#endif
 
    return (byte) joybits;
 }
@@ -1161,14 +1182,12 @@ int IN_InputUpdateKeyboard (void)
 
 void IN_ClearKeyboardQueue (void)
 {
-   return;
+   IN_ClearKeysDown ();
 
-//   IN_ClearKeysDown ();
-
-//   Keytail = Keyhead = 0;
-//   memset (KeyboardQueue, 0, sizeof (KeyboardQueue));
-//   I_SendKeyboardData(0xf6);
-//   I_SendKeyboardData(0xf4);
+   Keytail = 0;
+   Keyhead = 0;
+   memset((void *)KeyboardQueue, 0, sizeof(KeyboardQueue));
+   memset((void *)Keystate, 0, sizeof(Keystate));
 }
 
 

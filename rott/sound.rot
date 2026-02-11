@@ -18,7 +18,7 @@ FXMode             6
 ;
 ; Music Volume
 ; (low) 0 - 255 (high)
-MusicVolume      20
+MusicVolume      128
 
 ;
 ; FX Volume

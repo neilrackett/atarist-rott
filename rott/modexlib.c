@@ -25,7 +25,902 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <stdio.h>
 #include <ctype.h>
 
- 
+#if defined(PLATFORM_ATARI)
+#include <mint/osbind.h>
+#include <mint/cookie.h>
+#include <string.h>
+
+#include "modexlib.h"
+#include "rt_view.h"
+#include "atari_c2p.h"
+#include "atari_megaste.h"
+#include "isr.h"
+#include "rt_playr.h"
+#include "rt_actor.h"
+
+#ifndef ATARI_DEBUG
+#define ATARI_DEBUG 0
+#endif
+#ifndef ATARI_ENABLE_BLITTER
+#define ATARI_ENABLE_BLITTER 0
+#endif
+#if ATARI_DEBUG
+static void atari_dbg(const char *msg)
+{
+   Cconws(msg);
+}
+#else
+#define atari_dbg(msg) ((void)0)
+#endif
+
+boolean StretchScreen = 0;
+
+int linewidth;
+int ylookup[600];
+byte *page1start;
+byte *page2start;
+byte *page3start;
+int screensize;
+byte *bufferofs;
+byte *displayofs;
+boolean graphicsmode = false;
+char *bufofsTopLimit;
+char *bufofsBottomLimit;
+char *iG_buf_center;
+
+signed short mx = 0, my = 0;
+word mb = 0;
+
+static unsigned char screenpixels[320 * 200];
+static int atari_prev_rez = -1;
+static unsigned char atari_overlay_text_color = 255;
+static unsigned char atari_overlay_bg_color = 0;
+#if ATARI_ENABLE_BLITTER
+static short atari_prev_blitmode = -1;
+static int atari_blitmode_saved = 0;
+#endif
+
+extern int iG_X_center;
+extern int iG_Y_center;
+extern volatile int LastScan;
+extern word Joy_x;
+extern word Joy_y;
+
+extern void DSL_Service(void);
+extern void DSL_GetDebugStats(int *calls, int *misses);
+
+static int dsl_debug_overlay = 0;
+
+unsigned char atari_joy_buttons = 0;
+
+static void atari_input_init(void);
+static void atari_input_shutdown(void);
+
+#ifndef ATARI_ENABLE_KBDINT
+#define ATARI_ENABLE_KBDINT 0
+#endif
+
+#ifndef ATARI_ENABLE_FASTMODE
+#define ATARI_ENABLE_FASTMODE 0
+#endif
+
+#if PLATFORM_ATARI
+#ifndef ATARI_TARGET_FPS
+#define ATARI_TARGET_FPS 0
+#endif
+#ifndef ATARI_SHOW_FPS
+#define ATARI_SHOW_FPS 0
+#endif
+
+static int atari_frame_interval = 0;
+static int atari_frame_accum = 0;
+static int atari_frame_last_tic = -1;
+static int atari_render_granted = 0;
+static int atari_force_render = 0;
+
+static int atari_compute_frame(void)
+{
+#if (ATARI_TARGET_FPS <= 0) || (ATARI_TARGET_FPS >= VBLCOUNTER)
+   return 1;
+#else
+   int now = GetTicCount();
+   int delta;
+
+   if (atari_frame_interval == 0)
+   {
+      atari_frame_interval = (VBLCOUNTER << 16) / ATARI_TARGET_FPS;
+      if (atari_frame_interval <= 0)
+         atari_frame_interval = 1 << 16;
+   }
+
+   if (atari_frame_last_tic < 0)
+   {
+      atari_frame_last_tic = now;
+      atari_frame_accum = atari_frame_interval;
+      return 1;
+   }
+
+   delta = now - atari_frame_last_tic;
+   if (delta < 0)
+   {
+      atari_frame_last_tic = now;
+      atari_frame_accum = atari_frame_interval;
+      return 1;
+   }
+
+   atari_frame_last_tic = now;
+   atari_frame_accum += (delta << 16);
+
+   if (atari_frame_accum > atari_frame_interval * 4)
+      atari_frame_accum = atari_frame_interval * 4;
+
+   if (atari_frame_accum >= atari_frame_interval)
+   {
+      atari_frame_accum -= atari_frame_interval;
+      return 1;
+   }
+
+   return 0;
+#endif
+}
+
+int ATARI_BeginRenderFrame(void)
+{
+   if (atari_render_granted)
+      return 1;
+   if (atari_force_render)
+   {
+      atari_force_render = 0;
+      atari_render_granted = 1;
+      return 1;
+   }
+   if (atari_compute_frame())
+   {
+      atari_render_granted = 1;
+      return 1;
+   }
+   return 0;
+}
+
+int ATARI_RenderAllowed(void)
+{
+   return ATARI_BeginRenderFrame();
+}
+
+void ATARI_EndRenderFrame(void)
+{
+   atari_render_granted = 0;
+}
+
+void ATARI_ForceRender(void)
+{
+   atari_force_render = 1;
+}
+#else
+int ATARI_BeginRenderFrame(void) { return 1; }
+int ATARI_RenderAllowed(void) { return 1; }
+void ATARI_EndRenderFrame(void) {}
+void ATARI_ForceRender(void) {}
+#endif
+
+static void atari_super_set_vector(void **slot, void *handler);
+static void atari_set_blitter_mode(void);
+static void atari_restore_blitter_mode(void);
+
+static void atari_set_fast_mode(void)
+{
+#if !ATARI_ENABLE_FASTMODE
+   return;
+#endif
+   if (is_megaste())
+      megaste_enable_16mhz_cache();
+}
+
+static void atari_super_set_vector(void **slot, void *handler)
+{
+   long old = Super(0);
+   *slot = handler;
+   Super(old);
+}
+
+static void atari_set_blitter_mode(void)
+{
+#if ATARI_ENABLE_BLITTER
+   short mode = Blitmode(-1);
+   if (mode >= 0)
+   {
+      atari_prev_blitmode = mode;
+      atari_blitmode_saved = 1;
+      Blitmode(1);
+   }
+#endif
+}
+
+static void atari_restore_blitter_mode(void)
+{
+#if ATARI_ENABLE_BLITTER
+   if (atari_blitmode_saved)
+   {
+      Blitmode(atari_prev_blitmode);
+      atari_blitmode_saved = 0;
+      atari_prev_blitmode = -1;
+   }
+#endif
+}
+
+static void atari_draw_char(int x, int y, char ch, unsigned char color)
+{
+   static const unsigned char font[][5] = {
+       {0x7, 0x5, 0x5, 0x5, 0x7}, /* 0 */
+       {0x2, 0x6, 0x2, 0x2, 0x7}, /* 1 */
+       {0x7, 0x1, 0x7, 0x4, 0x7}, /* 2 */
+       {0x7, 0x1, 0x7, 0x1, 0x7}, /* 3 */
+       {0x5, 0x5, 0x7, 0x1, 0x1}, /* 4 */
+       {0x7, 0x4, 0x7, 0x1, 0x7}, /* 5 */
+       {0x7, 0x4, 0x7, 0x5, 0x7}, /* 6 */
+       {0x7, 0x1, 0x1, 0x1, 0x1}, /* 7 */
+       {0x7, 0x5, 0x7, 0x5, 0x7}, /* 8 */
+       {0x7, 0x5, 0x7, 0x1, 0x7}, /* 9 */
+       {0x7, 0x4, 0x4, 0x4, 0x7}, /* C */
+       {0x5, 0x7, 0x7, 0x5, 0x5}, /* M */
+       {0x0, 0x2, 0x0, 0x2, 0x0}, /* : */
+       {0x7, 0x4, 0x6, 0x4, 0x4}, /* F */
+       {0x7, 0x5, 0x7, 0x4, 0x4}, /* P */
+       {0x7, 0x4, 0x7, 0x1, 0x7}  /* S */
+   };
+   int idx = -1;
+   int ry;
+   if (ch >= '0' && ch <= '9')
+      idx = ch - '0';
+   else if (ch == 'C')
+      idx = 10;
+   else if (ch == 'M')
+      idx = 11;
+   else if (ch == ':')
+      idx = 12;
+   else if (ch == 'F')
+      idx = 13;
+   else if (ch == 'P')
+      idx = 14;
+   else if (ch == 'S')
+      idx = 15;
+   if (idx < 0)
+      return;
+
+   for (ry = 0; ry < 5; ++ry)
+   {
+      unsigned char bits = font[idx][ry];
+      int dst = (y + ry) * iGLOBAL_SCREENWIDTH + x;
+      if (bits & 0x4)
+         screenpixels[dst] = color;
+      if (bits & 0x2)
+         screenpixels[dst + 1] = color;
+      if (bits & 0x1)
+         screenpixels[dst + 2] = color;
+   }
+}
+
+static void atari_draw_number(int x, int y, int value, unsigned char color)
+{
+   char buf[16];
+   int len = 0;
+   int i;
+   if (value == 0)
+   {
+      buf[len++] = '0';
+   }
+   else
+   {
+      int v = value;
+      char tmp[16];
+      int tlen = 0;
+      if (v < 0)
+      {
+         v = -v;
+         buf[len++] = '-';
+      }
+      while (v > 0 && tlen < 15)
+      {
+         tmp[tlen++] = (char)('0' + (v % 10));
+         v /= 10;
+      }
+      while (tlen > 0)
+         buf[len++] = tmp[--tlen];
+   }
+   for (i = 0; i < len; ++i)
+      atari_draw_char(x + i * 4, y, buf[i], color);
+}
+
+static void atari_draw_text(int x, int y, const char *text, unsigned char color)
+{
+   while (*text)
+   {
+      atari_draw_char(x, y, *text++, color);
+      x += 4;
+   }
+}
+
+static void atari_fill_rect(int x, int y, int w, int h, unsigned char color)
+{
+   int row;
+   if (w <= 0 || h <= 0)
+      return;
+   if (x < 0)
+   {
+      w += x;
+      x = 0;
+   }
+   if (y < 0)
+   {
+      h += y;
+      y = 0;
+   }
+   if (x >= iGLOBAL_SCREENWIDTH || y >= iGLOBAL_SCREENHEIGHT)
+      return;
+   if (x + w > iGLOBAL_SCREENWIDTH)
+      w = iGLOBAL_SCREENWIDTH - x;
+   if (y + h > iGLOBAL_SCREENHEIGHT)
+      h = iGLOBAL_SCREENHEIGHT - y;
+   for (row = 0; row < h; ++row)
+      memset(screenpixels + ((y + row) * iGLOBAL_SCREENWIDTH) + x, color, (size_t)w);
+}
+
+#if PLATFORM_ATARI && ATARI_SHOW_FPS
+static void atari_draw_fps_overlay(void)
+{
+   static int fps_last_tic = -1;
+   static int fps_frames = 0;
+   static int fps_value = 0;
+   char buf[16];
+   int now = GetTicCount();
+   int elapsed;
+   int text_w;
+   int x;
+   int y;
+
+   if (fps_last_tic < 0)
+      fps_last_tic = now;
+
+   fps_frames++;
+   elapsed = now - fps_last_tic;
+   if (elapsed >= VBLCOUNTER)
+   {
+      if (elapsed > 0)
+         fps_value = (fps_frames * VBLCOUNTER + (elapsed >> 1)) / elapsed;
+      else
+         fps_value = 0;
+      fps_frames = 0;
+      fps_last_tic = now;
+   }
+
+   if (fps_value > 999)
+      fps_value = 999;
+   sprintf(buf, "FPS:%d", fps_value);
+
+   text_w = (int)strlen(buf) * 4;
+   x = iGLOBAL_SCREENWIDTH - text_w - 2;
+   y = iGLOBAL_SCREENHEIGHT - 7;
+   if (x < 0)
+      x = 0;
+   if (y < 0)
+      y = 0;
+
+   atari_fill_rect(x, y, text_w + 2, 7, atari_overlay_bg_color);
+   atari_draw_text(x + 1, y + 1, buf, atari_overlay_text_color);
+}
+#endif
+
+static void atari_draw_dsl_stats(void)
+{
+   int calls = 0, misses = 0;
+   DSL_GetDebugStats(&calls, &misses);
+   atari_draw_char(2, 2, 'C', atari_overlay_text_color);
+   atari_draw_char(6, 2, ':', atari_overlay_text_color);
+   atari_draw_number(10, 2, calls, atari_overlay_text_color);
+   atari_draw_char(2, 10, 'M', atari_overlay_text_color);
+   atari_draw_char(6, 10, ':', atari_overlay_text_color);
+   atari_draw_number(10, 10, misses, atari_overlay_text_color);
+}
+
+void GraphicsMode(void)
+{
+   atari_dbg("ATARI: GraphicsMode start\r\n");
+   atari_dbg("ATARI: GraphicsMode fast_mode\r\n");
+   atari_set_fast_mode();
+   atari_dbg("ATARI: GraphicsMode Getrez\r\n");
+   atari_prev_rez = Getrez();
+   atari_dbg("ATARI: GraphicsMode Setscreen\r\n");
+   if (atari_prev_rez != 0)
+      Setscreen((void *)-1, (void *)-1, 0);
+   atari_set_blitter_mode();
+   TurnOffTextCursor();
+
+   atari_dbg("ATARI: GraphicsMode memset\r\n");
+   memset(screenpixels, 0, sizeof(screenpixels));
+   atari_dbg("ATARI: GraphicsMode c2p_init\r\n");
+   atari_c2p_init();
+   atari_c2p_set_fast_mode(0);
+   atari_dbg("ATARI: GraphicsMode input_init\r\n");
+   atari_input_init();
+   graphicsmode = true;
+   atari_dbg("ATARI: GraphicsMode done\r\n");
+}
+
+void SetTextMode(void)
+{
+   atari_input_shutdown();
+   atari_c2p_shutdown();
+   atari_restore_blitter_mode();
+   if (atari_prev_rez >= 0 && atari_prev_rez != 0)
+      Setscreen((void *)-1, (void *)-1, atari_prev_rez);
+   graphicsmode = false;
+}
+
+void TurnOffTextCursor(void)
+{
+#if PLATFORM_ATARI
+   Cconws("\33H\33f");
+#endif
+}
+
+void WaitVBL(void)
+{
+   Vsync();
+}
+
+void I_SetPalette(byte *palette)
+{
+   int i;
+   int best_luma = -1;
+   int worst_luma = 1 << 30;
+   unsigned char best_idx = 255;
+   unsigned char worst_idx = 0;
+
+   for (i = 0; i < 256; ++i)
+   {
+      int r = palette[i * 3 + 0];
+      int g = palette[i * 3 + 1];
+      int b = palette[i * 3 + 2];
+      int luma = r * 3 + g * 6 + b;
+      if (luma > best_luma)
+      {
+         best_luma = luma;
+         best_idx = (unsigned char)i;
+      }
+      if (luma < worst_luma)
+      {
+         worst_luma = luma;
+         worst_idx = (unsigned char)i;
+      }
+   }
+
+   atari_overlay_text_color = best_idx;
+   atari_overlay_bg_color = worst_idx;
+   atari_c2p_set_palette((const unsigned char *)palette);
+}
+
+void I_ShutdownGraphics(void)
+{
+   SetTextMode();
+}
+
+void I_FinishUpdate(void)
+{
+   int zoom = 1;
+   int center_x = 160;
+   int center_y = 100;
+   int view_x = 0;
+   int view_y = 0;
+   int view_w = 320;
+   int view_h = 200;
+   int protect_top = 0;
+   int protect_bottom = 0;
+   DSL_Service();
+   if (dsl_debug_overlay)
+      atari_draw_dsl_stats();
+#if PLATFORM_ATARI
+   if (!ATARI_RenderAllowed())
+      return;
+#if ATARI_SHOW_FPS
+   atari_draw_fps_overlay();
+#endif
+#ifndef ATARI_C2P_VIEW_ZOOM
+#define ATARI_C2P_VIEW_ZOOM 1
+#endif
+#if ATARI_C2P_VIEW_ZOOM
+   if (controlupdatestarted == 1 &&
+       (playstate == ex_stillplaying || playstate == ex_demoplayback) &&
+       viewwidth > 0 && viewheight > 0)
+   {
+      int screen_y = screenofs / iGLOBAL_SCREENWIDTH;
+      int screen_x = screenofs - (screen_y * iGLOBAL_SCREENWIDTH);
+
+      view_x = screen_x;
+      view_y = screen_y;
+      view_w = viewwidth;
+      view_h = viewheight;
+
+      if (viewwidth <= 80)
+         zoom = 4;
+      else if (viewwidth <= 160)
+         zoom = 2;
+
+      if (SHOW_TOP_STATUS_BAR())
+         protect_top = 16;
+      if (SHOW_BOTTOM_STATUS_BAR())
+         protect_bottom = 16;
+
+      if (zoom > 1)
+      {
+         center_x = view_x + (view_w >> 1);
+         center_y = view_y + (view_h >> 1);
+      }
+   }
+#endif
+#endif
+   atari_c2p_screen((unsigned char *)Physbase(), screenpixels, zoom, center_x, center_y,
+                    view_x, view_y, view_w, view_h, protect_top, protect_bottom);
+#if PLATFORM_ATARI
+   ATARI_EndRenderFrame();
+#endif
+}
+
+void VH_UpdateScreen(void)
+{
+   I_FinishUpdate();
+}
+
+void XFlipPage(void)
+{
+   I_FinishUpdate();
+}
+
+void VL_ClearBuffer(byte *buf, byte color)
+{
+   memset((byte *)buf, color, screensize);
+}
+
+void VL_ClearVideo(byte color)
+{
+   memset(screenpixels, color, iGLOBAL_SCREENWIDTH * iGLOBAL_SCREENHEIGHT);
+}
+
+void VL_DePlaneVGA(void)
+{
+}
+
+void VL_SetVGAPlaneMode(void)
+{
+   int i, offset;
+
+   atari_dbg("ATARI: VL_SetVGAPlaneMode start\r\n");
+   GraphicsMode();
+   atari_dbg("ATARI: VL_SetVGAPlaneMode after GraphicsMode\r\n");
+
+   linewidth = iGLOBAL_SCREENWIDTH;
+   offset = 0;
+   for (i = 0; i < iGLOBAL_SCREENHEIGHT; ++i)
+   {
+      ylookup[i] = offset;
+      offset += linewidth;
+   }
+
+   screensize = iGLOBAL_SCREENHEIGHT * iGLOBAL_SCREENWIDTH;
+   page1start = screenpixels;
+   page2start = screenpixels;
+   page3start = screenpixels;
+   displayofs = page1start;
+   bufferofs = page2start;
+
+   iG_X_center = iGLOBAL_SCREENWIDTH / 2;
+   iG_Y_center = (iGLOBAL_SCREENHEIGHT / 2) + 10;
+
+   iG_buf_center = bufferofs + (screensize / 2);
+   bufofsTopLimit = bufferofs + screensize - iGLOBAL_SCREENWIDTH;
+   bufofsBottomLimit = bufferofs + iGLOBAL_SCREENWIDTH;
+
+   atari_dbg("ATARI: VL_SetVGAPlaneMode before XFlipPage\r\n");
+   XFlipPage();
+   atari_dbg("ATARI: VL_SetVGAPlaneMode done\r\n");
+}
+
+void VL_CopyPlanarPage(byte *src, byte *dest)
+{
+   memcpy(dest, src, screensize);
+}
+
+void VL_CopyPlanarPageToMemory(byte *src, byte *dest)
+{
+   memcpy(dest, src, screensize);
+}
+
+void VL_CopyBufferToAll(byte *buffer)
+{
+   if (buffer != page1start)
+      memcpy(page1start, buffer, screensize);
+   if (page2start != page1start && buffer != page2start)
+      memcpy(page2start, buffer, screensize);
+   if (page3start != page1start && page3start != page2start && buffer != page3start)
+      memcpy(page3start, buffer, screensize);
+}
+
+void VL_CopyDisplayToHidden(void)
+{
+   VL_CopyBufferToAll(displayofs);
+}
+
+static void *atari_old_interrupt_handler = NULL;
+
+#define ACIA_RX_OVERRUN (1 << 5)
+#define ACIA_RX_DATA (1 << 0)
+static volatile unsigned char *atari_pAciaCtrl = (void *)0xfffc00;
+static volatile unsigned char *atari_pAciaData = (void *)0xfffc02;
+static volatile unsigned char *atari_pMfpIsrb = (void *)0xfffa11;
+
+static unsigned char atari_input_buffer[256];
+static unsigned char *atari_next_read = atari_input_buffer;
+static unsigned char *atari_next_write = atari_input_buffer;
+static int atari_pending_keyup = -1;
+static int atari_pending_keyup_delay = 0;
+
+static int atari_input_buffer_full(void)
+{
+   unsigned char *p = atari_next_write + 1;
+   if (p == atari_input_buffer + sizeof(atari_input_buffer))
+      p = atari_input_buffer;
+   return p == atari_next_read;
+}
+
+static int atari_input_buffer_empty(void)
+{
+   return atari_next_read == atari_next_write;
+}
+
+__attribute__((interrupt)) static void atari_keyboard_interrupt(void)
+{
+   unsigned char aciaCtrl = *atari_pAciaCtrl;
+   if (aciaCtrl & ACIA_RX_OVERRUN)
+   {
+      *atari_pAciaData;
+   }
+   else
+   {
+      while (aciaCtrl & ACIA_RX_DATA)
+      {
+         if (atari_input_buffer_full())
+            break;
+         *atari_next_write++ = *atari_pAciaData;
+         if (atari_next_write == atari_input_buffer + sizeof(atari_input_buffer))
+            atari_next_write = atari_input_buffer;
+         aciaCtrl = *atari_pAciaCtrl;
+      }
+   }
+   *atari_pMfpIsrb &= ~(1 << 6);
+}
+
+static int atari_can_read_bytes(size_t num)
+{
+   if (num > sizeof(atari_input_buffer))
+      return 0;
+   unsigned char *p = atari_next_read;
+   while (p != atari_next_write)
+   {
+      if (--num == 0)
+         return 1;
+      if (++p == atari_input_buffer + sizeof(atari_input_buffer))
+         p = atari_input_buffer;
+   }
+   return 0;
+}
+
+static int atari_read_byte(void)
+{
+   int data = *atari_next_read++;
+   if (atari_next_read == atari_input_buffer + sizeof(atari_input_buffer))
+      atari_next_read = atari_input_buffer;
+   return data;
+}
+
+static int atari_peek_byte(void)
+{
+   return *atari_next_read;
+}
+
+static int atari_translate_scancode(int code)
+{
+   if (code == 0x61)
+      return sc_F12; // Undo
+   if (code == 0x62)
+      return sc_F11; // Help
+   return code & 0x7f;
+}
+
+static void atari_enqueue_key(unsigned char data)
+{
+   unsigned char k;
+   int next_tail;
+
+   if (data & 0x80)
+   {
+      k = (unsigned char)atari_translate_scancode(data & 0x7f) | 0x80;
+      Keystate[k & 0x7f] = 0;
+   }
+   else
+   {
+      k = (unsigned char)atari_translate_scancode(data & 0x7f);
+      if (k == sc_F11)
+      {
+         dsl_debug_overlay = !dsl_debug_overlay;
+         return;
+      }
+      Keystate[k] = 1;
+      LastScan = k;
+   }
+
+   next_tail = (Keytail + 1) & (KEYQMAX - 1);
+   if (next_tail == Keyhead)
+      Keyhead = (Keyhead + 1) & (KEYQMAX - 1);
+   KeyboardQueue[Keytail] = k;
+   Keytail = next_tail;
+}
+
+static void atari_input_init(void)
+{
+   atari_dbg("ATARI: input_init start\r\n");
+   if (!ATARI_ENABLE_KBDINT)
+   {
+      atari_dbg("ATARI: input_init disabled\r\n");
+      return;
+   }
+   atari_next_read = atari_input_buffer;
+   atari_next_write = atari_input_buffer;
+   if (!atari_old_interrupt_handler)
+   {
+      long old = Super(0);
+      atari_old_interrupt_handler = *(void **)0x118;
+      Super(old);
+      atari_super_set_vector((void **)0x118, atari_keyboard_interrupt);
+   }
+   atari_dbg("ATARI: input_init done\r\n");
+}
+
+static void atari_input_shutdown(void)
+{
+   if (!ATARI_ENABLE_KBDINT)
+      return;
+   if (atari_old_interrupt_handler)
+   {
+      atari_super_set_vector((void **)0x118, atari_old_interrupt_handler);
+      atari_old_interrupt_handler = NULL;
+   }
+}
+
+void doEvents(void)
+{
+   if (atari_pending_keyup >= 0)
+   {
+      if (atari_pending_keyup_delay > 0)
+      {
+         atari_pending_keyup_delay--;
+      }
+      else if (atari_input_buffer_empty())
+      {
+         atari_enqueue_key((unsigned char)(atari_pending_keyup | 0x80));
+         atari_pending_keyup = -1;
+      }
+   }
+
+   while (!atari_input_buffer_empty())
+   {
+      unsigned char data = (unsigned char)atari_peek_byte();
+
+      if (data >= 0xf8 && data <= 0xfb)
+      {
+         if (!atari_can_read_bytes(3))
+            break;
+         atari_read_byte();
+         {
+            signed char dx = (signed char)atari_read_byte();
+            signed char dy = (signed char)atari_read_byte();
+            word buttons = 0;
+            if (data & 0x01)
+               buttons |= 1; /* left */
+            if (data & 0x02)
+               buttons |= 4; /* right */
+            mb = buttons;
+            mx += dx;
+            my += dy;
+         }
+         continue;
+      }
+      else if (data == 0xf6)
+      {
+         if (!atari_can_read_bytes(8))
+            break;
+         atari_read_byte();
+         {
+            int i;
+            for (i = 0; i < 7; ++i)
+               atari_read_byte();
+         }
+         continue;
+      }
+      else if (data == 0xfc)
+      {
+         if (!atari_can_read_bytes(7))
+            break;
+         atari_read_byte();
+         {
+            int i;
+            for (i = 0; i < 6; ++i)
+               atari_read_byte();
+         }
+         continue;
+      }
+      else if (data == 0xfd)
+      {
+         if (!atari_can_read_bytes(3))
+            break;
+         atari_read_byte();
+         {
+            unsigned char joy0 = (unsigned char)atari_read_byte();
+            unsigned char joy1 = (unsigned char)atari_read_byte();
+            (void)joy1;
+            atari_joy_buttons = (joy0 & 0x10) ? 1 : 0;
+            Joy_x = 32768;
+            Joy_y = 32768;
+            if (joy0 & 0x04)
+               Joy_x = 0; /* left */
+            if (joy0 & 0x08)
+               Joy_x = 65535; /* right */
+            if (joy0 & 0x01)
+               Joy_y = 0; /* up */
+            if (joy0 & 0x02)
+               Joy_y = 65535; /* down */
+         }
+         continue;
+      }
+      else if (data >= 0xfe)
+      {
+         if (!atari_can_read_bytes(2))
+            break;
+         atari_read_byte();
+         atari_read_byte();
+         continue;
+      }
+
+      atari_read_byte();
+      atari_enqueue_key(data);
+   }
+
+   if (atari_input_buffer_empty())
+   {
+      if (atari_pending_keyup < 0 && Cconis())
+      {
+         long v = Cconin();
+         unsigned char scan = (unsigned char)((v >> 16) & 0xff);
+         unsigned char ascii = (unsigned char)(v & 0xff);
+         if (scan == 0)
+         {
+            if (ascii == 0x1b)
+               scan = sc_Escape;
+            else if (ascii == 0x0d)
+               scan = sc_Return;
+            else if (ascii == 0x20)
+               scan = sc_Space;
+         }
+         if (scan != 0)
+         {
+            atari_enqueue_key(scan);
+            atari_pending_keyup = scan;
+            atari_pending_keyup_delay = 8;
+         }
+      }
+   }
+}
+
+#else
+
 #include <dos/dos.h>
 #include <graphics/gfx.h>
 #include <graphics/gfxbase.h>
@@ -48,16 +943,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <proto/keymap.h>
 #include <proto/lowlevel.h>
 
-#include <clib/commodities_protos.h> 
-#include <cybergraphx/cybergraphics.h> 
+#include <clib/commodities_protos.h>
+#include <cybergraphx/cybergraphics.h>
 #include <proto/cybergraphics.h>
- 
- 
+
 #include <stdlib.h>
 #include <sys/stat.h>
 
 #include "modexlib.h"
-//MED
+// MED
 #include "memcheck.h"
 
 #include "rt_net.h" // for GamePaused
@@ -71,56 +965,175 @@ static unsigned int scancodes[SDLK_LAST];
 // GLOBAL VARIABLES
 
 // Palette translation for Indivision GFX
-static byte ptranslate[128]=
-{
-	0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,
-	0x70,0x71,0x72,0x73,0x74,0x75,0x76,0x77,0x78,0x79,0x7a,0x7b,0x7c,0x7d,0x7e,0x7f,
-	0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x28,0x29,0x2a,0x2b,0x2c,0x2d,0x2e,0x2f, 
-	0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f,
-	0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48,0x49,0x4a,0x4b,0x4c,0x4d,0x4e,0x4f,
-	0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x3a,0x3b,0x3c,0x3d,0x3e,0x3f,
-	0x60,0x61,0x62,0x63,0x64,0x65,0x66,0x67,0x68,0x69,0x6a,0x6b,0x6c,0x6d,0x6e,0x6f,
-	0x50,0x51,0x52,0x53,0x54,0x55,0x56,0x57,0x58,0x59,0x5a,0x5b,0x5c,0x5d,0x5e,0x5f,
+static byte ptranslate[128] =
+    {
+        0x00,
+        0x01,
+        0x02,
+        0x03,
+        0x04,
+        0x05,
+        0x06,
+        0x07,
+        0x08,
+        0x09,
+        0x0a,
+        0x0b,
+        0x0c,
+        0x0d,
+        0x0e,
+        0x0f,
+        0x70,
+        0x71,
+        0x72,
+        0x73,
+        0x74,
+        0x75,
+        0x76,
+        0x77,
+        0x78,
+        0x79,
+        0x7a,
+        0x7b,
+        0x7c,
+        0x7d,
+        0x7e,
+        0x7f,
+        0x20,
+        0x21,
+        0x22,
+        0x23,
+        0x24,
+        0x25,
+        0x26,
+        0x27,
+        0x28,
+        0x29,
+        0x2a,
+        0x2b,
+        0x2c,
+        0x2d,
+        0x2e,
+        0x2f,
+        0x10,
+        0x11,
+        0x12,
+        0x13,
+        0x14,
+        0x15,
+        0x16,
+        0x17,
+        0x18,
+        0x19,
+        0x1a,
+        0x1b,
+        0x1c,
+        0x1d,
+        0x1e,
+        0x1f,
+        0x40,
+        0x41,
+        0x42,
+        0x43,
+        0x44,
+        0x45,
+        0x46,
+        0x47,
+        0x48,
+        0x49,
+        0x4a,
+        0x4b,
+        0x4c,
+        0x4d,
+        0x4e,
+        0x4f,
+        0x30,
+        0x31,
+        0x32,
+        0x33,
+        0x34,
+        0x35,
+        0x36,
+        0x37,
+        0x38,
+        0x39,
+        0x3a,
+        0x3b,
+        0x3c,
+        0x3d,
+        0x3e,
+        0x3f,
+        0x60,
+        0x61,
+        0x62,
+        0x63,
+        0x64,
+        0x65,
+        0x66,
+        0x67,
+        0x68,
+        0x69,
+        0x6a,
+        0x6b,
+        0x6c,
+        0x6d,
+        0x6e,
+        0x6f,
+        0x50,
+        0x51,
+        0x52,
+        0x53,
+        0x54,
+        0x55,
+        0x56,
+        0x57,
+        0x58,
+        0x59,
+        0x5a,
+        0x5b,
+        0x5c,
+        0x5d,
+        0x5e,
+        0x5f,
 };
-int  video_indigfx = 0;            // Indivision GFX mode
+int video_indigfx = 0; // Indivision GFX mode
 
 static struct ScreenModeRequester *video_smr = NULL;
- 
+
 static struct Window *video_window = NULL;
 static struct BitMap video_bitmap[3] = {
-  {0, 0, 0, 0, 0, {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL}},
-  {0, 0, 0, 0, 0, {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL}},
-  {0, 0, 0, 0, 0, {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL}}
-};
-static PLANEPTR video_raster[3] = {NULL, NULL, NULL};    /* contiguous bitplanes */
-static UBYTE *video_compare_buffer[3] = {NULL, NULL, NULL};    /* in fastmem */
+    {0, 0, 0, 0, 0, {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL}},
+    {0, 0, 0, 0, 0, {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL}},
+    {0, 0, 0, 0, 0, {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL}}};
+static PLANEPTR video_raster[3] = {NULL, NULL, NULL};       /* contiguous bitplanes */
+static UBYTE *video_compare_buffer[3] = {NULL, NULL, NULL}; /* in fastmem */
 static struct RastPort video_rastport[3];
 static struct ScreenBuffer *video_sb[2] = {NULL, NULL};
 static struct DBufInfo *video_db = NULL;
 static struct MsgPort *video_mp = NULL;
 
-boolean StretchScreen=0;//bná++
+boolean StretchScreen = 0; // bnï¿½++
 extern boolean iG_aimCross;
 extern boolean sdl_fullscreen;
 extern int iG_X_center;
 extern int iG_Y_center;
-char 	   *iG_buf_center;
+char *iG_buf_center;
 extern int cpu_type;
-  
-int    linewidth;
-//int    ylookup[MAXSCREENHEIGHT];
-int    ylookup[600];//just set to max res
-byte  *page1start;
-byte  *page2start;
-byte  *page3start;
-int    screensize;
-byte  *bufferofs;
-byte  *displayofs;
-boolean graphicsmode=false;
-char        *bufofsTopLimit;
-char        *bufofsBottomLimit;
 
-void VH_UpdateScreen (void);
+int linewidth;
+// int    ylookup[MAXSCREENHEIGHT];
+int ylookup[600]; // just set to max res
+byte *page1start;
+byte *page2start;
+byte *page3start;
+int screensize;
+byte *bufferofs;
+byte *displayofs;
+boolean graphicsmode = false;
+char *bufofsTopLimit;
+char *bufofsBottomLimit;
+
+void VH_UpdateScreen(void);
 #define REG(xn, parm) parm __asm(#xn)
 #define REGARGS __regargs
 #define STDARGS __stdargs
@@ -129,65 +1142,60 @@ void VH_UpdateScreen (void);
 #define FAR
 #define CHIP
 #define INLINE __inline__
- 
+
 void REGARGS indivision_core(
-REG( a0, ULONG indivisioncpldbase),
-REG( d2, UWORD coreadd)
-);
+    REG(a0, ULONG indivisioncpldbase),
+    REG(d2, UWORD coreadd));
 
 void REGARGS indivision_waitconfigdone(
-REG( a0, ULONG indivisioncpldbase)
-);
+    REG(a0, ULONG indivisioncpldbase));
 
 ULONG REGARGS indivision_checkcore(
-REG(a0, ULONG indivisionfpgabase),
-REG(d1, UWORD coreid)
-);
+    REG(a0, ULONG indivisionfpgabase),
+    REG(d1, UWORD coreid));
 
 void REGARGS indivision_initscreen(
-REG(a0, ULONG indivisionfpgabase),
-REG(d0, UBYTE screenmode)
-);
+    REG(a0, ULONG indivisionfpgabase),
+    REG(d0, UBYTE screenmode));
 
-void REGARGS  indivision_gfxcopy (
-REG(a0, ULONG indivisionfpgabase),
-REG(a2, UBYTE *chunky_data),
-REG(a3, long *palette_data),
-REG(d0, ULONG gfxaddr),
-REG(d1, ULONG size)
-);
-                                
+void REGARGS indivision_gfxcopy(
+    REG(a0, ULONG indivisionfpgabase),
+    REG(a2, UBYTE *chunky_data),
+    REG(a3, long *palette_data),
+    REG(d0, ULONG gfxaddr),
+    REG(d1, ULONG size));
+
 extern void REGARGS c2p1x1_8_c5_bm_040(
-REG(d0, UWORD chunky_x),
-REG(d1, UWORD chunky_y),
-REG(d2, UWORD offset_x),
-REG(d3, UWORD offset_y),
-REG(a0, UBYTE *chunky_buffer),
-REG(a1, struct BitMap *bitmap));
+    REG(d0, UWORD chunky_x),
+    REG(d1, UWORD chunky_y),
+    REG(d2, UWORD offset_x),
+    REG(d3, UWORD offset_y),
+    REG(a0, UBYTE *chunky_buffer),
+    REG(a1, struct BitMap *bitmap));
 
 extern void REGARGS c2p1x1_6_c5_bm_040(
-REG(d0, UWORD chunky_x),
-REG(d1, UWORD chunky_y),
-REG(d2, UWORD offset_x),
-REG(d3, UWORD offset_y),
-REG(a0, UBYTE *chunky_buffer),
-REG(a1, struct BitMap *bitmap));
+    REG(d0, UWORD chunky_x),
+    REG(d1, UWORD chunky_y),
+    REG(d2, UWORD offset_x),
+    REG(d3, UWORD offset_y),
+    REG(a0, UBYTE *chunky_buffer),
+    REG(a1, struct BitMap *bitmap));
 
 extern void REGARGS c2p1x1_8_c5_bm(
-REG(d0, UWORD chunky_x),
-REG(d1, UWORD chunky_y),
-REG(d2, UWORD offset_x),
-REG(d3, UWORD offset_y),
-REG(a0, UBYTE *chunky_buffer),
-REG(a1, struct BitMap *bitmap));
+    REG(d0, UWORD chunky_x),
+    REG(d1, UWORD chunky_y),
+    REG(d2, UWORD offset_x),
+    REG(d3, UWORD offset_y),
+    REG(a0, UBYTE *chunky_buffer),
+    REG(a1, struct BitMap *bitmap));
 
 extern void REGARGS c2p1x1_6_c5_bm(
-REG(d0, UWORD chunky_x),
-REG(d1, UWORD chunky_y),
-REG(d2, UWORD offset_x),
-REG(d3, UWORD offset_y),
-REG(a0, UBYTE *chunky_buffer),
-REG(a1, struct BitMap *bitmap));
+    REG(d0, UWORD chunky_x),
+    REG(d1, UWORD chunky_y),
+    REG(d2, UWORD offset_x),
+    REG(d3, UWORD offset_y),
+    REG(a0, UBYTE *chunky_buffer),
+    REG(a1, struct BitMap *bitmap));
 
 #include "amiga_mmu.h"
 
@@ -197,41 +1205,38 @@ extern void mmu_stuff2_cleanup(void);
 int mmu_chunky = 0;
 int mmu_active = 0;
 
- 
-void DrawCenterAim ();
-
+void DrawCenterAim();
 
 static UWORD emptypointer[] = {
-  0x0000, 0x0000,    /* reserved, must be NULL */
-  0x0000, 0x0000,     /* 1 row of image data */
-  0x0000, 0x0000    /* reserved, must be NULL */
+    0x0000, 0x0000, /* reserved, must be NULL */
+    0x0000, 0x0000, /* 1 row of image data */
+    0x0000, 0x0000  /* reserved, must be NULL */
 };
- 
+
 enum videoMode
 {
-    VideoModeAGA,
-    VideoModeEHB,
-    VideoModeRTG,
-    VideoModeINDIVISION
+   VideoModeAGA,
+   VideoModeEHB,
+   VideoModeRTG,
+   VideoModeINDIVISION
 };
- 
+
 enum videoMode vidMode = VideoModeAGA;
 
 // RTG Stuff
 
 struct Library *CyberGfxBase = NULL;
 static APTR video_bitmap_handle = NULL;
- 
 
 #ifdef DOS
- 
+
 #else
- 
+
 #ifndef STUB_FUNCTION
 
 /* rt_def.h isn't included, so I just put this here... */
 #if !defined(ANSIESC)
-#define STUB_FUNCTION fprintf(stderr,"STUB: %s at " __FILE__ ", line %d, thread %d\n",__FUNCTION__,__LINE__,getpid())
+#define STUB_FUNCTION fprintf(stderr, "STUB: %s at " __FILE__ ", line %d, thread %d\n", __FUNCTION__, __LINE__, getpid())
 #else
 #define STUB_FUNCTION
 #endif
@@ -249,11 +1254,11 @@ static APTR video_bitmap_handle = NULL;
 int usegamma = 0;
 byte *I_VideoBuffer = NULL;
 boolean screensaver_mode = false;
-static UBYTE __attribute__ ((aligned (4))) screenpixels[320*200];
+static UBYTE __attribute__((aligned(4))) screenpixels[320 * 200];
 static boolean initialized = false;
 static byte *disk_image = NULL;
 static byte *saved_background;
- 
+
 int mouse_threshold = 10;
 
 int usemouse = 1;
@@ -266,377 +1271,369 @@ struct Window *_hardwareWindow;
 struct Screen *_hardwareScreen;
 // Hardware double buffering.
 struct ScreenBuffer *_hardwareScreenBuffer[2];
-byte _currentScreenBuffer; 
+byte _currentScreenBuffer;
 signed short mx, my;
 word mb = 0;
 //
 // I_SetPalette
 //
- 
+
 static ULONG colorsAGA[770];
-static ULONG video_colourtable[1 + 3*256 + 1];
+static ULONG video_colourtable[1 + 3 * 256 + 1];
 static UBYTE video_xlate[256] = {0x00}; /* xlate 8-bit to 6-bit EHB */
- 
 
-void I_SetPalette (byte *palette)
+void I_SetPalette(byte *palette)
 {
-    int i;
-    int j = 1;
-    static UBYTE gpalette[3*256];
-  
-    switch (vidMode)
-    {
-        case VideoModeAGA:
-        case VideoModeRTG:
-            for (i=0; i<256; ++i)
-            {
-                colorsAGA[j]   = gammatable[(gammaindex<<6)+(*palette++)] << 26;
-                colorsAGA[j+1] = gammatable[(gammaindex<<6)+(*palette++)] << 26;
-                colorsAGA[j+2] = gammatable[(gammaindex<<6)+(*palette++)] << 26;
+   int i;
+   int j = 1;
+   static UBYTE gpalette[3 * 256];
 
-                j+=3;
-            }
+   switch (vidMode)
+   {
+   case VideoModeAGA:
+   case VideoModeRTG:
+      for (i = 0; i < 256; ++i)
+      {
+         colorsAGA[j] = gammatable[(gammaindex << 6) + (*palette++)] << 26;
+         colorsAGA[j + 1] = gammatable[(gammaindex << 6) + (*palette++)] << 26;
+         colorsAGA[j + 2] = gammatable[(gammaindex << 6) + (*palette++)] << 26;
 
-            colorsAGA[0]=((256)<<16) ;
-            colorsAGA[((256*3)+1)]=0x00000000;
+         j += 3;
+      }
 
-            LoadRGB32(&_hardwareScreen->ViewPort, &colorsAGA);
+      colorsAGA[0] = ((256) << 16);
+      colorsAGA[((256 * 3) + 1)] = 0x00000000;
 
-            break;
-        case VideoModeINDIVISION:
+      LoadRGB32(&_hardwareScreen->ViewPort, &colorsAGA);
 
-        // Indivision GFX uses 15bit palette
+      break;
+   case VideoModeINDIVISION:
 
-            if (playstate != ex_stillplaying)
-            {
-		      for (i=0; i<128; i++)
-			     video_colourtable[ptranslate[i]]=
-                    ( (((UBYTE)(gammatable[palette[6*i+3]]) & 0xf8) >> 3)  << 2|
-                      (((UBYTE)(gammatable[palette[6*i+4]]) & 0xf8) << 2)  << 2|
-           			  (((UBYTE)(gammatable[palette[6*i+5]]) & 0xf8) << 7)  << 2|
-    				  (((UBYTE)(gammatable[palette[6*i+0]]) & 0xf8) << 13) << 2|
-                      (((UBYTE)(gammatable[palette[6*i+1]]) & 0xf8) << 18) << 2|
-      				  (((UBYTE)(gammatable[palette[6*i+2]]) & 0xf8) << 23) << 2);
-            }
-            break;
-        case VideoModeEHB:
+      // Indivision GFX uses 15bit palette
 
-            if (playstate != ex_stillplaying)
-            {
-                i = 3 * 256 - 1;
-                do {
-                    gpalette[i] = gammatable[palette[i]]<< 2;
-                } while (--i >= 0);
+      if (playstate != ex_stillplaying)
+      {
+         for (i = 0; i < 128; i++)
+            video_colourtable[ptranslate[i]] =
+                ((((UBYTE)(gammatable[palette[6 * i + 3]]) & 0xf8) >> 3) << 2 |
+                 (((UBYTE)(gammatable[palette[6 * i + 4]]) & 0xf8) << 2) << 2 |
+                 (((UBYTE)(gammatable[palette[6 * i + 5]]) & 0xf8) << 7) << 2 |
+                 (((UBYTE)(gammatable[palette[6 * i + 0]]) & 0xf8) << 13) << 2 |
+                 (((UBYTE)(gammatable[palette[6 * i + 1]]) & 0xf8) << 18) << 2 |
+                 (((UBYTE)(gammatable[palette[6 * i + 2]]) & 0xf8) << 23) << 2);
+      }
+      break;
+   case VideoModeEHB:
 
-                video_colourtable[0] = (32 << 16) + 0;
-                median_cut (gpalette, &video_colourtable[1], video_xlate);
-                video_colourtable[33] = 0;
+      if (playstate != ex_stillplaying)
+      {
+         i = 3 * 256 - 1;
+         do
+         {
+            gpalette[i] = gammatable[palette[i]] << 2;
+         } while (--i >= 0);
 
-                LoadRGB32(&_hardwareScreen->ViewPort, &video_colourtable);
+         video_colourtable[0] = (32 << 16) + 0;
+         median_cut(gpalette, &video_colourtable[1], video_xlate);
+         video_colourtable[33] = 0;
 
-            }
+         LoadRGB32(&_hardwareScreen->ViewPort, &video_colourtable);
+      }
 
-            break;
-
-    }
+      break;
+   }
 }
- 
-
 
 void I_ShutdownGraphics(void)
 {
-    int config_done = 0;
-    int i = 0;
-    
-   if (_hardwareWindow) {
-        ClearPointer(_hardwareWindow);
-        CloseWindow(_hardwareWindow);
-        _hardwareWindow = NULL;
-    }
- 
-    if (_hardwareScreenBuffer[0]) { 
-        WaitBlit();
-        FreeScreenBuffer(_hardwareScreen, _hardwareScreenBuffer[0]);
-    }
+   int config_done = 0;
+   int i = 0;
 
-    if (_hardwareScreenBuffer[1]) { 
-        WaitBlit();
-        FreeScreenBuffer(_hardwareScreen, _hardwareScreenBuffer[1]);
-    }
+   if (_hardwareWindow)
+   {
+      ClearPointer(_hardwareWindow);
+      CloseWindow(_hardwareWindow);
+      _hardwareWindow = NULL;
+   }
 
-    if (_hardwareScreen) { 
-        CloseScreen(_hardwareScreen);
-        _hardwareScreen = NULL;
-    }    
-    
-    if (mmu_active)
-    {
-        WaitBlit();
-		mmu_mark(screenpixels,(320 * 200 + 4095) & (~0xFFF),mmu_chunky,SysBase);
-		mmu_active = 0;
-    }    
-    
-    if (vidMode ==  VideoModeINDIVISION )
-    {
-		config_done = 0;
+   if (_hardwareScreenBuffer[0])
+   {
+      WaitBlit();
+      FreeScreenBuffer(_hardwareScreen, _hardwareScreenBuffer[0]);
+   }
 
-		while (config_done==0)
-		{
-			indivision_core(0xdff1f0,0x0c00);
-			i = TimeDelay(UNIT_VBLANK,1,0);
-			indivision_waitconfigdone(0xdff1f0);
-			if (indivision_checkcore(0xdff0ac,0x1000)!=0)
-				config_done = 1;	
-		}
-		i = TimeDelay(UNIT_VBLANK,1,0);
-		
-          for (i = 0; i < 3; i++) {
-            if (video_raster[i] != NULL) {
-              FreeRaster (video_raster[i], 320,  200);
-              video_raster[i] = NULL;
-          }
-        }
-  		
-    }    
-        
- 
-    if (CyberGfxBase)
-    {
-        CloseLibrary(CyberGfxBase);
-        CyberGfxBase = NULL;
-    }
+   if (_hardwareScreenBuffer[1])
+   {
+      WaitBlit();
+      FreeScreenBuffer(_hardwareScreen, _hardwareScreenBuffer[1]);
+   }
+
+   if (_hardwareScreen)
+   {
+      CloseScreen(_hardwareScreen);
+      _hardwareScreen = NULL;
+   }
+
+   if (mmu_active)
+   {
+      WaitBlit();
+      mmu_mark(screenpixels, (320 * 200 + 4095) & (~0xFFF), mmu_chunky, SysBase);
+      mmu_active = 0;
+   }
+
+   if (vidMode == VideoModeINDIVISION)
+   {
+      config_done = 0;
+
+      while (config_done == 0)
+      {
+         indivision_core(0xdff1f0, 0x0c00);
+         i = TimeDelay(UNIT_VBLANK, 1, 0);
+         indivision_waitconfigdone(0xdff1f0);
+         if (indivision_checkcore(0xdff0ac, 0x1000) != 0)
+            config_done = 1;
+      }
+      i = TimeDelay(UNIT_VBLANK, 1, 0);
+
+      for (i = 0; i < 3; i++)
+      {
+         if (video_raster[i] != NULL)
+         {
+            FreeRaster(video_raster[i], 320, 200);
+            video_raster[i] = NULL;
+         }
+      }
+   }
+
+   if (CyberGfxBase)
+   {
+      CloseLibrary(CyberGfxBase);
+      CyberGfxBase = NULL;
+   }
 }
 
+void GraphicsMode(void)
+{
+   char titlebuffer[256];
+   static int firsttime = 1;
+   uint i = 0;
+   ULONG modeId = INVALID_ID;
+   UBYTE *base_address;
+   int video_depth = 8;
+   int retries, config_done;
+   struct Rectangle rect;
 
-void GraphicsMode ( void )
-{    
-    char titlebuffer[256];
-    static int    firsttime=1;
-    uint i = 0;
-    ULONG modeId = INVALID_ID;
-    UBYTE *base_address;
-    int video_depth = 8;
-    int retries,config_done;
-    struct Rectangle rect;
-     
-    _hardwareWindow = NULL;
-    _hardwareScreenBuffer[0] = NULL;
-    _hardwareScreenBuffer[1] = NULL;
-    _currentScreenBuffer = 0;
-    _hardwareScreen = NULL;
+   _hardwareWindow = NULL;
+   _hardwareScreenBuffer[0] = NULL;
+   _hardwareScreenBuffer[1] = NULL;
+   _currentScreenBuffer = 0;
+   _hardwareScreen = NULL;
 
-    if (firsttime)
-    {
-      
-        firsttime = 0;
-       // screenpixels = (unsigned char *)malloc(320*200);
-          
-        amiga_InitKeymap();
-        
-        if (CheckParm("EHB"))
-        {
-            printf("64 Color EHB mode set \n");
-            vidMode = VideoModeEHB;
-            video_depth = 6;
-            modeId = EXTRAHALFBRITE_KEY;
-            
-            if (CheckParm("NTSC"))
-                modeId |= NTSC_MONITOR_ID;
-                 
-        }
-        else if (CheckParm("INDIVISION"))
-        {
- 
-	 
-    	printf ("Indivision GFX screen: %d x %d (8bit)\n", 320, 200);
+   if (firsttime)
+   {
 
-        /* Then, open a dummy screen with one bitplane
-           to minimize interference from chipset DMA    */
-		
-		video_depth = 1;
+      firsttime = 0;
+      // screenpixels = (unsigned char *)malloc(320*200);
 
-       	for (i = 0; i < (3); i++) 
-		{ 
-        		if ((video_raster[i] = (PLANEPTR)AllocRaster (320,
-                                             video_depth * 200)) == NULL)
-            			Error ("AllocRaster() for Indivision GFX failed");
-        	
-		    memset (video_raster[i], 0, video_depth * RASSIZE (320, 200));
-        	InitBitMap (&video_bitmap[i], video_depth, 320, 200);
-          	video_bitmap[i].Planes[0] = video_raster[i];
-        	InitRastPort (&video_rastport[i]);
-        	video_rastport[i].BitMap = &video_bitmap[i];
-        
-		    SetAPen (&video_rastport[i], 1);
-        	SetBPen (&video_rastport[i], 0);
-        	SetDrMd (&video_rastport[i], JAM2);
-         
-		}
-		
-		rect.MinX = 0;
-        rect.MinY = 0;
-        rect.MaxX = 320 - 1;
-        rect.MaxY = 200 - 1;
-     	
-		if ((_hardwareScreen = OpenScreenTags (NULL,
-            		SA_Type,        CUSTOMSCREEN | CUSTOMBITMAP,
-            		SA_DisplayID,   0x00000000,
-            		SA_DClip,       (ULONG)&rect,
-            		SA_Width,       320,
-            		SA_Height,      200,
-            		SA_Depth,       video_depth,             
-            		SA_Draggable,	FALSE,
-            		SA_AutoScroll,	FALSE,
-            		SA_Exclusive,	TRUE,
-            		SA_Quiet,	TRUE,
-            		SA_BitMap,      &video_bitmap[0], /* custom bitmap, contiguous planes */
-            		TAG_DONE,       0)) == NULL) 
-		{
-        		Error ("OpenScreen() for Indivision GFX failed");
-      		}
+      amiga_InitKeymap();
 
-        /* Indivision GFX initialization */
-        /* First, intialize Indivision GFX core */
-		
-		retries = 16;
-		config_done = 0;
+      if (CheckParm("EHB"))
+      {
+         printf("64 Color EHB mode set \n");
+         vidMode = VideoModeEHB;
+         video_depth = 6;
+         modeId = EXTRAHALFBRITE_KEY;
 
-        // Apologies for the crude way to kick Indivision ECS safely into GFX mode
+         if (CheckParm("NTSC"))
+            modeId |= NTSC_MONITOR_ID;
+      }
+      else if (CheckParm("INDIVISION"))
+      {
 
-		while ((retries > 0) && (config_done==0))
-		{
-			indivision_core(0xdff1f0,0x3c00); 		// $3c00 = Indivision GFX Core
-			
-			i = TimeDelay(UNIT_VBLANK,1,0);			// 1 second to configure FPGA	
-			
-			indivision_waitconfigdone(0xdff1f0);		// Wait for FPGA startup
-			if (indivision_checkcore(0xdff0ac,0x3000)!=0)
-				config_done = 1;
-			else
-				retries--;	
-		}
+         printf("Indivision GFX screen: %d x %d (8bit)\n", 320, 200);
 
-		if (retries == 0)
-		{
-			video_indigfx = 0;
-			Error("could not init Indivision GFX hardware\n");
-		}
+         /* Then, open a dummy screen with one bitplane
+            to minimize interference from chipset DMA    */
 
-        /* Now initialize Indivision GFX core
-           for 8 bit direct chunky graphics  */
+         video_depth = 1;
 
-		i = TimeDelay(UNIT_VBLANK,2,0);
-		indivision_initscreen(0xdff0ac,0);
-		
-		vidMode = VideoModeINDIVISION;
- 
-        }
-        else if (CheckParm("CGX"))
-        {
-            printf("RTG mode set \n");
-            vidMode = VideoModeRTG;    
-            video_depth = 8;
-            
-            CyberGfxBase = OpenLibrary ("cybergraphics.library", 0);
-        	if (CyberGfxBase == NULL) {
-		      Error("Cannot open cybergraphics.library");
-        	}            
-        	
-            if (CyberGfxBase != NULL)
-            {
-                modeId = BestCModeIDTags(CYBRBIDTG_NominalWidth, 320,
-                                         CYBRBIDTG_NominalHeight, 200,
-                                         CYBRBIDTG_Depth,video_depth,
-                                         TAG_DONE);        	
-            }
-        }
-        else
-        {
-            vidMode = VideoModeAGA;
-            printf("256 Color AGA mode set \n");
-            video_depth = 8;
-            
-            modeId = BestModeID(BIDTAG_NominalWidth, 320,
-                    BIDTAG_NominalHeight, 200,
-        	        BIDTAG_DesiredWidth, 320,
-        	        BIDTAG_DesiredHeight, 200,
-        	        BIDTAG_Depth, video_depth,
-        	        BIDTAG_MonitorID, CheckParm("NTSC") ? NTSC_MONITOR_ID : PAL_MONITOR_ID,
-        	        TAG_END);
-        }
+         for (i = 0; i < (3); i++)
+         {
+            if ((video_raster[i] = (PLANEPTR)AllocRaster(320,
+                                                         video_depth * 200)) == NULL)
+               Error("AllocRaster() for Indivision GFX failed");
 
- 
-        
-        printf("CPU : %d\n", cpu_type); 
-            
-        if (vidMode != VideoModeINDIVISION)
-        { 
-            if(modeId == INVALID_ID) {
-              Error("ERROR : Could not find a valid screen mode.\n");
-            }
-        
-            _hardwareScreen = OpenScreenTags(NULL,
-                         SA_Depth, video_depth,
-                         SA_DisplayID, modeId,
-                         SA_Width, 320,
-                         SA_Height,200,
-                         SA_Type, CUSTOMSCREEN,
-                         SA_Overscan, OSCAN_TEXT,
-                         SA_Quiet,TRUE,
-                         SA_ShowTitle, FALSE,
-                         SA_Draggable, FALSE,
-                         SA_Exclusive, TRUE,
-                         SA_AutoScroll, FALSE,
-                         TAG_END);                 
-        }
-    
-        if ((CheckParm("MMU")) && cpu_type >= 68040 && vidMode != VideoModeRTG)
-    	{
-    		mmu_chunky = mmu_mark(screenpixels,(320 * 200 + 4095) & (~0xFFF),CM_WRITETHROUGH,SysBase);
-    		mmu_active = 1;
+            memset(video_raster[i], 0, video_depth * RASSIZE(320, 200));
+            InitBitMap(&video_bitmap[i], video_depth, 320, 200);
+            video_bitmap[i].Planes[0] = video_raster[i];
+            InitRastPort(&video_rastport[i]);
+            video_rastport[i].BitMap = &video_bitmap[i];
 
-            printf("MMU Active\n", cpu_type);
-	    }        
-        
-        // Create the hardware screen.
-        
-        
-        _hardwareScreenBuffer[0] = AllocScreenBuffer(_hardwareScreen, NULL, SB_SCREEN_BITMAP);
-        _hardwareScreenBuffer[1] = AllocScreenBuffer(_hardwareScreen, NULL, 0);
- 
-        _currentScreenBuffer = 1;
-        
-        _hardwareWindow = OpenWindowTags(NULL,
-                      	    WA_Left, 0,
-                			WA_Top, 0,
-                			WA_Width, 320,
-                			WA_Height, 200,
-                			WA_Title, NULL,
-        					SA_AutoScroll, FALSE,
-                			WA_CustomScreen, (ULONG)_hardwareScreen,
-                			WA_Backdrop, TRUE,
-                			WA_Borderless, TRUE,
-                			WA_DragBar, FALSE,
-                			WA_Activate, TRUE,
-                			WA_SimpleRefresh, TRUE,
-                			WA_NoCareRefresh, TRUE,
-                			WA_ReportMouse, TRUE,
-                			WA_RMBTrap, TRUE,
-                      	    WA_IDCMP,  IDCMP_RAWKEY | IDCMP_MOUSEMOVE | IDCMP_DELTAMOVE | IDCMP_MOUSEBUTTONS,
-                      	    TAG_END);
-        
-        SetPointer (_hardwareWindow, emptypointer, 1, 16, 0, 0);
-   
- 
-        // Clear the screen to black.
-        
-        I_VideoBuffer = screenpixels;
-                
-        memset(I_VideoBuffer, 0, 320 * 200);
-        
-        initialized = true;
- 
-    } 
+            SetAPen(&video_rastport[i], 1);
+            SetBPen(&video_rastport[i], 0);
+            SetDrMd(&video_rastport[i], JAM2);
+         }
+
+         rect.MinX = 0;
+         rect.MinY = 0;
+         rect.MaxX = 320 - 1;
+         rect.MaxY = 200 - 1;
+
+         if ((_hardwareScreen = OpenScreenTags(NULL,
+                                               SA_Type, CUSTOMSCREEN | CUSTOMBITMAP,
+                                               SA_DisplayID, 0x00000000,
+                                               SA_DClip, (ULONG)&rect,
+                                               SA_Width, 320,
+                                               SA_Height, 200,
+                                               SA_Depth, video_depth,
+                                               SA_Draggable, FALSE,
+                                               SA_AutoScroll, FALSE,
+                                               SA_Exclusive, TRUE,
+                                               SA_Quiet, TRUE,
+                                               SA_BitMap, &video_bitmap[0], /* custom bitmap, contiguous planes */
+                                               TAG_DONE, 0)) == NULL)
+         {
+            Error("OpenScreen() for Indivision GFX failed");
+         }
+
+         /* Indivision GFX initialization */
+         /* First, intialize Indivision GFX core */
+
+         retries = 16;
+         config_done = 0;
+
+         // Apologies for the crude way to kick Indivision ECS safely into GFX mode
+
+         while ((retries > 0) && (config_done == 0))
+         {
+            indivision_core(0xdff1f0, 0x3c00); // $3c00 = Indivision GFX Core
+
+            i = TimeDelay(UNIT_VBLANK, 1, 0); // 1 second to configure FPGA
+
+            indivision_waitconfigdone(0xdff1f0); // Wait for FPGA startup
+            if (indivision_checkcore(0xdff0ac, 0x3000) != 0)
+               config_done = 1;
+            else
+               retries--;
+         }
+
+         if (retries == 0)
+         {
+            video_indigfx = 0;
+            Error("could not init Indivision GFX hardware\n");
+         }
+
+         /* Now initialize Indivision GFX core
+            for 8 bit direct chunky graphics  */
+
+         i = TimeDelay(UNIT_VBLANK, 2, 0);
+         indivision_initscreen(0xdff0ac, 0);
+
+         vidMode = VideoModeINDIVISION;
+      }
+      else if (CheckParm("CGX"))
+      {
+         printf("RTG mode set \n");
+         vidMode = VideoModeRTG;
+         video_depth = 8;
+
+         CyberGfxBase = OpenLibrary("cybergraphics.library", 0);
+         if (CyberGfxBase == NULL)
+         {
+            Error("Cannot open cybergraphics.library");
+         }
+
+         if (CyberGfxBase != NULL)
+         {
+            modeId = BestCModeIDTags(CYBRBIDTG_NominalWidth, 320,
+                                     CYBRBIDTG_NominalHeight, 200,
+                                     CYBRBIDTG_Depth, video_depth,
+                                     TAG_DONE);
+         }
+      }
+      else
+      {
+         vidMode = VideoModeAGA;
+         printf("256 Color AGA mode set \n");
+         video_depth = 8;
+
+         modeId = BestModeID(BIDTAG_NominalWidth, 320,
+                             BIDTAG_NominalHeight, 200,
+                             BIDTAG_DesiredWidth, 320,
+                             BIDTAG_DesiredHeight, 200,
+                             BIDTAG_Depth, video_depth,
+                             BIDTAG_MonitorID, CheckParm("NTSC") ? NTSC_MONITOR_ID : PAL_MONITOR_ID,
+                             TAG_END);
+      }
+
+      printf("CPU : %d\n", cpu_type);
+
+      if (vidMode != VideoModeINDIVISION)
+      {
+         if (modeId == INVALID_ID)
+         {
+            Error("ERROR : Could not find a valid screen mode.\n");
+         }
+
+         _hardwareScreen = OpenScreenTags(NULL,
+                                          SA_Depth, video_depth,
+                                          SA_DisplayID, modeId,
+                                          SA_Width, 320,
+                                          SA_Height, 200,
+                                          SA_Type, CUSTOMSCREEN,
+                                          SA_Overscan, OSCAN_TEXT,
+                                          SA_Quiet, TRUE,
+                                          SA_ShowTitle, FALSE,
+                                          SA_Draggable, FALSE,
+                                          SA_Exclusive, TRUE,
+                                          SA_AutoScroll, FALSE,
+                                          TAG_END);
+      }
+
+      if ((CheckParm("MMU")) && cpu_type >= 68040 && vidMode != VideoModeRTG)
+      {
+         mmu_chunky = mmu_mark(screenpixels, (320 * 200 + 4095) & (~0xFFF), CM_WRITETHROUGH, SysBase);
+         mmu_active = 1;
+
+         printf("MMU Active\n", cpu_type);
+      }
+
+      // Create the hardware screen.
+
+      _hardwareScreenBuffer[0] = AllocScreenBuffer(_hardwareScreen, NULL, SB_SCREEN_BITMAP);
+      _hardwareScreenBuffer[1] = AllocScreenBuffer(_hardwareScreen, NULL, 0);
+
+      _currentScreenBuffer = 1;
+
+      _hardwareWindow = OpenWindowTags(NULL,
+                                       WA_Left, 0,
+                                       WA_Top, 0,
+                                       WA_Width, 320,
+                                       WA_Height, 200,
+                                       WA_Title, NULL,
+                                       SA_AutoScroll, FALSE,
+                                       WA_CustomScreen, (ULONG)_hardwareScreen,
+                                       WA_Backdrop, TRUE,
+                                       WA_Borderless, TRUE,
+                                       WA_DragBar, FALSE,
+                                       WA_Activate, TRUE,
+                                       WA_SimpleRefresh, TRUE,
+                                       WA_NoCareRefresh, TRUE,
+                                       WA_ReportMouse, TRUE,
+                                       WA_RMBTrap, TRUE,
+                                       WA_IDCMP, IDCMP_RAWKEY | IDCMP_MOUSEMOVE | IDCMP_DELTAMOVE | IDCMP_MOUSEBUTTONS,
+                                       TAG_END);
+
+      SetPointer(_hardwareWindow, emptypointer, 1, 16, 0, 0);
+
+      // Clear the screen to black.
+
+      I_VideoBuffer = screenpixels;
+
+      memset(I_VideoBuffer, 0, 320 * 200);
+
+      initialized = true;
+   }
 }
 
 /*
@@ -646,9 +1643,9 @@ void GraphicsMode ( void )
 =
 ====================
 */
-void SetTextMode ( void )
+void SetTextMode(void)
 {
-    I_ShutdownGraphics();
+   I_ShutdownGraphics();
 }
 
 /*
@@ -658,7 +1655,7 @@ void SetTextMode ( void )
 =
 ====================
 */
-void TurnOffTextCursor ( void )
+void TurnOffTextCursor(void)
 {
 }
 
@@ -670,10 +1667,8 @@ void TurnOffTextCursor ( void )
 ====================
 */
 
- 
-void WaitVBL( void )
+void WaitVBL(void)
 {
- 
 }
 
 /*
@@ -684,44 +1679,44 @@ void WaitVBL( void )
 =======================
 */
 
-void VL_SetVGAPlaneMode ( void )
+void VL_SetVGAPlaneMode(void)
 {
-   int i,offset;
+   int i, offset;
 
-    GraphicsMode();
+   GraphicsMode();
 
-//
-// set up lookup tables
-//
-//bna--   linewidth = 320;
+   //
+   // set up lookup tables
+   //
+   // bna--   linewidth = 320;
    linewidth = iGLOBAL_SCREENWIDTH;
 
    offset = 0;
 
-   for (i=0;i<iGLOBAL_SCREENHEIGHT;i++)
-      {
-      ylookup[i]=offset;
+   for (i = 0; i < iGLOBAL_SCREENHEIGHT; i++)
+   {
+      ylookup[i] = offset;
       offset += linewidth;
-      }
+   }
 
-//    screensize=MAXSCREENHEIGHT*MAXSCREENWIDTH;
-    screensize=iGLOBAL_SCREENHEIGHT*iGLOBAL_SCREENWIDTH;
- 
-    page1start=screenpixels;
-    page2start=screenpixels;
-    page3start=screenpixels;
-    displayofs = page1start;
-    bufferofs = page2start;
+   //    screensize=MAXSCREENHEIGHT*MAXSCREENWIDTH;
+   screensize = iGLOBAL_SCREENHEIGHT * iGLOBAL_SCREENWIDTH;
 
-	iG_X_center = iGLOBAL_SCREENWIDTH / 2;
-	iG_Y_center = (iGLOBAL_SCREENHEIGHT / 2)+10 ;//+10 = move aim down a bit
+   page1start = screenpixels;
+   page2start = screenpixels;
+   page3start = screenpixels;
+   displayofs = page1start;
+   bufferofs = page2start;
 
-	iG_buf_center = bufferofs + (screensize/2);//(iG_Y_center*iGLOBAL_SCREENWIDTH);//+iG_X_center;
+   iG_X_center = iGLOBAL_SCREENWIDTH / 2;
+   iG_Y_center = (iGLOBAL_SCREENHEIGHT / 2) + 10; //+10 = move aim down a bit
 
-	bufofsTopLimit =  bufferofs + screensize - iGLOBAL_SCREENWIDTH;
-	bufofsBottomLimit = bufferofs + iGLOBAL_SCREENWIDTH;
- 
-    XFlipPage ();
+   iG_buf_center = bufferofs + (screensize / 2); //(iG_Y_center*iGLOBAL_SCREENWIDTH);//+iG_X_center;
+
+   bufofsTopLimit = bufferofs + screensize - iGLOBAL_SCREENWIDTH;
+   bufofsBottomLimit = bufferofs + iGLOBAL_SCREENWIDTH;
+
+   XFlipPage();
 }
 
 /*
@@ -731,11 +1726,10 @@ void VL_SetVGAPlaneMode ( void )
 =
 =======================
 */
-void VL_CopyPlanarPage ( byte * src, byte * dest )
+void VL_CopyPlanarPage(byte *src, byte *dest)
 {
- 
-    memcpy(dest,src,screensize);
- 
+
+   memcpy(dest, src, screensize);
 }
 
 /*
@@ -745,11 +1739,10 @@ void VL_CopyPlanarPage ( byte * src, byte * dest )
 =
 =======================
 */
-void VL_CopyPlanarPageToMemory ( byte * src, byte * dest )
+void VL_CopyPlanarPageToMemory(byte *src, byte *dest)
 {
- 
-      memcpy(dest,src,screensize);
- 
+
+   memcpy(dest, src, screensize);
 }
 
 /*
@@ -759,9 +1752,8 @@ void VL_CopyPlanarPageToMemory ( byte * src, byte * dest )
 =
 =======================
 */
-void VL_CopyBufferToAll ( byte *buffer )
+void VL_CopyBufferToAll(byte *buffer)
 {
- 
 }
 
 /*
@@ -771,9 +1763,9 @@ void VL_CopyBufferToAll ( byte *buffer )
 =
 =======================
 */
-void VL_CopyDisplayToHidden ( void )
+void VL_CopyDisplayToHidden(void)
 {
-   VL_CopyBufferToAll ( displayofs );
+   VL_CopyBufferToAll(displayofs);
 }
 
 /*
@@ -786,11 +1778,10 @@ void VL_CopyDisplayToHidden ( void )
 =================
 */
 
-void VL_ClearBuffer (byte *buf, byte color)
+void VL_ClearBuffer(byte *buf, byte color)
 {
- 
-  memset((byte *)buf,color,screensize);
- 
+
+   memset((byte *)buf, color, screensize);
 }
 
 /*
@@ -803,11 +1794,10 @@ void VL_ClearBuffer (byte *buf, byte color)
 =================
 */
 
-void VL_ClearVideo (byte color)
+void VL_ClearVideo(byte color)
 {
 
-  memset (screenpixels, color, iGLOBAL_SCREENWIDTH*iGLOBAL_SCREENHEIGHT);
- 
+   memset(screenpixels, color, iGLOBAL_SCREENWIDTH * iGLOBAL_SCREENHEIGHT);
 }
 
 /*
@@ -818,70 +1808,67 @@ void VL_ClearVideo (byte color)
 =================
 */
 
-void VL_DePlaneVGA (void)
+void VL_DePlaneVGA(void)
 {
 }
 
-void I_FinishUpdate (void)
+void I_FinishUpdate(void)
 {
-    int i;
-    static UBYTE pix[320*200];
-    UBYTE *base_address;
-    long width = 0;
-    long height = 0;
-    
-    if (vidMode == VideoModeAGA)
-    {
-        if (cpu_type >= 68040)
-            c2p1x1_8_c5_bm_040(320,200,0,0,screenpixels,_hardwareScreenBuffer[_currentScreenBuffer]->sb_BitMap);
-        else
-            c2p1x1_8_c5_bm(320,200,0,0,screenpixels,_hardwareScreenBuffer[_currentScreenBuffer]->sb_BitMap);
+   int i;
+   static UBYTE pix[320 * 200];
+   UBYTE *base_address;
+   long width = 0;
+   long height = 0;
 
-        ChangeScreenBuffer(_hardwareScreen, _hardwareScreenBuffer[_currentScreenBuffer]);
-        _currentScreenBuffer = _currentScreenBuffer ^ 1;
+   if (vidMode == VideoModeAGA)
+   {
+      if (cpu_type >= 68040)
+         c2p1x1_8_c5_bm_040(320, 200, 0, 0, screenpixels, _hardwareScreenBuffer[_currentScreenBuffer]->sb_BitMap);
+      else
+         c2p1x1_8_c5_bm(320, 200, 0, 0, screenpixels, _hardwareScreenBuffer[_currentScreenBuffer]->sb_BitMap);
 
-    }
-    else if (vidMode == VideoModeEHB)
-    {
-        for (  i = 0; i < (320 * 200); i++) {
-            pix[i] = video_xlate[screenpixels[i]];
-        }
+      ChangeScreenBuffer(_hardwareScreen, _hardwareScreenBuffer[_currentScreenBuffer]);
+      _currentScreenBuffer = _currentScreenBuffer ^ 1;
+   }
+   else if (vidMode == VideoModeEHB)
+   {
+      for (i = 0; i < (320 * 200); i++)
+      {
+         pix[i] = video_xlate[screenpixels[i]];
+      }
 
-        if (cpu_type >= 68040)
-            c2p1x1_6_c5_bm_040(320,200,0,0,pix,_hardwareScreenBuffer[_currentScreenBuffer]->sb_BitMap);
-        else
-            c2p1x1_6_c5_bm(320,200,0,0,pix,_hardwareScreenBuffer[_currentScreenBuffer]->sb_BitMap);
+      if (cpu_type >= 68040)
+         c2p1x1_6_c5_bm_040(320, 200, 0, 0, pix, _hardwareScreenBuffer[_currentScreenBuffer]->sb_BitMap);
+      else
+         c2p1x1_6_c5_bm(320, 200, 0, 0, pix, _hardwareScreenBuffer[_currentScreenBuffer]->sb_BitMap);
 
-
-        ChangeScreenBuffer(_hardwareScreen, _hardwareScreenBuffer[_currentScreenBuffer]);
-        _currentScreenBuffer = _currentScreenBuffer ^ 1;
-
-    }
-    else if (vidMode == VideoModeINDIVISION)
-    {
-        indivision_gfxcopy(0xdff0ac,screenpixels,(long *)&video_colourtable[0],0x0,76800);    
-    }
-    else
-    {
-        video_bitmap_handle = LockBitMapTags (_hardwareScreen->ViewPort.RasInfo->BitMap,
-                                              LBMI_BASEADDRESS, &base_address,
-                                              TAG_DONE);
-        if (video_bitmap_handle) {
-            CopyMemQuick (screenpixels, base_address, 320 * 200);
-            UnLockBitMap (video_bitmap_handle);
-            video_bitmap_handle = NULL;
-        }
-    }
- 
+      ChangeScreenBuffer(_hardwareScreen, _hardwareScreenBuffer[_currentScreenBuffer]);
+      _currentScreenBuffer = _currentScreenBuffer ^ 1;
+   }
+   else if (vidMode == VideoModeINDIVISION)
+   {
+      indivision_gfxcopy(0xdff0ac, screenpixels, (long *)&video_colourtable[0], 0x0, 76800);
+   }
+   else
+   {
+      video_bitmap_handle = LockBitMapTags(_hardwareScreen->ViewPort.RasInfo->BitMap,
+                                           LBMI_BASEADDRESS, &base_address,
+                                           TAG_DONE);
+      if (video_bitmap_handle)
+      {
+         CopyMemQuick(screenpixels, base_address, 320 * 200);
+         UnLockBitMap(video_bitmap_handle);
+         video_bitmap_handle = NULL;
+      }
+   }
 }
 /* C version of rt_vh_a.asm */
 
-void VH_UpdateScreen (void)
-{ 	
- 
-	I_FinishUpdate();
-}
+void VH_UpdateScreen(void)
+{
 
+   I_FinishUpdate();
+}
 
 /*
 =================
@@ -891,426 +1878,413 @@ void VH_UpdateScreen (void)
 =================
 */
 
-void XFlipPage ( void )
+void XFlipPage(void)
 {
- 
-    I_FinishUpdate();
- 
+
+   I_FinishUpdate();
 }
 
 #endif
 
-
 void EnableScreenStretch(void)
 {
-    StretchScreen = 0;
+   StretchScreen = 0;
 }
 
 void DisableScreenStretch(void)
 {
- 
 }
 
-
 // bna section -------------------------------------------
-static void StretchMemPicture ()
+static void StretchMemPicture()
 {
- 
 }
 
 // bna function added start
-extern	boolean ingame;
-int		iG_playerTilt;
+extern boolean ingame;
+int iG_playerTilt;
 
-void DrawCenterAim ()
+void DrawCenterAim()
 {
- 
 }
- 
+
 void amiga_InitKeymap(void)
 {
-	int i;
+   int i;
 
-	/* Map the miscellaneous keys */
-	for ( i=0; i<256; ++i )
-		MISC_keymap[i] = SDLK_UNKNOWN;
- 
-	MISC_keymap[65] = SDLK_BACKSPACE;
-	MISC_keymap[66] = SDLK_TAB;
-	MISC_keymap[70] = SDLK_CLEAR;
-	MISC_keymap[70] = SDLK_DELETE;
-	MISC_keymap[68] = SDLK_RETURN; 
-	MISC_keymap[69] = SDLK_ESCAPE;
-	MISC_keymap[70] = SDLK_DELETE;
-	
-	MISC_keymap[0x01] = SDLK_1;
-	MISC_keymap[0x02] = SDLK_2;
-	MISC_keymap[0x03] = SDLK_3;
-	MISC_keymap[0x04] = SDLK_4;
-	MISC_keymap[0x05] = SDLK_5;            	
-	MISC_keymap[0x06] = SDLK_6;            		
-	MISC_keymap[0x07] = SDLK_7;            	
-	MISC_keymap[0x08] = SDLK_8;            	
-	MISC_keymap[0x09] = SDLK_9;            	        	
-	MISC_keymap[0x0A] = SDLK_0;       
-    
-    MISC_keymap[0x40] = SDLK_SPACE;       
-    
-    MISC_keymap[0x20] = SDLK_a;             
-    MISC_keymap[0x35] = SDLK_b;      
-    MISC_keymap[0x33] = SDLK_c;      
-    MISC_keymap[0x22] = SDLK_d;      
-    MISC_keymap[0x12] = SDLK_e;      
-    MISC_keymap[0x23] = SDLK_f;      
-    MISC_keymap[0x24] = SDLK_g;      
-    MISC_keymap[0x25] = SDLK_h;      
-    MISC_keymap[0x17] = SDLK_i;      
-    MISC_keymap[0x26] = SDLK_j;      
-    MISC_keymap[0x27] = SDLK_k;      
-    MISC_keymap[0x28] = SDLK_l;      
-    MISC_keymap[0x37] = SDLK_m;      
-    MISC_keymap[0x36] = SDLK_n;      
-    MISC_keymap[0x18] = SDLK_o;      
-    MISC_keymap[0x19] = SDLK_p;      
-    MISC_keymap[0x10] = SDLK_q;      
-    MISC_keymap[0x13] = SDLK_r;   
-    MISC_keymap[0x21] = SDLK_s;
-    MISC_keymap[0x14] = SDLK_t;
-    MISC_keymap[0x16] = SDLK_u;
-    MISC_keymap[0x34] = SDLK_v;
-    MISC_keymap[0x11] = SDLK_w;
-    MISC_keymap[0x32] = SDLK_x;           
-    MISC_keymap[0x15] = SDLK_y;               
-    MISC_keymap[0x31] = SDLK_z;                   
-    
-    MISC_keymap[0x0B] = SDLK_MINUS;                   
-    MISC_keymap[0x0C] = SDLK_EQUALS;                   
-    MISC_keymap[0x1A] = SDLK_LEFTBRACKET;                   
-    MISC_keymap[0x1B] = SDLK_RIGHTBRACKET;                   
-    MISC_keymap[0x0D] = SDLK_BACKSLASH;                   
-    MISC_keymap[0x29] = SDLK_SEMICOLON;      
-                 
-    MISC_keymap[0x2A] = SDLK_BACKQUOTE;                                               
-    MISC_keymap[0x38] = SDLK_COMMA;                                               
-    MISC_keymap[0x39] = SDLK_PERIOD;                                               
-    MISC_keymap[0x3A] = SDLK_SLASH;                                                           
-      	        		
- 
-	MISC_keymap[15] = SDLK_KP0;		/* Keypad 0-9 */
-	MISC_keymap[29] = SDLK_KP1;
-	MISC_keymap[30] = SDLK_KP2;
-	MISC_keymap[31] = SDLK_KP3;
-	MISC_keymap[45] = SDLK_KP4;
-	MISC_keymap[46] = SDLK_KP5;
-	MISC_keymap[47] = SDLK_KP6;
-	MISC_keymap[61] = SDLK_KP7;
-	MISC_keymap[62] = SDLK_KP8;
-	MISC_keymap[63] = SDLK_KP9;
-	MISC_keymap[60] = SDLK_KP_PERIOD;
-	MISC_keymap[92] = SDLK_KP_DIVIDE;
-	MISC_keymap[93] = SDLK_KP_MULTIPLY;
-	MISC_keymap[74] = SDLK_KP_MINUS;
-	MISC_keymap[94] = SDLK_KP_PLUS;
-	MISC_keymap[67] = SDLK_KP_ENTER;
-//	MISC_keymap[XK_KP_Equal&0xFF] = SDLK_KP_EQUALS;
+   /* Map the miscellaneous keys */
+   for (i = 0; i < 256; ++i)
+      MISC_keymap[i] = SDLK_UNKNOWN;
 
-	MISC_keymap[76] = SDLK_UP;
-	MISC_keymap[77] = SDLK_DOWN;
-	MISC_keymap[78] = SDLK_RIGHT;
-	MISC_keymap[79] = SDLK_LEFT;
-/*
-	MISC_keymap[XK_Insert&0xFF] = SDLK_INSERT;
-	MISC_keymap[XK_Home&0xFF] = SDLK_HOME;
-	MISC_keymap[XK_End&0xFF] = SDLK_END;
-*/
-// Mappati sulle parentesi del taastierino
-	MISC_keymap[90] = SDLK_PAGEUP;
-	MISC_keymap[91] = SDLK_PAGEDOWN;
+   MISC_keymap[65] = SDLK_BACKSPACE;
+   MISC_keymap[66] = SDLK_TAB;
+   MISC_keymap[70] = SDLK_CLEAR;
+   MISC_keymap[70] = SDLK_DELETE;
+   MISC_keymap[68] = SDLK_RETURN;
+   MISC_keymap[69] = SDLK_ESCAPE;
+   MISC_keymap[70] = SDLK_DELETE;
 
-	MISC_keymap[80] = SDLK_F1;
-	MISC_keymap[81] = SDLK_F2;
-	MISC_keymap[82] = SDLK_F3;
-	MISC_keymap[83] = SDLK_F4;
-	MISC_keymap[84] = SDLK_F5;
-	MISC_keymap[85] = SDLK_F6;
-	MISC_keymap[86] = SDLK_F7;
-	MISC_keymap[87] = SDLK_F8;
-	MISC_keymap[88] = SDLK_F9;
-	MISC_keymap[89] = SDLK_F10;
-//	MISC_keymap[XK_F11&0xFF] = SDLK_F11;
-//	MISC_keymap[XK_F12&0xFF] = SDLK_F12;
-//	MISC_keymap[XK_F13&0xFF] = SDLK_F13;
-//	MISC_keymap[XK_F14&0xFF] = SDLK_F14;
-//	MISC_keymap[XK_F15&0xFF] = SDLK_F15;
+   MISC_keymap[0x01] = SDLK_1;
+   MISC_keymap[0x02] = SDLK_2;
+   MISC_keymap[0x03] = SDLK_3;
+   MISC_keymap[0x04] = SDLK_4;
+   MISC_keymap[0x05] = SDLK_5;
+   MISC_keymap[0x06] = SDLK_6;
+   MISC_keymap[0x07] = SDLK_7;
+   MISC_keymap[0x08] = SDLK_8;
+   MISC_keymap[0x09] = SDLK_9;
+   MISC_keymap[0x0A] = SDLK_0;
 
-//	MISC_keymap[XK_Num_Lock&0xFF] = SDLK_NUMLOCK;
-	MISC_keymap[98] = SDLK_CAPSLOCK;
-//	MISC_keymap[XK_Scroll_Lock&0xFF] = SDLK_SCROLLOCK;
-	MISC_keymap[97] = SDLK_RSHIFT;
-	MISC_keymap[96] = SDLK_LSHIFT;
-	MISC_keymap[99] = SDLK_LCTRL;
-	MISC_keymap[99] = SDLK_LCTRL;
-	MISC_keymap[101] = SDLK_RALT;
-	MISC_keymap[100] = SDLK_LALT;
-//	MISC_keymap[XK_Meta_R&0xFF] = SDLK_RMETA;
-//	MISC_keymap[XK_Meta_L&0xFF] = SDLK_LMETA;
-	MISC_keymap[103] = SDLK_LSUPER; /* Left "Windows" */
-	MISC_keymap[102] = SDLK_RSUPER; /* Right "Windows */
+   MISC_keymap[0x40] = SDLK_SPACE;
 
-	MISC_keymap[95] = SDLK_HELP;
-	
-	
-    memset(scancodes, '\0', sizeof (scancodes));
-    scancodes[SDLK_ESCAPE]          = sc_Escape;
-    scancodes[SDLK_1]               = sc_1;
-    scancodes[SDLK_2]               = sc_2;
-    scancodes[SDLK_3]               = sc_3;
-    scancodes[SDLK_4]               = sc_4;
-    scancodes[SDLK_5]               = sc_5;
-    scancodes[SDLK_6]               = sc_6;
-    scancodes[SDLK_7]               = sc_7;
-    scancodes[SDLK_8]               = sc_8;
-    scancodes[SDLK_9]               = sc_9;
-    scancodes[SDLK_0]               = sc_0;
-    
-    //scancodes[SDLK_EQUALS]          = 0x4E;
-    scancodes[SDLK_EQUALS]          = sc_Equals;
-    
-    scancodes[SDLK_BACKSPACE]       = sc_BackSpace;
-    scancodes[SDLK_TAB]             = sc_Tab;
-    scancodes[SDLK_q]               = sc_Q;
-    scancodes[SDLK_w]               = sc_W;
-    scancodes[SDLK_e]               = sc_E;
-    scancodes[SDLK_r]               = sc_R;
-    scancodes[SDLK_t]               = sc_T;
-    scancodes[SDLK_y]               = sc_Y;
-    scancodes[SDLK_u]               = sc_U;
-    scancodes[SDLK_i]               = sc_I;
-    scancodes[SDLK_o]               = sc_O;
-    scancodes[SDLK_p]               = sc_P;
-    scancodes[SDLK_LEFTBRACKET]     = sc_OpenBracket;
-    scancodes[SDLK_RIGHTBRACKET]    = sc_CloseBracket;
-    scancodes[SDLK_RETURN]          = sc_Return;
-    scancodes[SDLK_LCTRL]           = sc_Control;
-    scancodes[SDLK_a]               = sc_A;
-    scancodes[SDLK_s]               = sc_S;
-    scancodes[SDLK_d]               = sc_D;
-    scancodes[SDLK_f]               = sc_F;
-    scancodes[SDLK_g]               = sc_G;
-    scancodes[SDLK_h]               = sc_H;
-    scancodes[SDLK_j]               = sc_J;
-    scancodes[SDLK_k]               = sc_K;
-    scancodes[SDLK_l]               = sc_L;
-    scancodes[SDLK_SEMICOLON]       = 0x27;
-    scancodes[SDLK_QUOTE]           = 0x28;
-    scancodes[SDLK_BACKQUOTE]       = 0x29;
-    
-    /* left shift, but ROTT maps it to right shift in isr.c */
-    scancodes[SDLK_LSHIFT]          = sc_RShift; /* sc_LShift */
-    
-    scancodes[SDLK_BACKSLASH]       = 0x2B;
-    /* Accept the German eszett as a backslash key */
-    scancodes[SDLK_WORLD_63]        = 0x2B;
-    scancodes[SDLK_z]               = sc_Z;
-    scancodes[SDLK_x]               = sc_X;
-    scancodes[SDLK_c]               = sc_C;
-    scancodes[SDLK_v]               = sc_V;
-    scancodes[SDLK_b]               = sc_B;
-    scancodes[SDLK_n]               = sc_N;
-    scancodes[SDLK_m]               = sc_M;
-    scancodes[SDLK_COMMA]           = sc_Comma;
-    scancodes[SDLK_PERIOD]          = sc_Period;
-    scancodes[SDLK_SLASH]           = 0x35;
-    scancodes[SDLK_RSHIFT]          = sc_RShift;
-    scancodes[SDLK_KP_DIVIDE]       = 0x35;
-    
-    /* 0x37 is printscreen */
-    //scancodes[SDLK_KP_MULTIPLY]     = 0x37;
-    
-    scancodes[SDLK_LALT]            = sc_Alt;
-    scancodes[SDLK_RALT]            = sc_Alt;
-    scancodes[SDLK_MODE]            = sc_Alt;
-    scancodes[SDLK_RCTRL]           = sc_Control;
-    scancodes[SDLK_SPACE]           = sc_Space;
-    scancodes[SDLK_CAPSLOCK]        = sc_CapsLock;
-    scancodes[SDLK_F1]              = sc_F1;
-    scancodes[SDLK_F2]              = sc_F2;
-    scancodes[SDLK_F3]              = sc_F3;
-    scancodes[SDLK_F4]              = sc_F4;
-    scancodes[SDLK_F5]              = sc_F5;
-    scancodes[SDLK_F6]              = sc_F6;
-    scancodes[SDLK_F7]              = sc_F7;
-    scancodes[SDLK_F8]              = sc_F8;
-    scancodes[SDLK_F9]              = sc_F9;
-    scancodes[SDLK_F10]             = sc_F10;
-    scancodes[SDLK_F11]             = sc_F11;
-    scancodes[SDLK_F12]             = sc_F12;
-    scancodes[SDLK_NUMLOCK]         = 0x45;
-    scancodes[SDLK_SCROLLOCK]       = 0x46;
-    
-    //scancodes[SDLK_MINUS]           = 0x4A;
-    scancodes[SDLK_MINUS]           = sc_Minus;
-    
-    scancodes[SDLK_KP7]             = sc_Home;
-    scancodes[SDLK_KP8]             = sc_UpArrow;
-    scancodes[SDLK_KP9]             = sc_PgUp;
-    scancodes[SDLK_HOME]            = sc_Home;
-    scancodes[SDLK_UP]              = sc_UpArrow;
-    scancodes[SDLK_PAGEUP]          = sc_PgUp;
-    // Make this a normal minus, for viewport changing
-    //scancodes[SDLK_KP_MINUS]        = 0xE04A;
-    scancodes[SDLK_KP_MINUS]        = sc_Minus;
-    scancodes[SDLK_KP4]             = sc_LeftArrow;
-    scancodes[SDLK_KP5]             = 0x4C;
-    scancodes[SDLK_KP6]             = sc_RightArrow;
-    scancodes[SDLK_LEFT]            = sc_LeftArrow;
-    scancodes[SDLK_RIGHT]           = sc_RightArrow;
-    
-    //scancodes[SDLK_KP_PLUS]         = 0x4E;
-    scancodes[SDLK_KP_PLUS]         = sc_Plus;
-    
-    scancodes[SDLK_KP1]             = sc_End;
-    scancodes[SDLK_KP2]             = sc_DownArrow;
-    scancodes[SDLK_KP3]             = sc_PgDn;
-    scancodes[SDLK_END]             = sc_End;
-    scancodes[SDLK_DOWN]            = sc_DownArrow;
-    scancodes[SDLK_PAGEDOWN]        = sc_PgDn;
-    scancodes[SDLK_DELETE]          = sc_Delete;
-    scancodes[SDLK_KP0]             = sc_Insert;
-    scancodes[SDLK_INSERT]          = sc_Insert;
-    scancodes[SDLK_KP_ENTER]        = sc_Return;
-    	
+   MISC_keymap[0x20] = SDLK_a;
+   MISC_keymap[0x35] = SDLK_b;
+   MISC_keymap[0x33] = SDLK_c;
+   MISC_keymap[0x22] = SDLK_d;
+   MISC_keymap[0x12] = SDLK_e;
+   MISC_keymap[0x23] = SDLK_f;
+   MISC_keymap[0x24] = SDLK_g;
+   MISC_keymap[0x25] = SDLK_h;
+   MISC_keymap[0x17] = SDLK_i;
+   MISC_keymap[0x26] = SDLK_j;
+   MISC_keymap[0x27] = SDLK_k;
+   MISC_keymap[0x28] = SDLK_l;
+   MISC_keymap[0x37] = SDLK_m;
+   MISC_keymap[0x36] = SDLK_n;
+   MISC_keymap[0x18] = SDLK_o;
+   MISC_keymap[0x19] = SDLK_p;
+   MISC_keymap[0x10] = SDLK_q;
+   MISC_keymap[0x13] = SDLK_r;
+   MISC_keymap[0x21] = SDLK_s;
+   MISC_keymap[0x14] = SDLK_t;
+   MISC_keymap[0x16] = SDLK_u;
+   MISC_keymap[0x34] = SDLK_v;
+   MISC_keymap[0x11] = SDLK_w;
+   MISC_keymap[0x32] = SDLK_x;
+   MISC_keymap[0x15] = SDLK_y;
+   MISC_keymap[0x31] = SDLK_z;
+
+   MISC_keymap[0x0B] = SDLK_MINUS;
+   MISC_keymap[0x0C] = SDLK_EQUALS;
+   MISC_keymap[0x1A] = SDLK_LEFTBRACKET;
+   MISC_keymap[0x1B] = SDLK_RIGHTBRACKET;
+   MISC_keymap[0x0D] = SDLK_BACKSLASH;
+   MISC_keymap[0x29] = SDLK_SEMICOLON;
+
+   MISC_keymap[0x2A] = SDLK_BACKQUOTE;
+   MISC_keymap[0x38] = SDLK_COMMA;
+   MISC_keymap[0x39] = SDLK_PERIOD;
+   MISC_keymap[0x3A] = SDLK_SLASH;
+
+   MISC_keymap[15] = SDLK_KP0; /* Keypad 0-9 */
+   MISC_keymap[29] = SDLK_KP1;
+   MISC_keymap[30] = SDLK_KP2;
+   MISC_keymap[31] = SDLK_KP3;
+   MISC_keymap[45] = SDLK_KP4;
+   MISC_keymap[46] = SDLK_KP5;
+   MISC_keymap[47] = SDLK_KP6;
+   MISC_keymap[61] = SDLK_KP7;
+   MISC_keymap[62] = SDLK_KP8;
+   MISC_keymap[63] = SDLK_KP9;
+   MISC_keymap[60] = SDLK_KP_PERIOD;
+   MISC_keymap[92] = SDLK_KP_DIVIDE;
+   MISC_keymap[93] = SDLK_KP_MULTIPLY;
+   MISC_keymap[74] = SDLK_KP_MINUS;
+   MISC_keymap[94] = SDLK_KP_PLUS;
+   MISC_keymap[67] = SDLK_KP_ENTER;
+   //	MISC_keymap[XK_KP_Equal&0xFF] = SDLK_KP_EQUALS;
+
+   MISC_keymap[76] = SDLK_UP;
+   MISC_keymap[77] = SDLK_DOWN;
+   MISC_keymap[78] = SDLK_RIGHT;
+   MISC_keymap[79] = SDLK_LEFT;
+   /*
+      MISC_keymap[XK_Insert&0xFF] = SDLK_INSERT;
+      MISC_keymap[XK_Home&0xFF] = SDLK_HOME;
+      MISC_keymap[XK_End&0xFF] = SDLK_END;
+   */
+   // Mappati sulle parentesi del taastierino
+   MISC_keymap[90] = SDLK_PAGEUP;
+   MISC_keymap[91] = SDLK_PAGEDOWN;
+
+   MISC_keymap[80] = SDLK_F1;
+   MISC_keymap[81] = SDLK_F2;
+   MISC_keymap[82] = SDLK_F3;
+   MISC_keymap[83] = SDLK_F4;
+   MISC_keymap[84] = SDLK_F5;
+   MISC_keymap[85] = SDLK_F6;
+   MISC_keymap[86] = SDLK_F7;
+   MISC_keymap[87] = SDLK_F8;
+   MISC_keymap[88] = SDLK_F9;
+   MISC_keymap[89] = SDLK_F10;
+   //	MISC_keymap[XK_F11&0xFF] = SDLK_F11;
+   //	MISC_keymap[XK_F12&0xFF] = SDLK_F12;
+   //	MISC_keymap[XK_F13&0xFF] = SDLK_F13;
+   //	MISC_keymap[XK_F14&0xFF] = SDLK_F14;
+   //	MISC_keymap[XK_F15&0xFF] = SDLK_F15;
+
+   //	MISC_keymap[XK_Num_Lock&0xFF] = SDLK_NUMLOCK;
+   MISC_keymap[98] = SDLK_CAPSLOCK;
+   //	MISC_keymap[XK_Scroll_Lock&0xFF] = SDLK_SCROLLOCK;
+   MISC_keymap[97] = SDLK_RSHIFT;
+   MISC_keymap[96] = SDLK_LSHIFT;
+   MISC_keymap[99] = SDLK_LCTRL;
+   MISC_keymap[99] = SDLK_LCTRL;
+   MISC_keymap[101] = SDLK_RALT;
+   MISC_keymap[100] = SDLK_LALT;
+   //	MISC_keymap[XK_Meta_R&0xFF] = SDLK_RMETA;
+   //	MISC_keymap[XK_Meta_L&0xFF] = SDLK_LMETA;
+   MISC_keymap[103] = SDLK_LSUPER; /* Left "Windows" */
+   MISC_keymap[102] = SDLK_RSUPER; /* Right "Windows */
+
+   MISC_keymap[95] = SDLK_HELP;
+
+   memset(scancodes, '\0', sizeof(scancodes));
+   scancodes[SDLK_ESCAPE] = sc_Escape;
+   scancodes[SDLK_1] = sc_1;
+   scancodes[SDLK_2] = sc_2;
+   scancodes[SDLK_3] = sc_3;
+   scancodes[SDLK_4] = sc_4;
+   scancodes[SDLK_5] = sc_5;
+   scancodes[SDLK_6] = sc_6;
+   scancodes[SDLK_7] = sc_7;
+   scancodes[SDLK_8] = sc_8;
+   scancodes[SDLK_9] = sc_9;
+   scancodes[SDLK_0] = sc_0;
+
+   // scancodes[SDLK_EQUALS]          = 0x4E;
+   scancodes[SDLK_EQUALS] = sc_Equals;
+
+   scancodes[SDLK_BACKSPACE] = sc_BackSpace;
+   scancodes[SDLK_TAB] = sc_Tab;
+   scancodes[SDLK_q] = sc_Q;
+   scancodes[SDLK_w] = sc_W;
+   scancodes[SDLK_e] = sc_E;
+   scancodes[SDLK_r] = sc_R;
+   scancodes[SDLK_t] = sc_T;
+   scancodes[SDLK_y] = sc_Y;
+   scancodes[SDLK_u] = sc_U;
+   scancodes[SDLK_i] = sc_I;
+   scancodes[SDLK_o] = sc_O;
+   scancodes[SDLK_p] = sc_P;
+   scancodes[SDLK_LEFTBRACKET] = sc_OpenBracket;
+   scancodes[SDLK_RIGHTBRACKET] = sc_CloseBracket;
+   scancodes[SDLK_RETURN] = sc_Return;
+   scancodes[SDLK_LCTRL] = sc_Control;
+   scancodes[SDLK_a] = sc_A;
+   scancodes[SDLK_s] = sc_S;
+   scancodes[SDLK_d] = sc_D;
+   scancodes[SDLK_f] = sc_F;
+   scancodes[SDLK_g] = sc_G;
+   scancodes[SDLK_h] = sc_H;
+   scancodes[SDLK_j] = sc_J;
+   scancodes[SDLK_k] = sc_K;
+   scancodes[SDLK_l] = sc_L;
+   scancodes[SDLK_SEMICOLON] = 0x27;
+   scancodes[SDLK_QUOTE] = 0x28;
+   scancodes[SDLK_BACKQUOTE] = 0x29;
+
+   /* left shift, but ROTT maps it to right shift in isr.c */
+   scancodes[SDLK_LSHIFT] = sc_RShift; /* sc_LShift */
+
+   scancodes[SDLK_BACKSLASH] = 0x2B;
+   /* Accept the German eszett as a backslash key */
+   scancodes[SDLK_WORLD_63] = 0x2B;
+   scancodes[SDLK_z] = sc_Z;
+   scancodes[SDLK_x] = sc_X;
+   scancodes[SDLK_c] = sc_C;
+   scancodes[SDLK_v] = sc_V;
+   scancodes[SDLK_b] = sc_B;
+   scancodes[SDLK_n] = sc_N;
+   scancodes[SDLK_m] = sc_M;
+   scancodes[SDLK_COMMA] = sc_Comma;
+   scancodes[SDLK_PERIOD] = sc_Period;
+   scancodes[SDLK_SLASH] = 0x35;
+   scancodes[SDLK_RSHIFT] = sc_RShift;
+   scancodes[SDLK_KP_DIVIDE] = 0x35;
+
+   /* 0x37 is printscreen */
+   // scancodes[SDLK_KP_MULTIPLY]     = 0x37;
+
+   scancodes[SDLK_LALT] = sc_Alt;
+   scancodes[SDLK_RALT] = sc_Alt;
+   scancodes[SDLK_MODE] = sc_Alt;
+   scancodes[SDLK_RCTRL] = sc_Control;
+   scancodes[SDLK_SPACE] = sc_Space;
+   scancodes[SDLK_CAPSLOCK] = sc_CapsLock;
+   scancodes[SDLK_F1] = sc_F1;
+   scancodes[SDLK_F2] = sc_F2;
+   scancodes[SDLK_F3] = sc_F3;
+   scancodes[SDLK_F4] = sc_F4;
+   scancodes[SDLK_F5] = sc_F5;
+   scancodes[SDLK_F6] = sc_F6;
+   scancodes[SDLK_F7] = sc_F7;
+   scancodes[SDLK_F8] = sc_F8;
+   scancodes[SDLK_F9] = sc_F9;
+   scancodes[SDLK_F10] = sc_F10;
+   scancodes[SDLK_F11] = sc_F11;
+   scancodes[SDLK_F12] = sc_F12;
+   scancodes[SDLK_NUMLOCK] = 0x45;
+   scancodes[SDLK_SCROLLOCK] = 0x46;
+
+   // scancodes[SDLK_MINUS]           = 0x4A;
+   scancodes[SDLK_MINUS] = sc_Minus;
+
+   scancodes[SDLK_KP7] = sc_Home;
+   scancodes[SDLK_KP8] = sc_UpArrow;
+   scancodes[SDLK_KP9] = sc_PgUp;
+   scancodes[SDLK_HOME] = sc_Home;
+   scancodes[SDLK_UP] = sc_UpArrow;
+   scancodes[SDLK_PAGEUP] = sc_PgUp;
+   // Make this a normal minus, for viewport changing
+   // scancodes[SDLK_KP_MINUS]        = 0xE04A;
+   scancodes[SDLK_KP_MINUS] = sc_Minus;
+   scancodes[SDLK_KP4] = sc_LeftArrow;
+   scancodes[SDLK_KP5] = 0x4C;
+   scancodes[SDLK_KP6] = sc_RightArrow;
+   scancodes[SDLK_LEFT] = sc_LeftArrow;
+   scancodes[SDLK_RIGHT] = sc_RightArrow;
+
+   // scancodes[SDLK_KP_PLUS]         = 0x4E;
+   scancodes[SDLK_KP_PLUS] = sc_Plus;
+
+   scancodes[SDLK_KP1] = sc_End;
+   scancodes[SDLK_KP2] = sc_DownArrow;
+   scancodes[SDLK_KP3] = sc_PgDn;
+   scancodes[SDLK_END] = sc_End;
+   scancodes[SDLK_DOWN] = sc_DownArrow;
+   scancodes[SDLK_PAGEDOWN] = sc_PgDn;
+   scancodes[SDLK_DELETE] = sc_Delete;
+   scancodes[SDLK_KP0] = sc_Insert;
+   scancodes[SDLK_INSERT] = sc_Insert;
+   scancodes[SDLK_KP_ENTER] = sc_Return;
 }
 
 ULONG amiga_TranslateKey(int code)
 {
-    UBYTE buffer[8] = {0};
-    int k = 0; 
-	int actual = 0;
- 
-	k = MISC_keymap[code];
-     
-	/* Get the translated SDL virtual keysym */
-	
-	if (k == SDLK_UNKNOWN)
-	{
-		struct InputEvent	ie;
-		                  
-		ie.ie_Class				= IECLASS_RAWKEY; 
-		ie.ie_Code				= code;  	 
-       
-		actual = MapRawKey(&ie, &buffer, 8,  NULL);
-        
-        
-		if (actual == 1)
-		{
-            
-            		 
-			k = buffer[0];
-		 
-		}
-	}
-    
-    k = scancodes[k];
-    
-	return(k);
-} 
+   UBYTE buffer[8] = {0};
+   int k = 0;
+   int actual = 0;
 
-void doEvents (void)
-{    
-    
-    ULONG class;
-    UWORD code;
-    WORD mousex, mousey;
-    static WORD mousebuttons = 0;
-    struct IntuiMessage *msg;
-    static ULONG previous = 0;
-  
-    int rawKey;
-	ULONG k;
-    int keyon;
-    int strippedkey;
-    int extended;     
-    
-    if (_hardwareWindow != NULL && _hardwareWindow->UserPort != NULL) {
-        while ((msg = (struct IntuiMessage *)GetMsg (_hardwareWindow->UserPort)) != NULL) {
-            
-            ReplyMsg ((struct Message *)msg);  /* reply after xlating key */
-            
-            class = msg->Class;
-            code = msg->Code;
-            mousex = msg->MouseX;
-            mousey = msg->MouseY;
-      
-      
-            if( !(code&IECODE_UP_PREFIX) )
-            {
-                k = amiga_TranslateKey(code);               
-        	    keyon = 0;        	             
-            }
-            else
-            {
-                /* Key release? */
- 
-            	k = amiga_TranslateKey(code&~IECODE_UP_PREFIX);         
-                k+=128;
-                keyon = 1;                                       
-            }
- 
-      
-            strippedkey = k & 0x7f;
-     
-            if (k != 0)
-            {
-                if (keyon)           // Up event
-                    Keystate[strippedkey]=0;
-                else                 // Down event
-                {
-                    Keystate[strippedkey]=1;
-                    LastScan = k;
-                }
-            
-                KeyboardQueue[ Keytail ] = k;
-                Keytail = ( Keytail + 1 )&( KEYQMAX - 1 );
-            }
-            
-            if (class == IDCMP_MOUSEMOVE)
-            {
-                mx = (mousex << 3);
-            }
-            else if (class == IDCMP_MOUSEBUTTONS)
-            {
-                mousebuttons = 0;
-                                
-                switch (msg->Code) {
-                    case SELECTDOWN:  
-                        mousebuttons |= 1;
-                        break;
-                      case SELECTUP: 
-                        mousebuttons &= ~1;
-                        break;
-                      case MENUDOWN:
-                        mousebuttons |= 4;
-                        break;
-                      case MENUUP:
-                        mousebuttons &= ~4;
-                        break;
-                      case MIDDLEDOWN:
-                        mousebuttons |= 2;
-                        break;
-                      case MIDDLEUP:
-                        mousebuttons &= ~2;
-                        break;
-                      default:
-                        break;
-            
-                }
+   k = MISC_keymap[code];
 
-                mb = mousebuttons;
-            }
+   /* Get the translated SDL virtual keysym */
 
-    }
-  }
-      
+   if (k == SDLK_UNKNOWN)
+   {
+      struct InputEvent ie;
+
+      ie.ie_Class = IECLASS_RAWKEY;
+      ie.ie_Code = code;
+
+      actual = MapRawKey(&ie, &buffer, 8, NULL);
+
+      if (actual == 1)
+      {
+
+         k = buffer[0];
+      }
+   }
+
+   k = scancodes[k];
+
+   return (k);
 }
 
+void doEvents(void)
+{
+
+   ULONG class;
+   UWORD code;
+   WORD mousex, mousey;
+   static WORD mousebuttons = 0;
+   struct IntuiMessage *msg;
+   static ULONG previous = 0;
+
+   int rawKey;
+   ULONG k;
+   int keyon;
+   int strippedkey;
+   int extended;
+
+   if (_hardwareWindow != NULL && _hardwareWindow->UserPort != NULL)
+   {
+      while ((msg = (struct IntuiMessage *)GetMsg(_hardwareWindow->UserPort)) != NULL)
+      {
+
+         ReplyMsg((struct Message *)msg); /* reply after xlating key */
+
+         class = msg->Class;
+         code = msg->Code;
+         mousex = msg->MouseX;
+         mousey = msg->MouseY;
+
+         if (!(code & IECODE_UP_PREFIX))
+         {
+            k = amiga_TranslateKey(code);
+            keyon = 0;
+         }
+         else
+         {
+            /* Key release? */
+
+            k = amiga_TranslateKey(code & ~IECODE_UP_PREFIX);
+            k += 128;
+            keyon = 1;
+         }
+
+         strippedkey = k & 0x7f;
+
+         if (k != 0)
+         {
+            if (keyon) // Up event
+               Keystate[strippedkey] = 0;
+            else // Down event
+            {
+               Keystate[strippedkey] = 1;
+               LastScan = k;
+            }
+
+            KeyboardQueue[Keytail] = k;
+            Keytail = (Keytail + 1) & (KEYQMAX - 1);
+         }
+
+         if (class == IDCMP_MOUSEMOVE)
+         {
+            mx = (mousex << 3);
+         }
+         else if (class == IDCMP_MOUSEBUTTONS)
+         {
+            mousebuttons = 0;
+
+            switch (msg->Code)
+            {
+            case SELECTDOWN:
+               mousebuttons |= 1;
+               break;
+            case SELECTUP:
+               mousebuttons &= ~1;
+               break;
+            case MENUDOWN:
+               mousebuttons |= 4;
+               break;
+            case MENUUP:
+               mousebuttons &= ~4;
+               break;
+            case MIDDLEDOWN:
+               mousebuttons |= 2;
+               break;
+            case MIDDLEUP:
+               mousebuttons &= ~2;
+               break;
+            default:
+               break;
+            }
+
+            mb = mousebuttons;
+         }
+      }
+   }
+}
+
+#endif

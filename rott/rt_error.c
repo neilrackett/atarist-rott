@@ -17,13 +17,25 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
+#if PLATFORM_ATARI
+#include <unistd.h>
+#else
 #include <dos.h>
+#endif
 #include <errno.h>
+#if PLATFORM_ATARI
+#include <unistd.h>
+#else
 #include <io.h>
+#endif
 #include <stdio.h>
+#if PLATFORM_ATARI
+#include <stdio.h>
+#else
 #include <conio.h>
+#endif
 #include <stdarg.h>
-#include <mem.h>
+#include <string.h>
 #include <ctype.h>
 #include "rt_def.h"
 #include "rt_str.h"
@@ -37,6 +49,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "modexlib.h"
 //MED
 #include "memcheck.h"
+
+
+#if PLATFORM_ATARI
+static int ErrorHandlerStarted = 0;
+void UL_ErrorStartup ( void ) { ErrorHandlerStarted = 1; }
+void UL_ErrorShutdown ( void ) { ErrorHandlerStarted = 0; }
+void UL_StartupDivisionByZero ( void ) { }
+void UL_ShutdownDivisionByZero ( void ) { }
+#endif
 
 
 //*****************************************************************************
@@ -112,11 +133,38 @@ static char ReadWrite[2][6] =
    "Write\0"
 };
 
+#if !PLATFORM_ATARI
 static boolean ErrorHandlerStarted=false;
 void (__interrupt __far *olddivisr) () = NULL;
+#endif
 
 //******************************************************************************
 //
+#if PLATFORM_ATARI
+void UL_UserMessage (int x, int y, char *str, ...)
+{
+   va_list strptr;
+   (void)x; (void)y;
+   va_start(strptr, str);
+   vprintf(str, strptr);
+   va_end(strptr);
+   printf("\n");
+}
+
+int UL_GeneralError (int code)
+{
+   (void)code;
+   return 1;
+}
+
+int UL_DriveError (int code, int location, int rwerror, int whichdrive)
+{
+   (void)code; (void)location; (void)rwerror; (void)whichdrive;
+   return 1;
+}
+#endif
+
+#if !PLATFORM_ATARI
 // UL_UserMessage ()
 //
 //******************************************************************************
@@ -412,3 +460,5 @@ void UL_ShutdownDivisionByZero ( void )
 	_dos_setvect (DIVISIONINT, olddivisr);
 }
 
+
+#endif

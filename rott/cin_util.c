@@ -19,6 +19,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 #include "cin_glob.h"
 #include "modexlib.h"
+#include "rt_util.h"
+#include <string.h>
 
 #ifdef DOS
 #include <conio.h>
@@ -26,6 +28,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 //MED
 #include "memcheck.h"
+
+static byte cinematicpal[768];
+static boolean cinematicpal_valid = false;
 
 /*
 ==============
@@ -46,6 +51,12 @@ void CinematicGetPalette (byte *pal)
 	for (i=0 ; i<768 ; i++)
       pal[i] = ((inp (PEL_DATA))<<2);
 #else
+   if (cinematicpal_valid)
+      memcpy(pal, cinematicpal, 768);
+   else if (origpal != NULL)
+      memcpy(pal, origpal, 768);
+   else
+      memset(pal, 0, 768);
 #endif
 }
 
@@ -61,6 +72,16 @@ void CinematicGetPalette (byte *pal)
 
 void CinematicSetPalette (byte *pal)
 {
+   static byte lastpal[768];
+   static boolean has_last = false;
+
+   if (has_last && memcmp(lastpal, pal, 768) == 0)
+      return;
+
+   memcpy(lastpal, pal, 768);
+   has_last = true;
+   memcpy(cinematicpal, pal, 768);
+   cinematicpal_valid = true;
 #ifdef DOS
 	int	i;
 
@@ -68,5 +89,6 @@ void CinematicSetPalette (byte *pal)
 	for (i=0 ; i<768 ; i++)
       outp (PEL_DATA, pal[i]>>2);
 #else
+   SetPalette((char *)pal);
 #endif
 }

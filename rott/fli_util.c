@@ -32,6 +32,176 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  * an article for Dr. Dobb's Journal March 1993 issue.
  */
 
+#if PLATFORM_ATARI
+#include "cin_glob.h"
+#include <unistd.h>
+#include <time.h>
+#include <stdlib.h>
+#include <string.h>
+#include <limits.h>
+#include <fcntl.h>
+#include "fli_type.h"
+#include "fli_util.h"
+#include "fli_def.h"
+#include "fli_main.h"
+#include "memcheck.h"
+
+static Ushort screenlookup[200];
+
+static Boolean set_vmode(Uchar mode)
+{
+    (void)mode;
+    return FALSE;
+}
+
+static Uchar get_vmode()
+{
+    return 0;
+}
+
+ErrCode screen_open(Screen *s)
+{
+    if (s) {
+        memset(s, 0, sizeof (*s));
+        s->old_mode = get_vmode();
+    }
+    return ErrDisplay;
+}
+
+void screen_close(Screen *s)
+{
+    (void)s;
+}
+
+int screen_width(Screen *s)
+{
+    return s ? s->width : 0;
+}
+
+int screen_height(Screen *s)
+{
+    return s ? s->height : 0;
+}
+
+void screen_put_dot(Screen *s, int x, int y, Pixel color)
+{
+    (void)s; (void)x; (void)y; (void)color;
+}
+
+void screen_copy_seg(Screen *s, int x, int y, Pixel *pixels, int count)
+{
+    (void)s; (void)x; (void)y; (void)pixels; (void)count;
+}
+
+void screen_repeat_one(Screen *s, int x, int y, Pixel color, int count)
+{
+    (void)s; (void)x; (void)y; (void)color; (void)count;
+}
+
+void screen_repeat_two(Screen *s, int x, int y, Pixels2 pixels2, int count)
+{
+    (void)s; (void)x; (void)y; (void)pixels2; (void)count;
+}
+
+void screen_put_colors(Screen *s, int start, Color *colors, int count)
+{
+    (void)s; (void)start; (void)colors; (void)count;
+}
+
+void screen_put_colors_64(Screen *s, int start, Color *colors, int count)
+{
+    (void)s; (void)start; (void)colors; (void)count;
+}
+
+ErrCode clock_open(Clock *c)
+{
+    if (c) memset(c, 0, sizeof (*c));
+    return Success;
+}
+
+void clock_close(Clock *c)
+{
+    (void)c;
+}
+
+Ulong clock_ticks(Clock *c)
+{
+    (void)c;
+    return 0;
+}
+
+ErrCode key_open(Key *key)
+{
+    if (key) memset(key, 0, sizeof (*key));
+    return Success;
+}
+
+void key_close(Key *key)
+{
+    (void)key;
+}
+
+Boolean key_ready(Key *key)
+{
+    (void)key;
+    return FALSE;
+}
+
+Uchar key_read(Key *key)
+{
+    (void)key;
+    return 0;
+}
+
+ErrCode big_alloc(MemPtr *bb, Ulong size)
+{
+    if (!bb) return AError;
+    *bb = (MemPtr) malloc(size);
+    return (*bb == NULL) ? ErrNoMemory : Success;
+}
+
+void big_free(MemPtr *bb)
+{
+    if (!bb) return;
+    if (*bb) free(*bb);
+    *bb = NULL;
+}
+
+ErrCode file_open_to_read(FileHandle *phandle, char *name)
+{
+    int fd;
+    if (!phandle || !name) return AError;
+    fd = open(name, O_RDONLY);
+    if (fd < 0) return ErrOpen;
+    *phandle = fd;
+    return Success;
+}
+
+ErrCode file_read_big_block(FileHandle handle, MemPtr bb, Ulong size)
+{
+    long got;
+    if ((bb == NULL) || (size == 0)) return AError;
+    got = (long) read(handle, bb, size);
+    if (got != (long) size) return ErrRead;
+    return Success;
+}
+
+ErrCode machine_open(Machine *machine)
+{
+    ErrCode err;
+    if (!machine) return AError;
+    err = screen_open(&machine->screen);
+    if (err < Success) return err;
+    return Success;
+}
+
+void machine_close(Machine *machine)
+{
+    if (!machine) return;
+    screen_close(&machine->screen);
+}
+
+#else
 #include "cin_glob.h"
 #include <bios.h>
 #include <dos.h>
@@ -412,3 +582,5 @@ screen_close(&machine->screen);
 //clock_close(&machine->clock);
 //key_close(&machine->key);
 }
+
+#endif

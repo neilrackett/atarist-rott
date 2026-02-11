@@ -21,6 +21,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "rt_def.h"
 #include "rt_sound.h"
+#if PLATFORM_ATARI
+#include <mint/osbind.h>
+#endif
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -66,6 +69,49 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_net.h"
 //MED
 #include "memcheck.h"
+
+#if PLATFORM_ATARI
+#ifndef ATARI_SKIP_PRECACHE
+#define ATARI_SKIP_PRECACHE 0
+#endif
+#ifndef ATARI_DEBUG
+#define ATARI_DEBUG 0
+#endif
+static void atari_ted_log(const char *msg)
+{
+   if (ATARI_DEBUG)
+      Cconws(msg);
+}
+#endif
+
+#if PLATFORM_ATARI
+static int atari_lumpnum(const char *name)
+{
+   int n = W_CheckNumForName((char *)name);
+   if (n == -1)
+   {
+      char buf[96];
+      sprintf(buf, "ROTT: lump missing: %s\r\n", name);
+      atari_ted_log(buf);
+   }
+   return n;
+}
+#endif
+
+static void PreCacheGroupByName(const char *startname, const char *endname, int type)
+{
+#if PLATFORM_ATARI
+   int start = atari_lumpnum(startname);
+   int stop = atari_lumpnum(endname);
+   if (start == -1 || stop == -1)
+      return;
+   PreCacheGroup(start, stop, type);
+#else
+   PreCacheGroup(W_GetNumForName((char *)startname),
+                 W_GetNumForName((char *)endname),
+                 type);
+#endif
+}
 
 
 
@@ -230,7 +276,9 @@ void SetupPreCache( void )
    CachingStarted=true;
    cacheindex=0;
    cachelist=(cachetype *)SafeMalloc(MAXPRECACHE*(sizeof(cachetype)));
+#if !(PLATFORM_ATARI && ATARI_SKIP_PRECACHE)
    DrawPreCache();
+#endif
 }
 
 
@@ -915,13 +963,9 @@ void MiscPreCache( void )
 
    // cache in god mode stuff
 
-	PreCacheGroup(W_GetNumForName("VAPO1"),
-	              W_GetNumForName("LITSOUL"),
-	              cache_patch_t);
+	PreCacheGroupByName("VAPO1", "LITSOUL", cache_patch_t);
 
-	PreCacheGroup(W_GetNumForName("GODFIRE1"),
-					  W_GetNumForName("GODFIRE4"),
-					  cache_patch_t);
+	PreCacheGroupByName("GODFIRE1", "GODFIRE4", cache_patch_t);
 
 
 #endif
@@ -1121,6 +1165,89 @@ void DrawPreCache( void )
       }
 }
 
+#if PLATFORM_ATARI && ATARI_SKIP_PRECACHE
+#define ATARI_LOAD_STEPS 8
+static int atari_load_progress_active = 0;
+static int atari_load_progress_last = -1;
+
+static void atari_load_progress_draw(int filled)
+{
+   int i;
+   byte *tempbuf;
+
+   if (filled < 0)
+      filled = 0;
+   if (filled > MAXLEDS)
+      filled = MAXLEDS;
+   if (filled <= atari_load_progress_last)
+      return;
+
+   tempbuf = bufferofs;
+   bufferofs = page1start;
+   for (i = atari_load_progress_last + 1; i <= filled; ++i)
+      {
+      DrawNormalSprite (PRECACHEBARX+PRECACHELED1X+(i<<2),
+                        PRECACHEBARY+PRECACHELED1Y,
+                        W_GetNumForName ("led1"));
+      DrawNormalSprite (PRECACHEBARX+PRECACHELED2X+(i<<2),
+                        PRECACHEBARY+PRECACHELED2Y,
+                        W_GetNumForName ("led2"));
+      }
+   VW_UpdateScreen();
+   bufferofs = tempbuf;
+   atari_load_progress_last = filled;
+}
+
+static void atari_load_progress_init(void)
+{
+   byte *tempbuf;
+
+   if (loadedgame)
+      return;
+   if (atari_load_progress_active)
+      return;
+
+   atari_load_progress_active = 1;
+   atari_load_progress_last = -1;
+
+   tempbuf = bufferofs;
+   bufferofs = page1start;
+   DrawPreCache();
+   VW_UpdateScreen();
+   bufferofs = tempbuf;
+}
+
+static void atari_load_progress_step(int step)
+{
+   int filled;
+
+   if (!atari_load_progress_active || loadedgame)
+      return;
+   if (step < 0)
+      step = 0;
+   if (step > ATARI_LOAD_STEPS)
+      step = ATARI_LOAD_STEPS;
+
+   filled = (step * MAXLEDS) / ATARI_LOAD_STEPS;
+   atari_load_progress_draw(filled);
+}
+
+static void atari_load_progress_finish(void)
+{
+   if (!atari_load_progress_active)
+      return;
+   atari_load_progress_step(ATARI_LOAD_STEPS);
+   atari_load_progress_active = 0;
+}
+#define ATARI_LOAD_INIT() atari_load_progress_init()
+#define ATARI_LOAD_STEP(n) atari_load_progress_step(n)
+#define ATARI_LOAD_FINISH() atari_load_progress_finish()
+#else
+#define ATARI_LOAD_INIT() ((void)0)
+#define ATARI_LOAD_STEP(n) ((void)0)
+#define ATARI_LOAD_FINISH() ((void)0)
+#endif
+
 #define CACHETICDELAY (6)
 /*
 ======================
@@ -1132,6 +1259,20 @@ void DrawPreCache( void )
 */
 void PreCache( void )
 {
+#if PLATFORM_ATARI
+#if ATARI_SKIP_PRECACHE
+   if (CachingStarted)
+      {
+      atari_ted_log("ROTT: skipping precache on Atari\r\n");
+      if (loadedgame==false)
+         {
+         ATARI_LOAD_INIT();
+         }
+      ShutdownPreCache();
+      }
+   return;
+#endif
+#endif
    int i;
 	int total;
    byte * dummy;
@@ -2924,7 +3065,15 @@ void SetupPushWalls( void )
                   temp=tilemap[i][j]&0x1fff;
 			         tilemap[i][j] = pwallnum;
 			         if (MAPSPOT(i,j,2))
+#if PLATFORM_ATARI
+                     {
+                        char buf[96];
+                        sprintf(buf, "ROTT: pushwall missing direction at %d,%d\r\n", i, j);
+                        atari_ted_log(buf);
+                     }
+#else
                      Error("You cannot link a pushwall which has no direction associated\n with it at x=%d y=%d\n",i,j);
+#endif
 						else
 			            SpawnPushWall(i,j,0,temp,nodir,0);
 			         }
@@ -2945,7 +3094,15 @@ void SetupPushWalls( void )
 			            SpawnPushWall(i,j,0,temp,(tile-256)<<1,4);
                   }
                else
+#if PLATFORM_ATARI
+                  {
+                     char buf[96];
+                     sprintf(buf, "ROTT: turbomovewall missing wall at %d,%d\r\n", i, j);
+                     atari_ted_log(buf);
+                  }
+#else
                   Error("You have to place a turbomovewall icon on a wall at x=%d y=%d",i,j);
+#endif
 		         break;
 
             case 300:
@@ -2962,7 +3119,15 @@ void SetupPushWalls( void )
   	                  SpawnPushWall(i,j,0,temp,(tile-300)/9,3);
                   }
                else
+#if PLATFORM_ATARI
+                  {
+                     char buf[96];
+                     sprintf(buf, "ROTT: movewall missing wall at %d,%d\r\n", i, j);
+                     atari_ted_log(buf);
+                  }
+#else
                   Error("You have to place a movewall icon on a wall at x=%d y=%d",i,j);
+#endif
 		         break;
             }
          }
@@ -5696,6 +5861,16 @@ void SetupGameLevel (void)
 		GetEpisode (gamestate.mapon);
 		LoadROTTMap(gamestate.mapon);
 		}
+#if PLATFORM_ATARI && ATARI_SKIP_PRECACHE
+   if (loadedgame==false)
+      {
+      ATARI_LOAD_INIT();
+      ATARI_LOAD_STEP(0);
+      }
+#endif
+#if PLATFORM_ATARI && ATARI_SKIP_PRECACHE
+   ATARI_LOAD_STEP(1);
+#endif
    if (DoPanicMapping())
       {
       DoLowMemoryConversion();
@@ -5708,12 +5883,18 @@ void SetupGameLevel (void)
       {
       DoRegisterConversion ();
       }
+#if PLATFORM_ATARI && ATARI_SKIP_PRECACHE
+   ATARI_LOAD_STEP(2);
+#endif
    if ( (NewGame) || (lastlevelloaded!=gamestate.mapon) )
 		{
 		SetupPreCache();
 		lastlevelloaded=gamestate.mapon;
       MU_StartSong(song_level);
 		}
+#if PLATFORM_ATARI && ATARI_SKIP_PRECACHE
+   ATARI_LOAD_STEP(3);
+#endif
    shapestart = W_GetNumForName("SHAPSTRT");
    shapestop = W_GetNumForName("SHAPSTOP");
 	gunsstart=W_GetNumForName("GUNSTART");
@@ -5765,6 +5946,9 @@ void SetupGameLevel (void)
 	PrintTileStats();
 
 	SetupLightLevels();
+#if PLATFORM_ATARI && ATARI_SKIP_PRECACHE
+   ATARI_LOAD_STEP(4);
+#endif
 
    crud=(word)MAPSPOT(0,0,1);
 	if ((crud>=90) && (crud<=97))
@@ -5789,11 +5973,14 @@ void SetupGameLevel (void)
       }
 */
 // pheight=maxheight-32;
-   CountAreaTiles();
+	CountAreaTiles();
 	SetupWalls();
 
 	SetupClocks();
 	SetupAnimatedWalls();
+#if PLATFORM_ATARI && ATARI_SKIP_PRECACHE
+   ATARI_LOAD_STEP(5);
+#endif
 
 	if (loadedgame==false)
 		{
@@ -5820,6 +6007,9 @@ void SetupGameLevel (void)
    else {
       FixTiles();
    }
+#if PLATFORM_ATARI && ATARI_SKIP_PRECACHE
+   ATARI_LOAD_STEP(6);
+#endif
 
    
 	if (gamestate.SpawnEluder || gamestate.SpawnDeluder)
@@ -5842,6 +6032,9 @@ void SetupGameLevel (void)
 	LoftSprites();
 
 	SetPlaneViewSize();
+#if PLATFORM_ATARI && ATARI_SKIP_PRECACHE
+   ATARI_LOAD_STEP(7);
+#endif
 		
 	if (loadedgame==false)
 		{
@@ -5861,20 +6054,36 @@ void SetupGameLevel (void)
 		SoftError("Done PreCaching\n");
 #endif
 #endif
+#if PLATFORM_ATARI
+		atari_ted_log("ROTT: SetupPlayScreen start\r\n");
+#endif
 		SetupPlayScreen();
-		
-		
+#if PLATFORM_ATARI
+		atari_ted_log("ROTT: SetupPlayScreen done\r\n");
+		atari_ted_log("ROTT: SetupScreen start\r\n");
+#endif
 		SetupScreen(false);
-	}
+#if PLATFORM_ATARI
+		atari_ted_log("ROTT: SetupScreen done\r\n");
+#endif
+#if PLATFORM_ATARI && ATARI_SKIP_PRECACHE
+      ATARI_LOAD_STEP(8);
+      ATARI_LOAD_FINISH();
+#endif
+		}
 
         if (BATTLEMODE) {
            SetModemLightLevel ( gamestate.BattleOptions.LightLevel );
         }
 
         if (player != NULL) {
+#if PLATFORM_ATARI && ATARI_SKIP_LIGHTLEVEL
+            UpdateLightLevel(player->areanumber);
+#else
             for (i=0;i<100;i++) {
 		UpdateLightLevel(player->areanumber);
             }
+#endif
         }
         
 	insetupgame=false;
@@ -6609,9 +6818,7 @@ void SetupStatics(void)
                SD_PreCacheSoundGroup(SD_EXCALIBOUNCESND,SD_EXCALIBLASTSND);
 
 
-					PreCacheGroup(W_GetNumForName("EXBAT1"),
-									  W_GetNumForName("EXBAT7"),
-									  cache_patch_t);
+					PreCacheGroupByName("EXBAT1", "EXBAT7", cache_patch_t);
 
 
 
@@ -6620,12 +6827,8 @@ void SetupStatics(void)
 						gamestate.missiletotal ++;
 					break;
 				case 47:
-					PreCacheGroup(W_GetNumForName("KNIFE1"),
-									  W_GetNumForName("KNIFE10"),
-									  cache_patch_t);
-					PreCacheGroup(W_GetNumForName("ESTATUE1"),
-									  W_GetNumForName("ESTATUE8"),
-									  cache_patch_t);
+					PreCacheGroupByName("KNIFE1", "KNIFE10", cache_patch_t);
+					PreCacheGroupByName("ESTATUE1", "ESTATUE8", cache_patch_t);
 
 						SpawnStatic(i,j,tile-23,spawnz);
 					break;
@@ -6634,19 +6837,13 @@ void SetupStatics(void)
 					SD_PreCacheSound(SD_ATKTWOPISTOLSND);
 
                if ((locplayerstate->player == 1) || (locplayerstate->player == 3))
-					  PreCacheGroup(W_GetNumForName("RFPIST1"),
-										 W_GetNumForName("LFPIST3"),
-										 cache_patch_t);
+					  PreCacheGroupByName("RFPIST1", "LFPIST3", cache_patch_t);
 
                else if (locplayerstate->player == 2)
-					  PreCacheGroup(W_GetNumForName("RBMPIST1"),
-										 W_GetNumForName("LBMPIST3"),
-										 cache_patch_t);
+					  PreCacheGroupByName("RBMPIST1", "LBMPIST3", cache_patch_t);
 
 					else
-					  PreCacheGroup(W_GetNumForName("RMPIST1"),
-										 W_GetNumForName("LMPIST3"),
-										 cache_patch_t);
+					  PreCacheGroupByName("RMPIST1", "LMPIST3", cache_patch_t);
 
                SpawnStatic(i,j,tile-23,spawnz);
 
@@ -6654,9 +6851,18 @@ void SetupStatics(void)
 				case 49:
 
 					SD_PreCacheSound(SD_ATKMP40SND);
-					PreCacheGroup(W_GetNumForName("MP401"),
-									  W_GetNumForName("MP403"),
-									  cache_patch_t);
+#if PLATFORM_ATARI
+					{
+						int mp_start = W_CheckNumForName("MP401");
+						int mp_stop = W_CheckNumForName("MP403");
+						if (mp_start != -1 && mp_stop != -1)
+							PreCacheGroup(mp_start, mp_stop, cache_patch_t);
+						else
+							atari_ted_log("ROTT: MP40 sprites missing, skipping precache\r\n");
+					}
+#else
+					PreCacheGroupByName("MP401", "MP403", cache_patch_t);
+#endif
 						SpawnStatic(i,j,tile-23,spawnz);
 					break;
 
@@ -6664,9 +6870,7 @@ void SetupStatics(void)
 					SD_PreCacheSound(SD_MISSILEHITSND);
 					SD_PreCacheSound(SD_MISSILEFLYSND);
 					SD_PreCacheSound(SD_BAZOOKAFIRESND);
-					PreCacheGroup(W_GetNumForName("BAZOOKA1"),
-									  W_GetNumForName("BAZOOKA4"),
-									  cache_patch_t);
+					PreCacheGroupByName("BAZOOKA1", "BAZOOKA4", cache_patch_t);
 						SpawnStatic(i,j,tile-23,spawnz);
 					if (loadedgame == false)
 						gamestate.missiletotal ++;
@@ -6677,9 +6881,7 @@ void SetupStatics(void)
                SD_PreCacheSound(SD_MISSILEHITSND);
 					SD_PreCacheSound(SD_MISSILEFLYSND);
 					SD_PreCacheSound(SD_FIREBOMBFIRESND);
-					PreCacheGroup(W_GetNumForName("FBOMB1"),
-									  W_GetNumForName("FBOMB4"),
-									  cache_patch_t);
+					PreCacheGroupByName("FBOMB1", "FBOMB4", cache_patch_t);
 						SpawnStatic(i,j,tile-23,spawnz);
 					if (loadedgame == false)
 						gamestate.missiletotal ++;
@@ -6688,9 +6890,7 @@ void SetupStatics(void)
 					SD_PreCacheSound(SD_MISSILEHITSND);
 					SD_PreCacheSound(SD_MISSILEFLYSND);
 					SD_PreCacheSound(SD_HEATSEEKFIRESND);
-					PreCacheGroup(W_GetNumForName("HSEEK1"),
-									  W_GetNumForName("HSEEK4"),
-									  cache_patch_t);
+					PreCacheGroupByName("HSEEK1", "HSEEK4", cache_patch_t);
 						SpawnStatic(i,j,tile-23,spawnz);
 					if (loadedgame == false)
 						gamestate.missiletotal ++;
@@ -6699,9 +6899,7 @@ void SetupStatics(void)
                SD_PreCacheSound(SD_MISSILEHITSND);
 					SD_PreCacheSound(SD_MISSILEFLYSND);
 					SD_PreCacheSound(SD_DRUNKFIRESND);
-					PreCacheGroup(W_GetNumForName("DRUNK1"),
-									  W_GetNumForName("DRUNK4"),
-									  cache_patch_t);
+					PreCacheGroupByName("DRUNK1", "DRUNK4", cache_patch_t);
 						SpawnStatic(i,j,tile-23,spawnz);
 					if (loadedgame == false)
 						gamestate.missiletotal ++;
@@ -6711,15 +6909,9 @@ void SetupStatics(void)
 					SD_PreCacheSound(SD_MISSILEFLYSND);
 					SD_PreCacheSound(SD_FLAMEWALLFIRESND);
 					SD_PreCacheSound(SD_FLAMEWALLSND);
-					PreCacheGroup(W_GetNumForName("FIREW1"),
-									  W_GetNumForName("FIREW3"),
-									  cache_patch_t);
-					PreCacheGroup(W_GetNumForName("FWALL1"),
-									  W_GetNumForName("FWALL15"),
-									  cache_patch_t);
-					PreCacheGroup(W_GetNumForName("SKEL1"),
-									  W_GetNumForName("SKEL48"),
-									  cache_patch_t);
+					PreCacheGroupByName("FIREW1", "FIREW3", cache_patch_t);
+					PreCacheGroupByName("FWALL1", "FWALL15", cache_patch_t);
+					PreCacheGroupByName("SKEL1", "SKEL48", cache_patch_t);
 						SpawnStatic(i,j,tile-23,spawnz);
 					if (loadedgame == false)
 						gamestate.missiletotal ++;
@@ -6732,9 +6924,7 @@ void SetupStatics(void)
 					SD_PreCacheSound(SD_MISSILEFLYSND);
 					SD_PreCacheSound(SD_SPLITFIRESND);
 					SD_PreCacheSound(SD_SPLITSND);
-					PreCacheGroup(W_GetNumForName("SPLIT1"),
-									  W_GetNumForName("SPLIT4"),
-									  cache_patch_t);
+					PreCacheGroupByName("SPLIT1", "SPLIT4", cache_patch_t);
 						SpawnStatic(i,j,tile-23,spawnz);
 					if (loadedgame == false)
 						gamestate.missiletotal ++;
@@ -6751,12 +6941,8 @@ void SetupStatics(void)
 					SD_PreCacheSound(SD_GRAVFIRESND);
 					SD_PreCacheSound(SD_GRAVBUILDSND);
 
-					PreCacheGroup(W_GetNumForName("KES1"),
-									  W_GetNumForName("KES6"),
-									  cache_patch_t);
-					PreCacheGroup(W_GetNumForName("KSPHERE1"),
-									  W_GetNumForName("KSPHERE4"),
-									  cache_patch_t);
+					PreCacheGroupByName("KES1", "KES6", cache_patch_t);
+					PreCacheGroupByName("KSPHERE1", "KSPHERE4", cache_patch_t);
 						SpawnStatic(i,j,tile-23,spawnz);
 					if (loadedgame == false)
 						gamestate.missiletotal ++;
@@ -6855,17 +7041,11 @@ void SetupStatics(void)
 					  SD_PreCacheSound(SD_GODMANSND);
 
 
-					PreCacheGroup(W_GetNumForName("GODHAND1"),
-									  W_GetNumForName("GODHAND8"),
-									  cache_patch_t);
+					PreCacheGroupByName("GODHAND1", "GODHAND8", cache_patch_t);
 
-					PreCacheGroup(W_GetNumForName("VAPO1"),
-									  W_GetNumForName("LITSOUL"),
-									  cache_patch_t);
+					PreCacheGroupByName("VAPO1", "LITSOUL", cache_patch_t);
 
-					PreCacheGroup(W_GetNumForName("GODFIRE1"),
-									  W_GetNumForName("GODFIRE4"),
-									  cache_patch_t);
+					PreCacheGroupByName("GODFIRE1", "GODFIRE4", cache_patch_t);
 
 						SpawnStatic(i,j,stat_godmode,spawnz);
 					if (loadedgame == false)
@@ -6886,9 +7066,7 @@ void SetupStatics(void)
 
 
 
-					PreCacheGroup(W_GetNumForName("DOGNOSE1"),
-									  W_GetNumForName("DOGPAW4"),
-									  cache_patch_t);
+					PreCacheGroupByName("DOGNOSE1", "DOGPAW4", cache_patch_t);
 						SpawnStatic(i,j,stat_dogmode,spawnz);
 					if (loadedgame == false)
 						gamestate.supertotal ++;
@@ -7049,4 +7227,3 @@ void LoftSprites( void )
          }
       }
 }
-

@@ -132,6 +132,39 @@ void UpdateDemoPlayback (int time);
 int GetTypeSize (int type);
 int MaxSpeedForCharacter(playertype *pstate);
 
+#if PLATFORM_ATARI
+#ifndef ATARI_LOCAL_CMD_WAIT_SPINS
+#define ATARI_LOCAL_CMD_WAIT_SPINS 512
+#endif
+#ifndef ATARI_LOCAL_CMD_WAIT_TICS
+#define ATARI_LOCAL_CMD_WAIT_TICS 2
+#endif
+
+static int ATARI_CanForceLocalCommand(void)
+{
+   return (demoplayback == false) && (networkgame == false) && (modemgame == false);
+}
+
+static void ATARI_ForceLocalCommandReady(int time)
+{
+   int i;
+
+   for (i = 0; i < numplayers; ++i)
+      {
+      MoveType *cmd;
+
+      if (PlayerStatus[i] != player_ingame)
+         continue;
+
+      cmd = (MoveType *)PlayerCommand(i, CommandAddress(time));
+      cmd->type = COM_DELTANULL;
+      cmd->time = time;
+      }
+
+   ServerCommandStatus(time) = cs_ready;
+}
+#endif
+
 /*
 =============================================================================
 
@@ -473,6 +506,14 @@ void ShutdownClientControls ( void )
 void StartupClientControls ( void )
 {
    int i,j;
+#if PLATFORM_ATARI
+   #ifndef ATARI_DEBUG
+    #define ATARI_DEBUG 0
+   #endif
+   if (ATARI_DEBUG)
+      Cconws("ROTT: StartupClientControls entry\r\n");
+#endif
+
 
    if (controlupdatestarted==1)
       return;
@@ -484,6 +525,10 @@ void StartupClientControls ( void )
    controlschanged=true;
 
    INL_GetMouseDelta(&i,&i);
+#if PLATFORM_ATARI
+   if (ATARI_DEBUG)
+      Cconws("ROTT: StartupClientControls after mouse delta\r\n");
+#endif
 
 
    locplayerstate->dmomx = 0;
@@ -494,6 +539,10 @@ void StartupClientControls ( void )
 
    CalcTics();
    CalcTics();
+#if PLATFORM_ATARI
+   if (ATARI_DEBUG)
+      Cconws("ROTT: StartupClientControls after CalcTics\r\n");
+#endif
 
 //   FixingPackets=false;
 
@@ -517,9 +566,14 @@ void StartupClientControls ( void )
       controlupdatetime=GetTicCount();
 
    controlupdatetime-=(controlupdatetime%controldivisor);
+#if PLATFORM_ATARI
+   if (ATARI_DEBUG)
+      Cconws("ROTT: StartupClientControls after controlupdatetime\r\n");
+#endif
 
    serverupdatetime=controlupdatetime;
    oldpolltime=controlupdatetime;
+   oldtime=controlupdatetime;
    nextupdatetime=oldpolltime;
 #if (SYNCCHECK == 1)
    lastsynccheck=oldpolltime+CHECKSYNCTIME;
@@ -593,8 +647,18 @@ void StartupClientControls ( void )
       largesttime=0;
       PollControls();
       }
+#if PLATFORM_ATARI
+   if ((demoplayback == false) && (standalone == false) && (modemgame == false))
+      {
+      UpdateClientControls();
+      }
+#endif
    if (standalone==true)
       printf("Packet Server started\n");
+#if PLATFORM_ATARI
+   if (ATARI_DEBUG)
+      Cconws("ROTT: StartupClientControls done\r\n");
+#endif
 }
 
 
@@ -614,7 +678,7 @@ void UpdateClientControls ( void )
    if (controlupdatestarted==0)
       return;
 
-   if (InUCC)
+if (InUCC)
       return;
    else
       InUCC = true;
@@ -2498,8 +2562,21 @@ void ProcessPlayerCommand( int player )
 //****************************************************************************
 void CheckUnPause ( void )
 {
+#if PLATFORM_ATARI
+   int atari_spin = 0;
+   int atari_force_deadline = 0;
+#endif
    if (oldpolltime==nextupdatetime)
       {
+#if PLATFORM_ATARI
+      if (ATARI_CanForceLocalCommand())
+         {
+         int wait_tics = ATARI_LOCAL_CMD_WAIT_TICS;
+         if (wait_tics < 1)
+            wait_tics = 1;
+         atari_force_deadline = GetTicCount() + wait_tics;
+         }
+#endif
       nextupdatetime=oldpolltime+controldivisor;
       while (1)
          {
@@ -2516,7 +2593,24 @@ void CheckUnPause ( void )
             }
          else
             {
+#if PLATFORM_ATARI
+            if (demoplayback == false)
+               {
+               if ((atari_spin & 3) == 0)
+                  PollControls();
+               atari_spin++;
+               }
+#endif
             UpdateClientControls();
+#if PLATFORM_ATARI
+            if (atari_force_deadline != 0 &&
+                (atari_spin >= ATARI_LOCAL_CMD_WAIT_SPINS ||
+                 GetTicCount() >= atari_force_deadline))
+               {
+               ATARI_ForceLocalCommandReady(oldpolltime);
+               atari_force_deadline = 0;
+               }
+#endif
             }
          }
       }
@@ -2533,6 +2627,10 @@ void ControlPlayerObj (objtype * ob)
 	playertype * pstate;
    int num;
    int savetime;
+#if PLATFORM_ATARI
+   int atari_spin = 0;
+   int atari_force_deadline = 0;
+#endif
 //   boolean asked;
 
 //   if (GamePaused==true)
@@ -2554,6 +2652,15 @@ void ControlPlayerObj (objtype * ob)
          savetime=GetTicCount()+NETWORKTIMEOUT;
       else
          savetime=GetTicCount()+MODEMTIMEOUT;
+#if PLATFORM_ATARI
+      if (ATARI_CanForceLocalCommand())
+         {
+         int wait_tics = ATARI_LOCAL_CMD_WAIT_TICS;
+         if (wait_tics < 1)
+            wait_tics = 1;
+         atari_force_deadline = GetTicCount() + wait_tics;
+         }
+#endif
 
       if (PlayerStatus[num]!=player_ingame)
          return;
@@ -2583,7 +2690,24 @@ void ControlPlayerObj (objtype * ob)
    //         }
          else
             {
+#if PLATFORM_ATARI
+            if (demoplayback == false)
+               {
+               if ((atari_spin & 3) == 0)
+                  PollControls();
+               atari_spin++;
+               }
+#endif
             UpdateClientControls();
+#if PLATFORM_ATARI
+            if (atari_force_deadline != 0 &&
+                (atari_spin >= ATARI_LOCAL_CMD_WAIT_SPINS ||
+                 GetTicCount() >= atari_force_deadline))
+               {
+               ATARI_ForceLocalCommandReady(oldpolltime);
+               atari_force_deadline = 0;
+               }
+#endif
             }
 
          if (GetTicCount()>savetime)

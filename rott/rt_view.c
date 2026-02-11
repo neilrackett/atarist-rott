@@ -18,6 +18,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 #include "rt_def.h"
+#include "atari_tables.h"
 #include "rt_view.h"
 #include "z_zone.h"
 #include "w_wad.h"
@@ -79,9 +80,13 @@ int    screenofs;
 int    centerx;
 int    centery;
 int    centeryfrac;
-int    fulllight;
+int    fulllight = 1;
 int    weaponscale;
-int    viewsize;
+#if PLATFORM_ATARI
+int    viewsize = 2;
+#else
+int    viewsize = 8;
+#endif
 byte * colormap;
 byte * redmap;
 byte * greenmap;
@@ -135,7 +140,7 @@ byte    mapmasks3[4][9] = {
 =============================================================================
 */
 
-static char *YourComputerSucksString = "Buy an 060! :)";
+static char *YourComputerSucksString = "Buy a TT! ;-)";
 
 static int viewsizes[MAXVIEWSIZES*2]={ 80,48,
                            128,72,
@@ -229,6 +234,7 @@ void CalcProjection ( void )
     byte * ptr;
     int   length;
     int  * pangle;
+    int   tables_lump = 0;
 
 
 
@@ -242,6 +248,12 @@ void CalcProjection ( void )
 
 //Hey, isn't this stuff already loaded in?
 //Why don't we make this a lump?
+#if PLATFORM_ATARI
+   pangle = SafeMalloc(ATARI_PANGLE_LEN * sizeof(int));
+   memcpy(pangle, atari_pangle, ATARI_PANGLE_LEN * sizeof(int));
+   length = ATARI_PANGLE_LEN;
+   goto have_pangle;
+#endif
    table=W_CacheLumpName("tables",PU_STATIC, CvtNull, 1);
    ptr=table;
 
@@ -255,17 +267,21 @@ void CalcProjection ( void )
    pangle=SafeMalloc(length*sizeof(int));
    memcpy(pangle,ptr,length*sizeof(int));
 
+have_pangle:
    frac=((length*65536/centerx))>>1;
    for (i=0;i<centerx;i++)
       {
       // start 1/2 pixel over, so viewangle bisects two middle pixels
       intang=pangle[frac>>16];
+#if !PLATFORM_ATARI
       SwapIntelLong(&intang);
+#endif
       pixelangle[centerx-1-i] =(short) intang;
       pixelangle[centerx+i] =(short) -intang;
       frac+=(length*65536/centerx);
       }
-   table=W_CacheLumpName("tables",PU_CACHE, CvtNull, 1);
+   if (tables_lump != -1)
+      table=W_CacheLumpName("tables",PU_CACHE, CvtNull, 1);
    SafeFree(pangle);
 }
 
@@ -361,7 +377,6 @@ void SetViewSize
    }
 
    if ((G_weaponscale > 150)&&(G_weaponscale <600)){height = G_weaponscale;}
-   G_weaponscale=G_weaponscale/2;
    weaponscale = ( height << 16 ) / 168;//( height << 16 ) = 170 * 65536
 
   
@@ -470,6 +485,8 @@ void LoadColorMap( void )
 {
    int i,j;
    int lump, length;
+   const int default_levels = 32;
+   const int default_len = default_levels * 256;
 
    if (ColorMapLoaded==1)
       Error("Called LoadColorMap twice\n");
@@ -479,11 +496,22 @@ void LoadColorMap( void )
 //   256 byte align tables
 //
 
-	lump = W_GetNumForName("colormap");
-	length = W_LumpLength (lump) + 255;
-	colormap = SafeMalloc (length);
-	colormap = (byte *)( ((long)colormap + 255)&~0xff);
-	W_ReadLump (lump,colormap);
+	lump = W_CheckNumForName("colormap");
+	if (lump == -1)
+	{
+			colormap = SafeMalloc(default_len + 255);
+		colormap = (byte *)( ((long)colormap + 255)&~0xff);
+		for (i = 0; i < default_levels; ++i)
+			for (j = 0; j < 256; ++j)
+				colormap[i * 256 + j] = (byte)j;
+	}
+	else
+	{
+		length = W_LumpLength (lump) + 255;
+		colormap = SafeMalloc (length);
+		colormap = (byte *)( ((long)colormap + 255)&~0xff);
+		W_ReadLump (lump,colormap);
+	}
 
 // Fix fire colors in colormap
 
@@ -493,25 +521,46 @@ void LoadColorMap( void )
 
 // Get special maps
 
-	lump = W_GetNumForName("specmaps");
-	length = W_LumpLength (lump+1) + 255;
-	redmap = SafeMalloc (length);
-	redmap = (byte *)( ((long)redmap + 255)&~0xff);
-	W_ReadLump (lump+1,redmap);
-   greenmap = redmap+(16*256);
+	lump = W_CheckNumForName("specmaps");
+	if (lump == -1)
+	{
+			redmap = SafeMalloc(default_len + 255);
+		redmap = (byte *)( ((long)redmap + 255)&~0xff);
+		for (i = 0; i < default_levels; ++i)
+			for (j = 0; j < 256; ++j)
+				redmap[i * 256 + j] = (byte)j;
+		greenmap = redmap + (16 * 256);
+	}
+	else
+	{
+		length = W_LumpLength (lump+1) + 255;
+		redmap = SafeMalloc (length);
+		redmap = (byte *)( ((long)redmap + 255)&~0xff);
+		W_ReadLump (lump+1,redmap);
+		greenmap = redmap+(16*256);
+	}
 
 // Get player colormaps
 
 //   if (modemgame==true)
       {
-      lump = W_GetNumForName("playmaps")+1;
-      for (i=0;i<MAXPLAYERCOLORS;i++)
-         {
-	      length = W_LumpLength (lump+i) + 255;
-	      playermaps[i] = SafeMalloc (length);
-	      playermaps[i] = (byte *)( ((long)playermaps[i] + 255)&~0xff);
-	      W_ReadLump (lump+i,playermaps[i]);
-         }
+      lump = W_CheckNumForName("playmaps");
+      if (lump == -1)
+      {
+	         for (i=0;i<MAXPLAYERCOLORS;i++)
+	            playermaps[i] = colormap;
+      }
+      else
+      {
+         lump += 1;
+         for (i=0;i<MAXPLAYERCOLORS;i++)
+            {
+	         length = W_LumpLength (lump+i) + 255;
+	         playermaps[i] = SafeMalloc (length);
+	         playermaps[i] = (byte *)( ((long)playermaps[i] + 255)&~0xff);
+	         W_ReadLump (lump+i,playermaps[i]);
+            }
+      }
       }
 
    if (!quiet)
@@ -673,6 +722,13 @@ int GetLightRateTile ( void )
 */
 void UpdateLightLevel (int area)
 {
+#if PLATFORM_ATARI
+#ifndef ATARI_SKIP_LIGHTLEVEL
+#define ATARI_SKIP_LIGHTLEVEL 0
+#endif
+   if (ATARI_SKIP_LIGHTLEVEL)
+      return;
+#endif
    int numlights;
    int targetmin;
    int targetmax;
@@ -893,4 +949,3 @@ void SetModemLightLevel ( int type )
          break;
       }
 }
-

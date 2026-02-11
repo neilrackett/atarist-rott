@@ -35,6 +35,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <mem.h>
 #include <conio.h>
 #endif
+#if PLATFORM_ATARI
+#include <mint/osbind.h>
+#endif
 
 #include "rt_def.h"
 #include "task_man.h"
@@ -756,6 +759,17 @@ static int ticbase;      /* game-supplied base */
 
 int GetTicCount (void)
 {
+#if PLATFORM_ATARI
+#ifndef ATARI_DEBUG
+#define ATARI_DEBUG 0
+#endif
+	static int dbg_count = 0;
+	if (ATARI_DEBUG && dbg_count < 8)
+	{
+		Cconws("ROTT: GetTicCount entry\r\n");
+		dbg_count++;
+	}
+#endif
 	return (I_GetTime());
 }
 

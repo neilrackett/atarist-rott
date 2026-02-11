@@ -1636,7 +1636,8 @@ void DrawIString (unsigned short int x, unsigned short int y, const char *string
             if (ch == '\\')
             {
                temp = *string++;
-               temp = toupper (temp);
+               if (temp >= 'a' && temp <= 'z')
+                  temp = (char)(temp - ('a' - 'A'));
 
                // Force fontcolor to a specific color egacolor[ RED ];
                if (temp == 'N')

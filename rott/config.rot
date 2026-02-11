@@ -57,7 +57,7 @@ ScreenHeight       200
 ;
 ; Size of View port.
 ; (smallest) 0 - 10 (largest)
-ViewSize           8
+ViewSize           2
 
 ;
 ; Size of Weaponscale.
@@ -80,9 +80,9 @@ Threshold          1
 AutoDetail         0
 
 ;
-; 1 - Light Diminishing on
-; 0 - Light Diminishing off
-LightDim           0
+; 1 - Light Diminishing off (full light)
+; 0 - Light Diminishing on
+LightDim           1
 
 ;
 ; 1 - Bobbing on
@@ -102,7 +102,7 @@ MenuFlipSpeed      5
 ; 0 - Detail Level Low
 ; 1 - Detail Level Medium
 ; 2 - Detail Level High
-DetailLevel        2
+DetailLevel        0
 
 ;
 ; 1 - Floor and Ceiling on

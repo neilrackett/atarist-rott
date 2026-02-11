@@ -88,6 +88,7 @@ void StartupCinematic ( void )
 {
    StartupEvents ();
    StartupCinematicActors ();
+   CinematicAtariResetCaches();
    cinematicdone=false;
    cinematictime=0;
    GetCinematicTics ();
@@ -105,6 +106,7 @@ void StartupCinematic ( void )
 */
 void ShutdownCinematic ( void )
 {
+   CinematicAtariResetCaches();
    ShutdownEvents ();
    ShutdownCinematicActors ();
 }
@@ -215,11 +217,39 @@ void GetCinematicTics ( void )
 void PlayMovie ( char * name, boolean uselumpy )
 {
    int i;
+   const int static_hold_tics = 70;
+   const int static_max_tics = 12000;
 
    StartupCinematic ( );
    GrabCinematicScript (name, uselumpy);
 
    PrecacheCinematic ( );
+#if PLATFORM_ATARI
+   {
+   int safety = static_max_tics;
+
+   while ((cinematicdone==false) && (safety-- > 0))
+      {
+      cinematicdone = CinematicAbort();
+      UpdateCinematicEvents ( cinematictime );
+      UpdateCinematicActors ( );
+      cinematictime++;
+      }
+
+#if PLATFORM_ATARI
+   ATARI_ForceRender();
+#endif
+   DrawCinematicActors ();
+   XFlipPage();
+
+   if (cinematicdone==false)
+      {
+      int endtime = GetCinematicTime() + static_hold_tics;
+      while ((GetCinematicTime() < endtime) && (CinematicAbort() == false))
+         ;
+      }
+   }
+#else
    GetCinematicTics();
    while (cinematicdone==false)
       {
@@ -236,6 +266,7 @@ void PlayMovie ( char * name, boolean uselumpy )
       DrawCinematicActors ();
       GetCinematicTics();
       }
+#endif
 
    ShutdownCinematic ();
 }
@@ -283,4 +314,3 @@ void DrawFilmPost (byte * buf, byte * src, int height)
 	}
 }
 #endif
-

@@ -52,6 +52,18 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define RANDOMTEST  0
 #define WHEREAMI    0
 
+#if defined(PLATFORM_ATARI)
+#ifndef LITTLE_ENDIAN
+#define LITTLE_ENDIAN 1234
+#endif
+#ifndef BIG_ENDIAN
+#define BIG_ENDIAN 4321
+#endif
+#ifndef BYTE_ORDER
+#define BYTE_ORDER BIG_ENDIAN
+#endif
+#endif
+
 
 
 

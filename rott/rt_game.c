@@ -66,6 +66,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //MED
 #include "memcheck.h"
 
+#if PLATFORM_ATARI
+#ifndef ATARI_SKIP_FIZZLE
+#define ATARI_SKIP_FIZZLE 0
+#endif
+#endif
+
 #if (SHAREWARE == 1)
 #define NUMAMMOGRAPHICS 10
 #else
@@ -256,6 +262,7 @@ void V_ReDrawBkgnd (int x, int y, int width, int height, boolean shade)
          }
       }
    }
+
 }
 
 
@@ -1572,6 +1579,41 @@ void DrawTime
 
 void DrawMPPic (int xpos, int ypos, int width, int height, int heightmod, byte *src, boolean bufferofsonly)
 {
+#if PLATFORM_ATARI
+   int pixwidth = width << 2;
+   int fullheight = height + heightmod;
+   int plane_size = width * fullheight;
+   int x;
+   int y;
+   byte *base1 = bufferofsonly ? bufferofs : page1start;
+   byte *base2 = bufferofsonly ? NULL : page2start;
+   byte *base3 = bufferofsonly ? NULL : page3start;
+   int write_page2 = (!bufferofsonly && base2 != base1);
+   int write_page3 = (!bufferofsonly && base3 != base1 && base3 != base2);
+
+   for (y = 0; y < height; ++y)
+   {
+      for (x = 0; x < pixwidth; ++x)
+      {
+         int plane = x & 3;
+         int idx = (y * width) + (x >> 2);
+         byte pixel = *(src + plane * plane_size + idx);
+         if (pixel == 255)
+            continue;
+         {
+            int dx = xpos + x;
+            int dy = ypos + y;
+            int off = ylookup[dy] + dx;
+            base1[off] = pixel;
+            if (write_page2)
+               base2[off] = pixel;
+            if (write_page3)
+               base3[off] = pixel;
+         }
+      }
+   }
+   return;
+#else
    int olddest;
    int dest;
    int x;
@@ -1642,6 +1684,8 @@ void DrawMPPic (int xpos, int ypos, int width, int height, int heightmod, byte *
       }
 #endif
    }
+
+#endif
 }
 
 
@@ -1666,6 +1710,43 @@ void DrawMPPic (int xpos, int ypos, int width, int height, int heightmod, byte *
 
 void DrawColoredMPPic (int xpos, int ypos, int width, int height, int heightmod, byte *src, boolean bufferofsonly, int color)
 {
+#if PLATFORM_ATARI
+   int pixwidth = width << 2;
+   int fullheight = height + heightmod;
+   int plane_size = width * fullheight;
+   int x;
+   int y;
+   byte *base1 = bufferofsonly ? bufferofs : page1start;
+   byte *base2 = bufferofsonly ? NULL : page2start;
+   byte *base3 = bufferofsonly ? NULL : page3start;
+   int write_page2 = (!bufferofsonly && base2 != base1);
+   int write_page3 = (!bufferofsonly && base3 != base1 && base3 != base2);
+   byte *cmap = playermaps[color] + (1 << 12);
+
+   for (y = 0; y < height; ++y)
+   {
+      for (x = 0; x < pixwidth; ++x)
+      {
+         int plane = x & 3;
+         int idx = (y * width) + (x >> 2);
+         byte pixel = *(src + plane * plane_size + idx);
+         pixel = *(cmap + pixel);
+         if (pixel == 255)
+            continue;
+         {
+            int dx = xpos + x;
+            int dy = ypos + y;
+            int off = ylookup[dy] + dx;
+            base1[off] = pixel;
+            if (write_page2)
+               base2[off] = pixel;
+            if (write_page3)
+               base3[off] = pixel;
+         }
+      }
+   }
+   return;
+#else
    int olddest;
    int dest;
    int x;
@@ -1741,6 +1822,8 @@ void DrawColoredMPPic (int xpos, int ypos, int width, int height, int heightmod,
       }
 #endif
    }
+
+#endif
 }
 
 
@@ -1851,6 +1934,43 @@ void DrawTriads
 
 void DrawPPic (int xpos, int ypos, int width, int height, byte *src, int num, boolean up, boolean bufferofsonly)
 {
+#if PLATFORM_ATARI
+   int pixwidth = width << 2;
+   int step = up ? pixwidth : -pixwidth;
+   int plane_size = width * height;
+   int x;
+   int y;
+   int k;
+   byte *base1 = bufferofsonly ? bufferofs : page1start;
+   byte *base2 = bufferofsonly ? NULL : page2start;
+   byte *base3 = bufferofsonly ? NULL : page3start;
+   int write_page2 = (!bufferofsonly && base2 != base1);
+   int write_page3 = (!bufferofsonly && base3 != base1 && base3 != base2);
+
+   for (y = 0; y < height; ++y)
+   {
+      for (x = 0; x < pixwidth; ++x)
+      {
+         int plane = x & 3;
+         int idx = (y * width) + (x >> 2);
+         byte pixel = *(src + plane * plane_size + idx);
+         if (pixel == 255)
+            continue;
+         for (k = 0; k < num; ++k)
+         {
+            int dx = xpos + x + (step * k);
+            int dy = ypos + y;
+            int off = ylookup[dy] + dx;
+            base1[off] = pixel;
+            if (write_page2)
+               base2[off] = pixel;
+            if (write_page3)
+               base3[off] = pixel;
+         }
+      }
+   }
+   return;
+#else
    int olddest;
    int dest;
    int x;
@@ -1928,7 +2048,9 @@ void DrawPPic (int xpos, int ypos, int width, int height, byte *src, int num, bo
 
       mask <<= 1;
    }
+#endif
 }
+
 
 
 //****************************************************************************
@@ -2078,6 +2200,34 @@ void DrawBarAmmo
 
 void SingleDrawPPic (int xpos, int ypos, int width, int height, byte *src, int num, boolean up)
 {
+#if PLATFORM_ATARI
+   int pixwidth = width << 2;
+   int step = up ? pixwidth : -pixwidth;
+   int plane_size = width * height;
+   int x;
+   int y;
+   int k;
+   byte *base = bufferofs - screenofs;
+
+   for (y = 0; y < height; ++y)
+   {
+      for (x = 0; x < pixwidth; ++x)
+      {
+         int plane = x & 3;
+         int idx = (y * width) + (x >> 2);
+         byte pixel = *(src + plane * plane_size + idx);
+         if (pixel == 255)
+            continue;
+         for (k = 0; k < num; ++k)
+         {
+            int dx = xpos + x + (step * k);
+            int dy = ypos + y;
+            base[ylookup[dy] + dx] = pixel;
+         }
+      }
+   }
+   return;
+#else
    byte *olddest;
    byte *dest;
    int x;
@@ -2148,6 +2298,8 @@ void SingleDrawPPic (int xpos, int ypos, int width, int height, byte *src, int n
 
       mask <<= 1;
    }
+
+#endif
 }
 
 
@@ -2751,6 +2903,8 @@ void GM_MemToScreen (byte *source, int width, int height, int x, int y)
    dest1 = (byte *)(dest+page1start);
    dest2 = (byte *)(dest+page2start);
    dest3 = (byte *)(dest+page3start);
+   int copy_page2 = (dest2 != dest1);
+   int copy_page3 = (dest3 != dest1 && dest3 != dest2);
 
    for (plane = 0; plane<4; plane++)
    {
@@ -2765,13 +2919,17 @@ void GM_MemToScreen (byte *source, int width, int height, int x, int y)
       {
 #ifdef DOS
          memcpy (screen1, source, width);
-         memcpy (screen2, source, width);
-         memcpy (screen3, source, width);
+         if (copy_page2)
+            memcpy (screen2, source, width);
+         if (copy_page3)
+            memcpy (screen3, source, width);
 #else
 	for (x = 0; x < width; x++) {
 		screen1[x*4+plane] = source[x];
-		screen2[x*4+plane] = source[x];
-		screen3[x*4+plane] = source[x];
+		if (copy_page2)
+			screen2[x*4+plane] = source[x];
+		if (copy_page3)
+			screen3[x*4+plane] = source[x];
 	}
 #endif
       }
@@ -4334,6 +4492,11 @@ void Died (void)
    int   slowrate;
    playertype *pstate;
    objtype * killerobj=(objtype *)player->target;
+#if PLATFORM_ATARI
+   const boolean atari_skip_death_transition = (ATARI_SKIP_FIZZLE != 0);
+#else
+   const boolean atari_skip_death_transition = false;
+#endif
 player->yzangle=0;
 
    if (killerobj == NULL)
@@ -4346,7 +4509,7 @@ player->yzangle=0;
 
    M_LINKSTATE (player, pstate);
 
-   if ( (ZoomDeathOkay()==true) && (pstate->falling==false))
+   if ( (!atari_skip_death_transition) && (ZoomDeathOkay()==true) && (pstate->falling==false))
       {
       int x,y,z,radius,heightoffset;
       int endangle,startangle,killangle;
@@ -4449,7 +4612,7 @@ player->yzangle=0;
             break;
          }
       }
-   else if (pstate->falling==false)
+   else if ((!atari_skip_death_transition) && (pstate->falling==false))
       {
 
       //
@@ -4550,7 +4713,15 @@ player->yzangle=0;
 
       rng = RandomNumber ("Died",0);
 
-      if (pstate->falling==true)
+      if (atari_skip_death_transition)
+         {
+         if (pstate->falling==true)
+            {
+            SD_Play (SD_PLAYERTCDEATHSND+(pstate->player));
+            pstate->falling=false;
+            }
+         }
+      else if (pstate->falling==true)
          {
          RotateBuffer (0, 0, (FINEANGLES), (FINEANGLES>>6), (VBLCOUNTER*(1+slowrate)));
          SD_Play (SD_PLAYERTCDEATHSND+(pstate->player));
@@ -4591,14 +4762,17 @@ player->yzangle=0;
 
       SD_Play (SD_GAMEOVERSND);
       rng=RandomNumber("Died",0);
-      if (rng<64)
-         RotateBuffer(0,(FINEANGLES>>1),(FINEANGLES),(FINEANGLES*64),(VBLCOUNTER*(3+slowrate)));
-      else if (rng<128)
-         VL_FadeToColor (VBLCOUNTER*3, 255, 255, 255);
-      else if (rng<192)
-         RotateBuffer(0,(FINEANGLES*2),(FINEANGLES),(FINEANGLES*64),(VBLCOUNTER*(3+slowrate)));
-      else
-         RotateBuffer(0,(FINEANGLES*2),(FINEANGLES),(FINEANGLES*64),(VBLCOUNTER*(3+slowrate)));
+      if (!atari_skip_death_transition)
+         {
+         if (rng<64)
+            RotateBuffer(0,(FINEANGLES>>1),(FINEANGLES),(FINEANGLES*64),(VBLCOUNTER*(3+slowrate)));
+         else if (rng<128)
+            VL_FadeToColor (VBLCOUNTER*3, 255, 255, 255);
+         else if (rng<192)
+            RotateBuffer(0,(FINEANGLES*2),(FINEANGLES),(FINEANGLES*64),(VBLCOUNTER*(3+slowrate)));
+         else
+            RotateBuffer(0,(FINEANGLES*2),(FINEANGLES),(FINEANGLES*64),(VBLCOUNTER*(3+slowrate)));
+         }
 
       screenfaded=false;
 

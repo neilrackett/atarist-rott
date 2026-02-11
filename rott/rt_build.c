@@ -71,6 +71,16 @@ static int readytoflip;
 static boolean MenuBufStarted=false;
 static int mindist=0x2700;
 static boolean BackgroundDrawn=false;
+#if PLATFORM_ATARI
+static boolean atari_menu_dirty = false;
+
+static void ATARI_MenuMarkDirty(void)
+{
+   atari_menu_dirty = true;
+}
+#else
+#define ATARI_MenuMarkDirty() do { } while (0)
+#endif
 
 static plane_t planelist[MAXPLANES],*planeptr;
 
@@ -421,6 +431,7 @@ void ClearMenuBuf ( void )
    shape=W_CacheLumpName(MENUBACKNAME,PU_CACHE, Cvt_patch_t, 1);
    shape+=8;
    memcpy (menubuf,shape,TEXTUREW*TEXTUREHEIGHT);
+   ATARI_MenuMarkDirty();
 }
 
 //******************************************************************************
@@ -436,6 +447,9 @@ void ShutdownMenuBuf ( void )
    MenuBufStarted=false;
    SafeFree(menubuffers[0]);
    SafeFree(menubuffers[1]);
+#if PLATFORM_ATARI
+   atari_menu_dirty = false;
+#endif
    if (loadedgame==false)
       SetViewSize(viewsize);
 }
@@ -512,6 +526,7 @@ void SetupMenuBuf ( void )
    menubuf=menubuffers[0];
    ClearMenuBuf();
    BackgroundDrawn=false;
+   ATARI_MenuMarkDirty();
 }
 
 
@@ -573,6 +588,23 @@ void RefreshMenuBuf( int time )
    if (readytoflip)
       return;
 
+#if PLATFORM_ATARI
+   /*
+   Skip full menu scene redraws unless content changed.
+   This keeps the classic 3D menu look while avoiding per-poll renders.
+   */
+   if (time <= 0)
+      {
+      if (!atari_menu_dirty)
+         return;
+      if (!ATARI_BeginRenderFrame())
+         return;
+      PositionMenuBuf(0, NORMALVIEW, true);
+      atari_menu_dirty = false;
+      return;
+      }
+#endif
+
    for (i=0;i<=time;i+=tics)
       {
       //PositionMenuBuf (0,NORMALVIEW,false);
@@ -624,6 +656,7 @@ void SetAlternateMenuBuf ( void )
   alternatemenubuf^=1;
   readytoflip=1;
   menubuf=menubuffers[alternatemenubuf];
+  ATARI_MenuMarkDirty();
 }
 
 //******************************************************************************
@@ -639,6 +672,7 @@ void SetMenuTitle ( const char * menutitle )
   strcpy(menutitles[alternatemenubuf],menutitle);
   if (readytoflip==0)
      strcpy(titlestring,menutitle);
+  ATARI_MenuMarkDirty();
 }
 
 //******************************************************************************
@@ -666,6 +700,7 @@ void DrawMenuBufPicture (int x, int y, const byte * pic, int w, int h)
       memcpy(buffer,pic,h);
       pic+=h;
       }
+   ATARI_MenuMarkDirty();
 }
 
 //******************************************************************************
@@ -697,6 +732,7 @@ void DrawMenuBufItem (int x, int y, int shapenum)
    for (cnt = 0; cnt < p->width; cnt++,buffer+=TEXTUREHEIGHT)
       ScaleMenuBufPost ((byte *)(p->collumnofs[cnt]+shape),
                         p->topoffset, buffer);
+   ATARI_MenuMarkDirty();
 }
 
 //******************************************************************************
@@ -760,6 +796,7 @@ void DrawIMenuBufItem (int x, int y, int shapenum, int color)
    for (cnt = 0; cnt < p->width; cnt++,buffer+=TEXTUREHEIGHT)
       IScaleMenuBufPost ((byte *)(p->collumnofs[cnt]+shape),
                         p->topoffset, buffer, color);
+   ATARI_MenuMarkDirty();
 }
 
 
@@ -865,6 +902,7 @@ void EraseMenuBufRegion (int x, int y, int width, int height)
       buffer+=TEXTUREHEIGHT;
       shape+=TEXTUREHEIGHT;
       }
+   ATARI_MenuMarkDirty();
 }
 
 
@@ -914,6 +952,7 @@ void DrawTMenuBufPic (int x, int y, int shapenum)
             }
          }
       }
+   ATARI_MenuMarkDirty();
 }
 
 
@@ -949,6 +988,7 @@ void DrawTMenuBufItem (int x, int y, int shapenum)
    for (cnt = 0; cnt < p->width; cnt++,buffer+=TEXTUREHEIGHT)
       TScaleMenuBufPost ((byte *)(p->collumnofs[cnt]+shape),
                         p->topoffset, buffer);
+   ATARI_MenuMarkDirty();
 }
 
 //******************************************************************************
@@ -983,6 +1023,7 @@ void DrawColoredMenuBufItem (int x, int y, int shapenum, int color)
    for (cnt = 0; cnt < p->width; cnt++,buffer+=TEXTUREHEIGHT)
       CScaleMenuBufPost ((byte *)(p->collumnofs[cnt]+shape),
                         p->topoffset, buffer);
+   ATARI_MenuMarkDirty();
 }
 
 //******************************************************************************
@@ -1025,6 +1066,7 @@ void DrawMenuBufPic (int x, int y, int shapenum)
             *(buf)=*(src++);
          }
       }
+   ATARI_MenuMarkDirty();
 }
 
 
@@ -1067,6 +1109,7 @@ void DrawTMenuBufBox ( int x, int y, int width, int height )
 
       buffer += TEXTUREHEIGHT;
       }
+   ATARI_MenuMarkDirty();
    }
 
 
@@ -1126,6 +1169,7 @@ void DrawTMenuBufHLine (int x, int y, int width, boolean up)
          *(buf) = pixel;
       }
    }
+   ATARI_MenuMarkDirty();
 }
 
 //******************************************************************************
@@ -1160,6 +1204,7 @@ void DrawTMenuBufVLine (int x, int y, int height, boolean up)
       pixel = *(shadingtable+pixel);
       *(buf) = pixel;
    }
+   ATARI_MenuMarkDirty();
 }
 
 //******************************************************************************
@@ -1214,6 +1259,7 @@ void DrawMenuBufPropString (int px, int py, const char *string)
          dest = origdest;
       }
    }
+   ATARI_MenuMarkDirty();
 
 }
 
@@ -1286,6 +1332,7 @@ void DrawMenuBufIString (int px, int py, const char *string, int color)
          dest = origdest;
       }
    }
+   ATARI_MenuMarkDirty();
 
 }
 
@@ -1339,6 +1386,7 @@ void DrawTMenuBufPropString (int px, int py, const char *string)
          dest = origdest;
       }
    }
+   ATARI_MenuMarkDirty();
 }
 
 

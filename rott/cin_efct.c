@@ -28,6 +28,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "w_wad.h"
 #include "z_zone.h"
 #include <string.h>
+#include <stdlib.h>
 
 #ifdef DOS
 #include <conio.h>
@@ -44,6 +45,298 @@ static int cin_invscale;
 void DrawFadeout ( void );
 void DrawBlankScreen ( void );
 void DrawClearBuffer ( void );
+
+#if PLATFORM_ATARI
+#ifndef ATARI_SKIP_FADES
+#define ATARI_SKIP_FADES 0
+#endif
+
+#define ATARI_CIN_CACHE_MAX 12
+#define ATARI_CIN_KIND_BACKGROUND 1
+#define ATARI_CIN_KIND_MULTI 2
+#define ATARI_CIN_KIND_BACKDROP 3
+
+typedef struct
+{
+   const backevent *back;
+   int kind;
+   int width;
+   int height;
+   byte *pixels;
+   byte *mask;
+} atari_cin_cache_t;
+
+static atari_cin_cache_t atari_cin_cache[ATARI_CIN_CACHE_MAX];
+static int atari_postpic_lump = -1;
+static int atari_postpic_width = 0;
+static int atari_postpic_height = 0;
+static byte *atari_postpic_rows = NULL;
+
+static void atari_cin_free_cache(atari_cin_cache_t *entry)
+{
+   if (!entry)
+      return;
+   if (entry->pixels)
+      free(entry->pixels);
+   if (entry->mask)
+      free(entry->mask);
+   memset(entry, 0, sizeof(*entry));
+}
+
+void CinematicAtariResetCaches ( void )
+{
+   int i;
+
+   for (i = 0; i < ATARI_CIN_CACHE_MAX; ++i)
+      atari_cin_free_cache(&atari_cin_cache[i]);
+   if (atari_postpic_rows)
+      free(atari_postpic_rows);
+   atari_postpic_rows = NULL;
+   atari_postpic_lump = -1;
+   atari_postpic_width = 0;
+   atari_postpic_height = 0;
+}
+
+static atari_cin_cache_t *atari_cin_find_cache(const backevent *back, int kind)
+{
+   int i;
+
+   for (i = 0; i < ATARI_CIN_CACHE_MAX; ++i)
+      {
+      if (atari_cin_cache[i].back == back && atari_cin_cache[i].kind == kind)
+         return &atari_cin_cache[i];
+      }
+   return NULL;
+}
+
+static atari_cin_cache_t *atari_cin_alloc_cache(const backevent *back, int kind)
+{
+   int i;
+
+   for (i = 0; i < ATARI_CIN_CACHE_MAX; ++i)
+      {
+      if (atari_cin_cache[i].back == NULL)
+         {
+         memset(&atari_cin_cache[i], 0, sizeof(atari_cin_cache[i]));
+         atari_cin_cache[i].back = back;
+         atari_cin_cache[i].kind = kind;
+         return &atari_cin_cache[i];
+         }
+      }
+
+   atari_cin_free_cache(&atari_cin_cache[0]);
+   atari_cin_cache[0].back = back;
+   atari_cin_cache[0].kind = kind;
+   return &atari_cin_cache[0];
+}
+
+static int atari_cin_wrap_offset(int offset, int width)
+{
+   int wrapped;
+
+   if (width <= 0)
+      return 0;
+
+   wrapped = offset % width;
+   if (wrapped < 0)
+      wrapped += width;
+   return wrapped;
+}
+
+static int atari_cin_cache_column_image(atari_cin_cache_t *entry, const byte *columns, int width, int height)
+{
+   byte *dst;
+   int x;
+   int y;
+
+   if (!entry || !columns || width <= 0 || height <= 0)
+      return 0;
+
+   dst = (byte *)malloc((size_t)width * (size_t)height);
+   if (!dst)
+      return 0;
+
+   entry->width = width;
+   entry->height = height;
+   entry->pixels = dst;
+
+   for (x = 0; x < width; ++x)
+      {
+      const byte *src_col = columns + ((size_t)x * (size_t)height);
+      byte *dst_row = dst + x;
+      for (y = 0; y < height; ++y)
+         {
+         dst_row[(size_t)y * (size_t)width] = src_col[y];
+         }
+      }
+
+   return 1;
+}
+
+static int atari_cin_cache_backdrop(atari_cin_cache_t *entry, const byte *shape, const patch_t *p, int width)
+{
+   byte *pix;
+   byte *mask;
+   int x;
+
+   if (!entry || !shape || !p || width <= 0 || p->height <= 0 || p->width <= 0)
+      return 0;
+
+   pix = (byte *)malloc((size_t)width * (size_t)p->height);
+   if (!pix)
+      return 0;
+   mask = (byte *)malloc((size_t)width * (size_t)p->height);
+   if (!mask)
+      {
+      free(pix);
+      return 0;
+      }
+
+   memset(pix, 0, (size_t)width * (size_t)p->height);
+   memset(mask, 0, (size_t)width * (size_t)p->height);
+
+   entry->width = width;
+   entry->height = p->height;
+   entry->pixels = pix;
+   entry->mask = mask;
+
+   for (x = 0; x < width; ++x)
+      {
+      int src_x = x % p->width;
+      const byte *src = shape + p->collumnofs[src_x];
+      int postoffset = *(src++);
+
+      while (postoffset != 255)
+         {
+         int postlength = *(src++);
+         int y;
+
+         for (y = 0; y < postlength; ++y)
+            {
+            int py = postoffset + y;
+            if ((unsigned)py < (unsigned)p->height)
+               {
+               size_t idx = ((size_t)py * (size_t)width) + (size_t)x;
+               pix[idx] = src[y];
+               mask[idx] = 1;
+               }
+            }
+         src += postlength;
+         postoffset = *(src++);
+         }
+      }
+
+   return 1;
+}
+
+static int atari_cin_cache_postpic(int lumpnum, const lpic_t *pic)
+{
+   byte *rows;
+   int x;
+   int y;
+   int width;
+   int height;
+
+   if (!pic || pic->width <= 0 || pic->height <= 0)
+      return 0;
+
+   if (atari_postpic_lump == lumpnum && atari_postpic_rows)
+      return 1;
+
+   if (atari_postpic_rows)
+      {
+      free(atari_postpic_rows);
+      atari_postpic_rows = NULL;
+      atari_postpic_lump = -1;
+      atari_postpic_width = 0;
+      atari_postpic_height = 0;
+      }
+
+   width = pic->width;
+   height = pic->height;
+   rows = (byte *)malloc((size_t)width * (size_t)height);
+   if (!rows)
+      return 0;
+
+   for (x = 0; x < width; ++x)
+      {
+      const byte *src_col = &(pic->data) + ((size_t)x * (size_t)height);
+      byte *dst_row = rows + x;
+      for (y = 0; y < height; ++y)
+         dst_row[(size_t)y * (size_t)width] = src_col[y];
+      }
+
+   atari_postpic_rows = rows;
+   atari_postpic_lump = lumpnum;
+   atari_postpic_width = width;
+   atari_postpic_height = height;
+   return 1;
+}
+
+static void atari_cin_draw_opaque_rows(const atari_cin_cache_t *entry, int xoffset, int dst_y, int src_y, int draw_h)
+{
+   int sx;
+   int row;
+
+   if (!entry || !entry->pixels || entry->width <= 0 || entry->height <= 0 || draw_h <= 0)
+      return;
+
+   sx = atari_cin_wrap_offset(xoffset, entry->width);
+
+   for (row = 0; row < draw_h; ++row)
+      {
+      byte *dst = (byte *)bufferofs + ylookup[dst_y + row];
+      const byte *src = entry->pixels + ((size_t)(src_y + row) * (size_t)entry->width);
+      int copied = 0;
+      int pos = sx;
+
+      while (copied < iGLOBAL_SCREENWIDTH)
+         {
+         int run = entry->width - pos;
+
+         if (run > (iGLOBAL_SCREENWIDTH - copied))
+            run = iGLOBAL_SCREENWIDTH - copied;
+
+         memcpy(dst + copied, src + pos, (size_t)run);
+         copied += run;
+         pos = 0;
+         }
+      }
+}
+
+static void atari_cin_draw_masked_rows(const atari_cin_cache_t *entry, int xoffset, int dst_y, int src_y, int draw_h)
+{
+   int sx;
+   int row;
+
+   if (!entry || !entry->pixels || !entry->mask || entry->width <= 0 || entry->height <= 0 || draw_h <= 0)
+      return;
+
+   sx = atari_cin_wrap_offset(xoffset, entry->width);
+
+   for (row = 0; row < draw_h; ++row)
+      {
+      byte *dst = (byte *)bufferofs + ylookup[dst_y + row];
+      const byte *src = entry->pixels + ((size_t)(src_y + row) * (size_t)entry->width);
+      const byte *msk = entry->mask + ((size_t)(src_y + row) * (size_t)entry->width);
+      int x;
+      int pos = sx;
+
+      for (x = 0; x < iGLOBAL_SCREENWIDTH; ++x)
+         {
+         if (msk[pos])
+            dst[x] = src[pos];
+         pos++;
+         if (pos >= entry->width)
+            pos = 0;
+         }
+      }
+}
+#else
+void CinematicAtariResetCaches ( void )
+{
+}
+#endif
 
 /*
 ===============
@@ -362,6 +655,45 @@ void DrawCinematicBackground ( backevent * back )
    if (height!=iGLOBAL_SCREENHEIGHT)
       DrawClearBuffer ();
 
+#if PLATFORM_ATARI
+   if (height > 0)
+      {
+      atari_cin_cache_t *cache = atari_cin_find_cache(back, ATARI_CIN_KIND_BACKGROUND);
+
+      if (!cache)
+         cache = atari_cin_alloc_cache(back, ATARI_CIN_KIND_BACKGROUND);
+      if (cache && !cache->pixels)
+         {
+         int cache_width = back->backdropwidth;
+
+         if (cache_width <= 0 || cache_width > pic->width)
+            cache_width = pic->width;
+         if (!atari_cin_cache_column_image(cache, &(pic->data), cache_width, pic->height))
+            cache = NULL;
+         }
+
+      if (cache && cache->pixels)
+         {
+         int dst_y = back->yoffset;
+         int src_y = 0;
+         int draw_h = height;
+
+         if (dst_y < 0)
+            {
+            src_y = -dst_y;
+            draw_h += dst_y;
+            dst_y = 0;
+            }
+         if (dst_y + draw_h > iGLOBAL_SCREENHEIGHT)
+            draw_h = iGLOBAL_SCREENHEIGHT - dst_y;
+
+         if (draw_h > 0)
+            atari_cin_draw_opaque_rows(cache, back->currentoffset >> FRACTIONBITS, dst_y, src_y, draw_h);
+         return;
+         }
+      }
+#endif
+
    plane = 0;
    
 #ifdef DOS
@@ -413,6 +745,41 @@ void DrawCinematicMultiBackground ( backevent * back )
 
    if (height!=iGLOBAL_SCREENHEIGHT)
       DrawClearBuffer ();
+
+#if PLATFORM_ATARI
+   if (height > 0)
+      {
+      atari_cin_cache_t *cache = atari_cin_find_cache(back, ATARI_CIN_KIND_MULTI);
+
+      if (!cache)
+         cache = atari_cin_alloc_cache(back, ATARI_CIN_KIND_MULTI);
+      if (cache && !cache->pixels)
+         {
+         if (!atari_cin_cache_column_image(cache, back->data, back->backdropwidth, back->height))
+            cache = NULL;
+         }
+
+      if (cache && cache->pixels)
+         {
+         int dst_y = back->yoffset;
+         int src_y = 0;
+         int draw_h = height;
+
+         if (dst_y < 0)
+            {
+            src_y = -dst_y;
+            draw_h += dst_y;
+            dst_y = 0;
+            }
+         if (dst_y + draw_h > iGLOBAL_SCREENHEIGHT)
+            draw_h = iGLOBAL_SCREENHEIGHT - dst_y;
+
+         if (draw_h > 0)
+            atari_cin_draw_opaque_rows(cache, back->currentoffset >> FRACTIONBITS, dst_y, src_y, draw_h);
+         return;
+         }
+      }
+#endif
 
    plane = 0;
    
@@ -467,6 +834,44 @@ void DrawCinematicBackdrop ( backevent * back )
    p=(patch_t *)shape;
 
    toppost=-p->topoffset+back->yoffset;
+
+#if PLATFORM_ATARI
+   {
+   atari_cin_cache_t *cache = atari_cin_find_cache(back, ATARI_CIN_KIND_BACKDROP);
+
+   if (!cache)
+      cache = atari_cin_alloc_cache(back, ATARI_CIN_KIND_BACKDROP);
+   if (cache && !cache->pixels)
+      {
+      int cache_width = back->backdropwidth;
+
+      if (cache_width <= 0 || cache_width > p->width)
+         cache_width = p->width;
+      if (!atari_cin_cache_backdrop(cache, shape, p, cache_width))
+         cache = NULL;
+      }
+
+   if (cache && cache->pixels && cache->mask)
+      {
+      int dst_y = toppost;
+      int src_y = 0;
+      int draw_h = p->height;
+
+      if (dst_y < 0)
+         {
+         src_y = -dst_y;
+         draw_h += dst_y;
+         dst_y = 0;
+         }
+      if (dst_y + draw_h > iGLOBAL_SCREENHEIGHT)
+         draw_h = iGLOBAL_SCREENHEIGHT - dst_y;
+
+      if (draw_h > 0)
+         atari_cin_draw_masked_rows(cache, back->currentoffset >> FRACTIONBITS, dst_y, src_y, draw_h);
+      return;
+      }
+   }
+#endif
 
    plane = 0;
 
@@ -649,6 +1054,13 @@ void DrawFadeout ( void )
    byte origpal[768];
    byte newpal[768];
    int      i,j;
+
+#if PLATFORM_ATARI && ATARI_SKIP_FADES
+   VL_ClearVideo (0);
+   GetCinematicTics ();
+   GetCinematicTics ();
+   return;
+#endif
 
    CinematicGetPalette (&origpal[0]);
    for (j = 0; j < FADEOUTTIME; j++)
@@ -932,6 +1344,28 @@ void DrawPostPic ( int lumpnum )
    pic=(lpic_t *)W_CacheLumpNum(lumpnum,PU_CACHE, Cvt_lpic_t, 1);
 
    height = pic->height;
+
+#if PLATFORM_ATARI
+   if (atari_cin_cache_postpic(lumpnum, pic))
+      {
+      int draw_h = atari_postpic_height;
+      int draw_w = atari_postpic_width;
+      int y;
+
+      if (draw_w > iGLOBAL_SCREENWIDTH)
+         draw_w = iGLOBAL_SCREENWIDTH;
+      if (draw_h > iGLOBAL_SCREENHEIGHT)
+         draw_h = iGLOBAL_SCREENHEIGHT;
+
+      for (y = 0; y < draw_h; ++y)
+         {
+         memcpy((byte *)bufferofs + ylookup[y],
+                atari_postpic_rows + ((size_t)y * (size_t)atari_postpic_width),
+                (size_t)draw_w);
+         }
+      return;
+      }
+#endif
 
    plane = 0;
    

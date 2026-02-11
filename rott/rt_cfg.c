@@ -128,11 +128,15 @@ int     MidiAddress      = 0x330;
 boolean cybermanenabled  = false;
 boolean assassinenabled  = false;
 boolean spaceballenabled = false;
-boolean AutoDetailOn     = true;
+boolean AutoDetailOn     = false;
 int     DoubleClickSpeed = 20;
-boolean BobbinOn         = true;
+boolean BobbinOn         = false;
 int     Menuflipspeed    = 15;
-int     DetailLevel      = 2;         //HI DETAIL
+#if PLATFORM_ATARI
+int     DetailLevel      = 0;         // LOW DETAIL
+#else
+int     DetailLevel      = 2;         // HI DETAIL
+#endif
 int     fandc            = 1;
 int     blanktime        = (2*60*VBLCOUNTER);
 boolean ConfigLoaded     = false;
@@ -145,7 +149,8 @@ byte    passwordstring[20];
 
 #ifndef _ROTT_
 
-int     fulllight        = 0;
+/* 1 = light diminishing disabled (full light), 0 = enabled */
+int     fulllight        = 1;
 int     viewsize         = 7;
 
 #endif
@@ -570,6 +575,8 @@ boolean ParseConfigFile (void)
       // Read in Light Dim
 
       ReadInt ("LightDim", &fulllight);
+      if ((fulllight != 0) && (fulllight != 1))
+         fulllight = 1;
 
       // Read in Bobbin' On
 
@@ -946,7 +953,8 @@ void SetConfigDefaultValues (void)
    joystickenabled = false;
    joypadenabled   = false;
    joystickport    = 0;
-   viewsize        = 7;
+   viewsize        = 2;
+   fulllight       = 1;
    mouseadjustment = 5;
    gammaindex      = 0;
    gamestate.violence = 3;
@@ -1862,8 +1870,8 @@ void WriteConfig (void)
    // Write in Light Dim
 
    SafeWriteString(file,"\n;\n");
-   SafeWriteString(file,"; 1 - Light Diminishing on\n");
-   SafeWriteString(file,"; 0 - Light Diminishing off\n");
+   SafeWriteString(file,"; 1 - Light Diminishing off (full light)\n");
+   SafeWriteString(file,"; 0 - Light Diminishing on\n");
    WriteParameter (file,"LightDim         ", fulllight);
 
    // Write in Bobbin' On
@@ -2185,4 +2193,3 @@ void ReadSETUPFiles (void)
 }
 
 #endif
-

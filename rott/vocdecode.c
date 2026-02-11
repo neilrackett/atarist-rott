@@ -12,6 +12,7 @@
 #define cdecl
 #endif
 
+#if !PLATFORM_ATARI
 #include <exec/exec.h>
 #include <dos/dos.h>
 #include <graphics/gfxbase.h>
@@ -20,6 +21,7 @@
 #include <proto/exec.h>
 #include <proto/dos.h>
 #include <proto/graphics.h>
+#endif
 #include "rt_def.h"      // ROTT music hack
 #include "rt_cfg.h"      // ROTT music hack
 #include "rt_util.h"     // ROTT music hack

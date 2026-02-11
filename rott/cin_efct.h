@@ -65,6 +65,6 @@ boolean UpdateCinematicEffect ( enum_eventtype type, void * effect );
 void PrecacheCinematicEffect ( enum_eventtype type, void * effect );
 void ProfileDisplay ( void );
 void DrawPostPic ( int lumpnum );
+void CinematicAtariResetCaches ( void );
 
 #endif
-

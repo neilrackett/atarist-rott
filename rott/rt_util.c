@@ -39,6 +39,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <time.h>
+#if PLATFORM_ATARI
+#include <mint/osbind.h>
+#endif
 #include "watcom.h"
 #include "_rt_util.h"
 #include "rt_util.h"
@@ -318,6 +321,9 @@ void ClearBuffer( char * buf, int size )
 
 void Error (char *error, ...)
 {
+#if PLATFORM_ATARI
+    Cconws("ROTT: Error\r\n");
+#endif
    char msgbuf[300];
 	va_list	argptr;
    char i;
@@ -356,7 +362,7 @@ void Error (char *error, ...)
    px = ERRORVERSIONCOL;
    py = ERRORVERSIONROW;
 #if (BETA == 1)
-   UL_printf ("á");
+   UL_printf ("");
 #else
    UL_printf (itoa(ROTTMAJORVERSION,&buf[0],10));
 #endif
@@ -422,6 +428,10 @@ void Error (char *error, ...)
    		// which is freed by this function.
  
 
+#if PLATFORM_ATARI
+   Cconws("Press any key...\r\n");
+   Cconin();
+#endif
    exit (1);
 }
 
@@ -773,7 +783,11 @@ void	SaveFile (char *filename, void *buffer, long count)
 
 void FixFilePath(char *filename)
 {
-#if PLATFORM_UNIX
+#if PLATFORM_ATARI
+    (void)filename;
+    return;
+#endif
+#if PLATFORM_UNIX || PLATFORM_ATARI
     char *ptr;
     char *lastsep = filename;
 
@@ -883,7 +897,7 @@ int _dos_findnext(struct find_t *f)
     return(0);
 }
 
-#elif PLATFORM_UNIX 
+#elif PLATFORM_UNIX || PLATFORM_ATARI
 int _dos_findfirst(char *filename, int x, struct find_t *f)
 {
     char *ptr;
@@ -1477,9 +1491,16 @@ void VL_NormalizePalette (byte *palette)
 
 void VL_SetPalette (byte *palette)
 {
- 
+   static byte lastpal[768];
+   static boolean has_last = false;
+
+   if (has_last && memcmp(lastpal, palette, 768) == 0)
+      return;
+
+   memcpy(lastpal, palette, 768);
+   has_last = true;
+
    I_SetPalette(palette);
- 
 }
 
 
@@ -1528,7 +1549,7 @@ void UL_DisplayMemoryError ( int memneeded )
    px = ERRORVERSIONCOL;
    py = ERRORVERSIONROW;
 #if (BETA == 1)
-   UL_printf ("á");
+   UL_printf ("");
 #else
    UL_printf (itoa(ROTTMAJORVERSION,&buf[0],10));
 #endif

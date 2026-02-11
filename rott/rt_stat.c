@@ -20,6 +20,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "rt_def.h"
 
+#if PLATFORM_ATARI
+#include <mint/osbind.h>
+#endif
+
 #ifdef DOS
 #include <malloc.h>
 #include <dos.h>
@@ -38,6 +42,47 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_door.h"
 #include "rt_main.h"
 #include "w_wad.h"
+
+#if PLATFORM_ATARI
+static int atari_lumpnum(const char *name)
+{
+   int n = W_CheckNumForName((char *)name);
+   if (n == -1)
+   {
+      char buf[96];
+      sprintf(buf, "ROTT: lump missing: %s\r\n", name);
+      Cconws(buf);
+   }
+   return n;
+}
+#endif
+
+static void PreCacheGroupByName(const char *startname, const char *endname, int type)
+{
+#if PLATFORM_ATARI
+   int start = atari_lumpnum(startname);
+   int stop = atari_lumpnum(endname);
+   if (start == -1 || stop == -1)
+      return;
+   PreCacheGroup(start, stop, type);
+#else
+   PreCacheGroup(W_GetNumForName((char *)startname),
+                 W_GetNumForName((char *)endname),
+                 type);
+#endif
+}
+
+static void PreCacheLumpByName(const char *name, int level, int type)
+{
+#if PLATFORM_ATARI
+   int lump = atari_lumpnum(name);
+   if (lump == -1)
+      return;
+   PreCacheLump(lump, level, type);
+#else
+   PreCacheLump(W_GetNumForName((char *)name), level, type);
+#endif
+}
 #include "rt_main.h"
 #include "rt_rand.h"
 #include "rt_menu.h"
@@ -616,11 +661,23 @@ void SetupAnimatedWall(int which)
 
    aw = &animwalls[which];
 
+   texture = W_CheckNumForName(animwallsinfo[which].firstlump);
+   if (texture == -1)
+      {
+#if PLATFORM_ATARI
+      {
+         char buf[80];
+         sprintf(buf, "ROTT: animwall missing %s\r\n", animwallsinfo[which].firstlump);
+         Cconws(buf);
+      }
+#endif
+      aw->active = 0;
+      return;
+      }
+
    aw->active=1;
    aw->ticcount=animwallsinfo[which].tictime;
    aw->count = 1;
-
-   texture=W_GetNumForName(animwallsinfo[which].firstlump);
 
    aw->basetexture=texture;
    aw->texture=texture;
@@ -862,17 +919,13 @@ void PreCacheStaticFrames(statobj_t*temp)
 
    if (temp->flags & FL_WOODEN)
       {
-      start = W_GetNumForName("WFRAG1");
-      stop = W_GetNumForName("WFRAG14");
-      PreCacheGroup(start,stop,cache_patch_t);
+      PreCacheGroupByName("WFRAG1", "WFRAG14", cache_patch_t);
       }
 
    if (temp->flags & FL_METALLIC)
       {
-      PreCacheLump(W_GetNumForName("MSHARDS"),PU_CACHESPRITES,cache_patch_t);
-      start = W_GetNumForName("ROBODIE1");
-      stop = W_GetNumForName("ROBODEAD");
-      PreCacheGroup(start,stop,cache_patch_t);
+      PreCacheLumpByName("MSHARDS", PU_CACHESPRITES, cache_patch_t);
+      PreCacheGroupByName("ROBODIE1", "ROBODEAD", cache_patch_t);
       }
 
    female = ((locplayerstate->player == 1) || (locplayerstate->player == 3));
@@ -880,21 +933,16 @@ void PreCacheStaticFrames(statobj_t*temp)
 
    if (female)
       {
-      start = W_GetNumForName("FPIST11");
-      stop = W_GetNumForName("FPIST13");
+      PreCacheGroupByName("FPIST11", "FPIST13", cache_patch_t);
       }
    else if (black)
       {
-      start = W_GetNumForName("BMPIST1");
-      stop = W_GetNumForName("BMPIST3");
+      PreCacheGroupByName("BMPIST1", "BMPIST3", cache_patch_t);
       }
    else
       {
-      start = W_GetNumForName("MPIST11");
-      stop = W_GetNumForName("MPIST13");
+      PreCacheGroupByName("MPIST11", "MPIST13", cache_patch_t);
 		}
-
-   PreCacheGroup(start,stop,cache_patch_t);
 
    switch (temp->itemnumber)
       {
@@ -903,95 +951,61 @@ void PreCacheStaticFrames(statobj_t*temp)
       case stat_pedsilverkey:
       case stat_pedironkey:
       case stat_pedcrystalkey:
-         PreCacheLump(W_GetNumForName("PEDESTA"),PU_CACHESPRITES,cache_patch_t);
+         PreCacheLumpByName("PEDESTA", PU_CACHESPRITES, cache_patch_t);
          break;
 
       case stat_bat:
-         start = W_GetNumForName("EXBAT1");
-         stop = W_GetNumForName("EXBAT7");
-         PreCacheGroup(start,stop,cache_patch_t);
+         PreCacheGroupByName("EXBAT1", "EXBAT7", cache_patch_t);
          break;
       case stat_knifestatue:
-         start = W_GetNumForName("KNIFE1");
-         stop = W_GetNumForName("KNIFE10");
-         PreCacheGroup(start,stop,cache_patch_t);
+         PreCacheGroupByName("KNIFE1", "KNIFE10", cache_patch_t);
          break;
       case stat_twopistol:
          if (female)
             {
-            start = W_GetNumForName("RFPIST1");
-            stop = W_GetNumForName("LFPIST3");
+            PreCacheGroupByName("RFPIST1", "LFPIST3", cache_patch_t);
             }
          else if (black)
             {
-            start = W_GetNumForName("RBMPIST1");
-            stop = W_GetNumForName("LBMPIST3");
+            PreCacheGroupByName("RBMPIST1", "LBMPIST3", cache_patch_t);
             }
          else
             {
-            start = W_GetNumForName("RMPIST1");
-            stop = W_GetNumForName("LMPIST3");
+            PreCacheGroupByName("RMPIST1", "LMPIST3", cache_patch_t);
             }
-         PreCacheGroup(start,stop,cache_patch_t);
          break;
       case stat_mp40:
-         start = W_GetNumForName("MP401");
-         stop = W_GetNumForName("MP403");
-         PreCacheGroup(start,stop,cache_patch_t);
+         PreCacheGroupByName("MP401", "MP403", cache_patch_t);
          break;
       case stat_bazooka:
-         start = W_GetNumForName("BAZOOKA1");
-         stop = W_GetNumForName("BAZOOKA4");
-         PreCacheGroup(start,stop,cache_patch_t);
+         PreCacheGroupByName("BAZOOKA1", "BAZOOKA4", cache_patch_t);
          break;
       case stat_firebomb:
-         start = W_GetNumForName("FBOMB1");
-         stop = W_GetNumForName("FBOMB4");
-         PreCacheGroup(start,stop,cache_patch_t);
+         PreCacheGroupByName("FBOMB1", "FBOMB4", cache_patch_t);
          break;
       case stat_heatseeker:
-         start = W_GetNumForName("HSEEK1");
-         stop = W_GetNumForName("HSEEK4");
-         PreCacheGroup(start,stop,cache_patch_t);
+         PreCacheGroupByName("HSEEK1", "HSEEK4", cache_patch_t);
          break;
       case stat_drunkmissile:
-         start = W_GetNumForName("DRUNK1");
-         stop = W_GetNumForName("DRUNK4");
-         PreCacheGroup(start,stop,cache_patch_t);
+         PreCacheGroupByName("DRUNK1", "DRUNK4", cache_patch_t);
          break;
       case stat_firewall:
-         start = W_GetNumForName("FIREW1");
-         stop = W_GetNumForName("FIREW3");
-         PreCacheGroup(start,stop,cache_patch_t);
+         PreCacheGroupByName("FIREW1", "FIREW3", cache_patch_t);
          break;
       case stat_splitmissile:
-         start = W_GetNumForName("SPLIT1");
-         stop = W_GetNumForName("SPLIT4");
-         PreCacheGroup(start,stop,cache_patch_t);
+         PreCacheGroupByName("SPLIT1", "SPLIT4", cache_patch_t);
          break;
       case stat_kes:
-         start = W_GetNumForName("KES1");
-         stop = W_GetNumForName("KES6");
-         PreCacheGroup(start,stop,cache_patch_t);
+         PreCacheGroupByName("KES1", "KES6", cache_patch_t);
          break;
       case stat_godmode:
-         start = W_GetNumForName("GODHAND1");
-         stop = W_GetNumForName("GODHAND8");
-         PreCacheGroup(start,stop,cache_patch_t);
-
-         PreCacheGroup(W_GetNumForName("VAPO1"),
-                       W_GetNumForName("LITSOUL"),
-                       cache_patch_t);
-
-         PreCacheGroup(W_GetNumForName("GODFIRE1"),
-                       W_GetNumForName("GODFIRE4"),
-                       cache_patch_t);
+         PreCacheGroupByName("GODHAND1", "GODHAND8", cache_patch_t);
+         PreCacheGroupByName("VAPO1", "LITSOUL", cache_patch_t);
+         PreCacheGroupByName("GODFIRE1", "GODFIRE4", cache_patch_t);
 
          break;
       case stat_dogmode:
-         start = W_GetNumForName("DOGNOSE1");
-         stop = W_GetNumForName("DOGPAW4");
-         PreCacheGroup(start,stop,cache_patch_t);
+         PreCacheGroupByName("DOGNOSE1", "DOGPAW4", cache_patch_t);
          break;
 
       default:

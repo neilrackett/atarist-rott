@@ -22,6 +22,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if PLATFORM_ATARI
+#include <mint/osbind.h>
+#endif
 
 #ifdef DOS
 #include <dos.h>
@@ -41,7 +44,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //MED
 #include "memcheck.h"
 
-int lowmemory=0;
+int lowmemory=1;
 
 /*
 ==============================================================================
@@ -140,6 +143,7 @@ void Z_Init (int size, int min)
 {
    int maxsize;
    int sz;
+   long avail;
 
    if (zonememorystarted==1)
       return;
@@ -154,11 +158,23 @@ void Z_Init (int size, int min)
    else
       levelzonesize+=(numplayers+1)*sz;
 
-   maxsize=((int)(Z_AvailHeap())-size-levelzonesize);
+   avail = Z_AvailHeap();
+   maxsize=((int)avail-size-levelzonesize);
    if (maxsize<min)
       {
       UL_DisplayMemoryError (min-maxsize);
       }
+
+#if PLATFORM_ATARI
+   {
+      long reserve = 256L * 1024L;
+      long cap = avail - reserve - levelzonesize;
+      if (cap < 0)
+         cap = 0;
+      if (maxsize > (int)cap)
+         maxsize = (int)cap;
+   }
+#endif
       
    if (CheckParm("LOMEM"))
    {
@@ -775,8 +791,15 @@ int Z_AvailHeap ( void )
    int386x( DPMI_INT, &zregs, &zregs, &zsregs );
 
    return ((int)MemInfo.LargestBlockAvail);
+#elif PLATFORM_ATARI
+   {
+      long avail = Mxalloc(-1, 0);
+      if (avail < 0)
+         avail = 0;
+      return (int)avail;
+   }
 #else
-	return MAXMEMORYSIZE;
+   return MAXMEMORYSIZE;
 #endif
 }
 
@@ -805,4 +828,3 @@ void Z_Realloc (void ** ptr, int newsize)
    SafeFree( *ptr );
    *ptr = newptr;
 }
-

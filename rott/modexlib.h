@@ -136,6 +136,13 @@ void  XFlipPage ( void );
 void  WaitVBL( void );
 void  TurnOffTextCursor ( void );
 
+#if PLATFORM_ATARI
+int ATARI_BeginRenderFrame(void);
+int ATARI_RenderAllowed(void);
+void ATARI_EndRenderFrame(void);
+void ATARI_ForceRender(void);
+#endif
+
 #ifdef __WATCOMC__
 #pragma aux VGAWRITEMAP =      \
         "mov    eax,01H"       \

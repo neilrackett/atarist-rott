@@ -87,6 +87,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //******************************************************************************
 
 #define DELAYAMT  2
+#if PLATFORM_ATARI
+#ifndef ATARI_MENU_CURSOR_DELAY_TICS
+#define ATARI_MENU_CURSOR_DELAY_TICS 0
+#endif
+#ifndef ATARI_MENU_EVENT_DRIVEN
+#define ATARI_MENU_EVENT_DRIVEN 1
+#endif
+#else
+#define ATARI_MENU_CURSOR_DELAY_TICS DELAYAMT
+#endif
 
 #define SNDCARDS  12
 
@@ -313,6 +323,14 @@ static int DangerNums[ 3 ] =
    };
 
 static int MenuNum = 0;
+#if PLATFORM_ATARI
+static void ATARI_MenuForceRender(void)
+{
+   ATARI_ForceRender();
+}
+#else
+#define ATARI_MenuForceRender() do { } while (0)
+#endif
 static int handlewhich;
 static int CSTactive = 0;
 static boolean INFXSETUP = false;
@@ -1812,6 +1830,9 @@ menuitems CP_MainMenu
    SetUpControlPanel();
 
    DrawMainMenu();
+   /* Event-driven menus can skip redraw until input; force first frame now. */
+   ATARI_MenuForceRender();
+   RefreshMenuBuf(0);
 
    //
    // Main menu loop.  "Exit options" or "New game" exits
@@ -1917,6 +1938,7 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
                numactive,
                count;
    int         newpos;
+   int         keyscan;
    volatile int timer;
    ControlInfo ci;
    boolean     playsnd = false;
@@ -1981,10 +2003,56 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
    do
    {
       ReadAnyControl (&ci);
+      keyscan = LastScan;
+      if (keyscan)
+         LastScan = 0;
+#if PLATFORM_ATARI && ATARI_MENU_EVENT_DRIVEN
+      if (MenuNum == 1)
+      {
+         if (!(keyscan || ci.dir != dir_None || ci.button0 || ci.button1 || ci.button2 || ci.button3 ||
+            Keyboard[sc_Space] || Keyboard[sc_Enter] || Keyboard[sc_Escape]))
+            continue;
+      }
+      else
+      {
+         RefreshMenuBuf (0);
+      }
+#else
       RefreshMenuBuf (0);
+#endif
+
+#if PLATFORM_ATARI
+      if (keyscan || ci.button0 || ci.button1 || ci.dir != dir_None)
+         ATARI_MenuForceRender();
+#endif
+
+      if (ci.dir == dir_None)
+      {
+         switch (keyscan)
+         {
+            case sc_UpArrow:
+               ci.dir = dir_North;
+               break;
+            case sc_DownArrow:
+               ci.dir = dir_South;
+               break;
+            case sc_LeftArrow:
+               ci.dir = dir_West;
+               break;
+            case sc_RightArrow:
+               ci.dir = dir_East;
+               break;
+            default:
+               break;
+         }
+      }
       
      // Change Cursor Shape
-      if ((GetTicCount() > (timer+count)) && (MenuNum != 5))
+      if ((GetTicCount() > (timer+count)) && (MenuNum != 5)
+#if PLATFORM_ATARI && ATARI_MENU_EVENT_DRIVEN
+         && (MenuNum != 1)
+#endif
+         )
       {
          timer = GetTicCount();
  
@@ -1999,7 +2067,30 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
       }
 
      // Initial char - pass 1
-      key = getASCII ();
+#if PLATFORM_ATARI && ATARI_MENU_EVENT_DRIVEN
+      if (MenuNum == 1)
+      {
+         key = 0;
+         if (keyscan > 0 && keyscan < 128)
+         {
+            if (Keyboard[sc_LShift] || Keyboard[sc_RShift])
+               key = ShiftNames[keyscan];
+            else
+               key = ASCIINames[keyscan];
+         }
+      }
+      else
+#endif
+      {
+         key = getASCII ();
+         if (!key && keyscan > 0 && keyscan < 128)
+         {
+            if (Keyboard[sc_LShift] || Keyboard[sc_RShift])
+               key = ShiftNames[keyscan];
+            else
+               key = ASCIINames[keyscan];
+         }
+      }
       if (key)
       {
          int ok = 0;
@@ -2045,13 +2136,14 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
          }
       }
  
-      ReadAnyControl (&ci);
-
       if (numactive > 1)
 		{
          switch (ci.dir)
          {
             case dir_North:
+#if PLATFORM_ATARI
+               ATARI_MenuForceRender();
+#endif
                HideCursor (item_i, items, x, y, handlewhich);
 
 
@@ -2060,6 +2152,10 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
                   CursorNum = 0;
 
 
+#if PLATFORM_ATARI && ATARI_MENU_EVENT_DRIVEN
+               playsnd = true;
+               goto atari_skip_halfstep_north;
+#endif
               // Do a half step if possible
                if ((handlewhich) &&
                   (((items+handlewhich-1)->active == CP_CursorLocation) ||
@@ -2081,6 +2177,9 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
                   RefreshMenuBuf (0);
                }
 
+#if PLATFORM_ATARI && ATARI_MENU_EVENT_DRIVEN
+atari_skip_halfstep_north:
+#endif
                do
                {
                   if (!handlewhich)
@@ -2100,12 +2199,19 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
             break;
 
             case dir_South:
+#if PLATFORM_ATARI
+               ATARI_MenuForceRender();
+#endif
                HideCursor (item_i, items, x, y, handlewhich);
 
                CursorNum++;
                if (CursorNum > (MAXCURSORNUM-1))
                   CursorNum = 0;
 
+#if PLATFORM_ATARI && ATARI_MENU_EVENT_DRIVEN
+               playsnd = true;
+               goto atari_skip_halfstep_south;
+#endif
                // Do a half step if possible
                if ((handlewhich != item_i->amount-1) &&
                   (((items+handlewhich+1)->active == CP_CursorLocation) ||
@@ -2127,6 +2233,9 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
                   RefreshMenuBuf (0);
                }
 
+#if PLATFORM_ATARI && ATARI_MENU_EVENT_DRIVEN
+atari_skip_halfstep_south:
+#endif
                do
                {
                   if (handlewhich==item_i->amount-1)
@@ -2149,9 +2258,18 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
          }
       }
 
-      ReadAnyControl (&ci);
-      if (ci.button0 || Keyboard[sc_Space] || Keyboard[sc_Enter])
+#if PLATFORM_ATARI && ATARI_MENU_EVENT_DRIVEN
+      if (ci.button0 ||
+         ((MenuNum == 1) ? (Keyboard[sc_Space] || Keyboard[sc_Enter] || keyscan == sc_Space || keyscan == sc_Enter)
+                         : (Keyboard[sc_Space] || Keyboard[sc_Enter] || keyscan == sc_Space || keyscan == sc_Enter)))
+#else
+      if (ci.button0 || Keyboard[sc_Space] || Keyboard[sc_Enter] ||
+         keyscan == sc_Space || keyscan == sc_Enter)
+#endif
       {
+#if PLATFORM_ATARI
+         ATARI_MenuForceRender();
+#endif
             
  
          exit = 1;
@@ -2159,14 +2277,28 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
          MN_PlayMenuSnd (SD_SELECTSND);
       }
 
-      if (ci.button1 || Keyboard[sc_Escape])
+#if PLATFORM_ATARI && ATARI_MENU_EVENT_DRIVEN
+      if (ci.button1 || ((MenuNum == 1) ? (Keyboard[sc_Escape] || keyscan == sc_Escape) : (Keyboard[sc_Escape] || keyscan == sc_Escape)))
+#else
+      if (ci.button1 || Keyboard[sc_Escape] || keyscan == sc_Escape)
+#endif
       {
+#if PLATFORM_ATARI
+         ATARI_MenuForceRender();
+#endif
          WaitKeyUp ();
          exit = 2;
       }
 
-      if ( ( Keyboard[ sc_Home ] ) && ( numactive > 1 ) )
+#if PLATFORM_ATARI && ATARI_MENU_EVENT_DRIVEN
+      if ( ( ((MenuNum == 1) ? (Keyboard[ sc_Home ] || keyscan == sc_Home) : (Keyboard[ sc_Home ] || keyscan == sc_Home)) ) && ( numactive > 1 ) )
+#else
+      if ( ( Keyboard[ sc_Home ] || keyscan == sc_Home ) && ( numactive > 1 ) )
+#endif
          {
+#if PLATFORM_ATARI
+         ATARI_MenuForceRender();
+#endif
          newpos = 0;
          while( ( items[ newpos ].active == CP_Inactive ) ||
             ( items[ newpos ].active == CP_Active3 ) )
@@ -2200,8 +2332,15 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
             RefreshMenuBuf( 0 );
             }
          }
-      else if ( ( Keyboard[ sc_End ] ) && ( numactive > 1 ) )
+#if PLATFORM_ATARI && ATARI_MENU_EVENT_DRIVEN
+      else if ( ( ((MenuNum == 1) ? (Keyboard[ sc_End ] || keyscan == sc_End) : (Keyboard[ sc_End ] || keyscan == sc_End)) ) && ( numactive > 1 ) )
+#else
+      else if ( ( Keyboard[ sc_End ] || keyscan == sc_End ) && ( numactive > 1 ) )
+#endif
          {
+#if PLATFORM_ATARI
+         ATARI_MenuForceRender();
+#endif
          newpos = item_i->amount - 1;
          while( ( items[ newpos ].active == CP_Inactive ) ||
             ( items[ newpos ].active == CP_Active3 ) )
@@ -2239,7 +2378,11 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
       // Page Up/Down
       if ( MenuNum == 11 )
          {
-         if ( ( Keyboard[ sc_PgUp ] ) &&
+#if PLATFORM_ATARI && ATARI_MENU_EVENT_DRIVEN
+         if ( ( ((MenuNum == 1) ? (keyscan == sc_PgUp) : (Keyboard[ sc_PgUp ] || keyscan == sc_PgUp)) ) &&
+#else
+         if ( ( Keyboard[ sc_PgUp ] || keyscan == sc_PgUp ) &&
+#endif
             ( ( items + 1 )->active != CP_Inactive ) )
             {
             item_i->curpos = handlewhich;
@@ -2247,7 +2390,11 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
             exit = 3;
             MN_PlayMenuSnd( SD_SELECTSND );
             }
-         else if ( ( Keyboard[ sc_PgDn ] ) &&
+#if PLATFORM_ATARI && ATARI_MENU_EVENT_DRIVEN
+         else if ( ( ((MenuNum == 1) ? (keyscan == sc_PgDn) : (Keyboard[ sc_PgDn ] || keyscan == sc_PgDn)) ) &&
+#else
+         else if ( ( Keyboard[ sc_PgDn ] || keyscan == sc_PgDn ) &&
+#endif
             ( ( items + 0 )->active != CP_Inactive ) )
             {
             item_i->curpos = handlewhich;
@@ -2260,7 +2407,11 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
       // Delete save games
       if ((MenuNum == 4) || (MenuNum == 6))
       {
-         if (Keyboard[sc_Delete] && SaveGamesAvail[handlewhich])
+#if PLATFORM_ATARI && ATARI_MENU_EVENT_DRIVEN
+         if ((((MenuNum == 1) ? (keyscan == sc_Delete) : (Keyboard[sc_Delete] || keyscan == sc_Delete))) && SaveGamesAvail[handlewhich])
+#else
+         if ((Keyboard[sc_Delete] || keyscan == sc_Delete) && SaveGamesAvail[handlewhich])
+#endif
          {
             if (CP_DisplayMsg ("Delete saved game?\nAre you sure?", 12) == true)
             {
@@ -2435,8 +2586,8 @@ void HideCursor
       items[ which ].active = CP_Active;
       }
 
-   delay = DELAYAMT - tics;
-   while( ( time + delay ) > GetTicCount() )
+   delay = ATARI_MENU_CURSOR_DELAY_TICS - tics;
+   while( delay > 0 && ( time + delay ) > GetTicCount() )
       {
       RefreshMenuBuf (0);
       }
@@ -2547,8 +2698,8 @@ void ShowCursor
       items[ which ].active = CP_CursorLocation;
       }
 
-   delay = DELAYAMT - tics;
-   while( ( time + delay ) > GetTicCount() )
+   delay = ATARI_MENU_CURSOR_DELAY_TICS - tics;
+   while( delay > 0 && ( time + delay ) > GetTicCount() )
       {
       RefreshMenuBuf( 0 );
       }
@@ -4729,14 +4880,27 @@ void DrawCtlButtons (void)
 
 void WaitKeyUp (void)
 {
-   ControlInfo ci;      
+   ControlInfo ci;
+#if PLATFORM_ATARI
+   int timeout = GetTicCount() + (VBLCOUNTER / 4);
+#endif
+
    IN_IgnoreMouseButtons();
    ReadAnyControl (&ci);
    while (ci.button0 || ci.button1 || ci.button2 || ci.button3 ||
           Keyboard[sc_Space] || Keyboard[sc_Enter] || Keyboard[sc_Escape])
-   {              
+   {
       ReadAnyControl (&ci);
       RefreshMenuBuf (0);
+#if PLATFORM_ATARI
+      if (GetTicCount() > timeout)
+      {
+         Keyboard[sc_Space] = 0;
+         Keyboard[sc_Enter] = 0;
+         Keyboard[sc_Escape] = 0;
+         break;
+      }
+#endif
       if (Keystate[sc_CapsLock] && Keystate[sc_Q])
          Error("Stuck in WaitKeyUp\n");
    }

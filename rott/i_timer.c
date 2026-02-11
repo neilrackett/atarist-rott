@@ -24,6 +24,105 @@
 //
 //-----------------------------------------------------------------------------
 
+#if PLATFORM_ATARI
+#include <stddef.h>
+#include <mint/osbind.h>
+#include "i_timer.h"
+
+#ifndef PLATFORM_TIMER_HZ
+#define PLATFORM_TIMER_HZ 200
+#endif
+
+#define TOS_HZ_200_ADDR 0x4BA
+
+static unsigned long basetime = 0;
+static unsigned long music_service_hz200 = 0;
+
+extern void MUSIC_Service(void);
+
+static unsigned long tos_hz200(void)
+{
+    long old = Super(0L);
+    volatile unsigned long *hz200 = (volatile unsigned long *)TOS_HZ_200_ADDR;
+    unsigned long ticks = *hz200;
+    if (old)
+        Super(old);
+    return ticks;
+}
+
+int I_GetTime(void)
+{
+    static int dbg_count = 0;
+#if PLATFORM_ATARI
+#ifndef ATARI_DEBUG
+#define ATARI_DEBUG 0
+#endif
+    if (ATARI_DEBUG && dbg_count < 8)
+        Cconws("ROTT: I_GetTime entry\r\n");
+#endif
+    unsigned long ticks = tos_hz200();
+
+    if (music_service_hz200 == 0)
+        music_service_hz200 = ticks;
+    while ((ticks - music_service_hz200) >= 4)
+    {
+        MUSIC_Service();
+        music_service_hz200 += 4;
+    }
+#if PLATFORM_ATARI
+    if (ATARI_DEBUG && dbg_count < 8)
+        Cconws("ROTT: I_GetTime after hz200\r\n");
+#endif
+    if (basetime == 0)
+        basetime = ticks;
+    ticks -= basetime;
+    {
+        int t = (int)((ticks * TICRATE) / PLATFORM_TIMER_HZ);
+#if PLATFORM_ATARI
+        if (ATARI_DEBUG && dbg_count < 8)
+        {
+            Cconws("ROTT: I_GetTime done\r\n");
+            dbg_count++;
+        }
+#endif
+        return t;
+    }
+}
+
+int I_GetTimeMS(void)
+{
+    unsigned long ticks = tos_hz200();
+    if (basetime == 0)
+        basetime = ticks;
+    ticks -= basetime;
+    return (int)((ticks * 1000UL) / PLATFORM_TIMER_HZ);
+}
+
+void I_Sleep(int ms)
+{
+    unsigned long start = tos_hz200();
+    unsigned long wait = (unsigned long)((ms * PLATFORM_TIMER_HZ) / 1000);
+    if (wait == 0)
+        wait = 1;
+    while ((tos_hz200() - start) < wait) { }
+}
+
+void I_WaitVBL(int count)
+{
+    I_Sleep((count * 1000) / 70);
+}
+
+void I_InitTimer(void)
+{
+    basetime = 0;
+    music_service_hz200 = 0;
+}
+
+void I_ExitTimer(void)
+{
+}
+
+#else
 // Lantus 3/1/2013 - AmigaOS native
 
 #include <stdio.h>
@@ -135,3 +234,5 @@ void I_InitTimer(void)
    startup();
 }
 
+
+#endif

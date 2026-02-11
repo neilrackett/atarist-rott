@@ -35,6 +35,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <dirent.h>
 #include <ctype.h>
 #endif
+ 
+#if PLATFORM_ATARI
+#include <dirent.h>
+#endif
 
 #if (defined _MSC_VER)
 /* __int64 is built in. */
@@ -57,6 +61,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define PATH_SEP_CHAR '/'
 #define PATH_SEP_STR  "/"
 #define ROOTDIR       "/"
+#define CURDIR        ""
+#elif PLATFORM_ATARI
+#define PATH_SEP_CHAR '\\'
+#define PATH_SEP_STR  "\\"
+#define ROOTDIR       ""
 #define CURDIR        ""
 #elif PLATFORM_MACCLASSIC
 #define PATH_SEP_CHAR ':'
@@ -132,6 +141,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
       #define _fstricmp(x, y) strcasecmp(x, y)
     #endif
 
+    char *strupr(char *);
+    char *itoa(int, char *, int);
+    char *ltoa(long, char *, int);
+    char *ultoa(unsigned long, char *, int);
+    char getch(void);
+    long filelength(int handle);
+  #elif PLATFORM_ATARI
+    #define strcmpi(x, y) stricmp(x, y)
+    #define _fstricmp(x, y) stricmp(x, y)
+    int stricmp(const char *a, const char *b);
     char *strupr(char *);
     char *itoa(int, char *, int);
     char *ltoa(long, char *, int);
