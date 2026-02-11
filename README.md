@@ -1,20 +1,26 @@
 # Rise of the Triad
 
-Atari ST port by [Neil Rackett](https://x.com/neilrackett)
+Atari ST and WebAssembly (WASM) ports by [Neil Rackett](https://x.com/neilrackett)
 
 ## Introduction
 
-What better way to celebrate the 30th-ish anniversary of ROTT than to port it to a hardware platform currently celebrating its 40th: Welcome to _Rise of the Triad for Atari ST_.
+What better way to celebrate the 30th-ish anniversary of ROTT than to port it to a hardware platform currently celebrating its 40th: Welcome to _Rise of the Triad for Atari ST_ (and TT and WebAssembly).
 
-- This port is optimised for the Atari Mega STE, but will run on any ST.
-- Sound effects are STE-only
-- It's still experimental, but enjoy!
+| Branch     | Description                                                                                                        | Optimised for  | Compatibile with              | Compiler            |
+| ---------- | ------------------------------------------------------------------------------------------------------------------ | -------------- | ----------------------------- | ------------------- |
+| `atari-st` | ROTT for Atari ST using C2P rendering and direct audio, SFX are STE-only, 16-colours and Noir (greyscale) versions | Atari Mega STE | ST, STE, Mega STE, TT, Falcon | m68k-atari-mint-gcc |
+| `atari-tt` | ROTT for Atari TT using SDL: 16 colour (greyscale) on ST or 256 colours on TT/Falcon, sound still WIP              | Atari TT       | ST, STE, Mega STE, TT, Falcon | m68k-atari-mint-gcc |
+| `wasm`     | ROTT for the web                                                                                                   | WASM           | Web browser                   | emcc                |
+
+All builds are experimental.
+
+Enjoy!
 
 ## Installation
 
 - Install the shareware version of ROTT for DOS using DOSbox, or [download the files from Internet.org](https://archive.org/details/rott_shareware)
-- Copy the latest release of `ROTT.TOS` to the installation folder
-- Run `ROTT.TOS`
+- Copy the latest release of `ROTT_ST.TOS` to the installation folder
+- Run `ROTT_ST.TOS`
 - Enjoy!
 
 ## Build
@@ -27,6 +33,8 @@ stcmd make ATARI_NOIR=1
 stcmd make ATARI_NOIR=1 ATARI_NOIR_DITHERING=1
 ```
 
+The build process outputs `build/ROTT_ST.TOS`, which will run on Hatari or any Atari ST compatible computer in ST low resolution.
+
 You can compile the commercial versions of ROTT using:
 
 ```bash
@@ -34,6 +42,8 @@ stcmd make rott-darkwar
 stcmd make rott-rottcd
 stcmd make rott-rottsite
 ```
+
+These builds output `build/ROTT_STD.TOS`, `build/ROTT_STC.TOS` and `build/ROTT_STS.TOS`, respectively.
 
 ## Credits
 
