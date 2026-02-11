@@ -2,7 +2,7 @@ CC = m68k-atari-mint-gcc
 
 BUILD_DIR ?= build
 OBJ_DIR ?= obj
-TARGET ?= ROTT.TOS
+TARGET ?= ROTT_TT.TOS
 
 SHAREWARE ?= 1
 SUPERROTT ?= 0
