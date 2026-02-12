@@ -17,19 +17,19 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #include <unistd.h>
 #else
 #include <dos.h>
 #endif
 #include <errno.h>
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #include <unistd.h>
 #else
 #include <io.h>
 #endif
 #include <stdio.h>
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #include <stdio.h>
 #else
 #include <conio.h>
@@ -51,7 +51,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "memcheck.h"
 
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 static int ErrorHandlerStarted = 0;
 void UL_ErrorStartup ( void ) { ErrorHandlerStarted = 1; }
 void UL_ErrorShutdown ( void ) { ErrorHandlerStarted = 0; }
@@ -133,14 +133,14 @@ static char ReadWrite[2][6] =
    "Write\0"
 };
 
-#if !PLATFORM_ATARI
+#if !defined(__MINT__)
 static boolean ErrorHandlerStarted=false;
 void (__interrupt __far *olddivisr) () = NULL;
 #endif
 
 //******************************************************************************
 //
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 void UL_UserMessage (int x, int y, char *str, ...)
 {
    va_list strptr;
@@ -164,7 +164,7 @@ int UL_DriveError (int code, int location, int rwerror, int whichdrive)
 }
 #endif
 
-#if !PLATFORM_ATARI
+#if !defined(__MINT__)
 // UL_UserMessage ()
 //
 //******************************************************************************

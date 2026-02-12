@@ -22,7 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #include <mint/osbind.h>
 #endif
 
@@ -165,7 +165,7 @@ void Z_Init (int size, int min)
       UL_DisplayMemoryError (min-maxsize);
       }
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    {
       long reserve = 256L * 1024L;
       long cap = avail - reserve - levelzonesize;
@@ -791,7 +791,7 @@ int Z_AvailHeap ( void )
    int386x( DPMI_INT, &zregs, &zregs, &zsregs );
 
    return ((int)MemInfo.LargestBlockAvail);
-#elif PLATFORM_ATARI
+#elif defined(__MINT__)
    {
       long avail = Mxalloc(-1, 0);
       if (avail < 0)

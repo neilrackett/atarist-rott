@@ -653,7 +653,7 @@ void atari_c2p_set_palette(const unsigned char *colors)
     unsigned short stpalette[16];
     unsigned int hash = 2166136261u;
     int i;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
     static int force_bright_palette = 0;
 #endif
 

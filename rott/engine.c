@@ -30,7 +30,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //MED
 #include "memcheck.h"
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #ifndef ATARI_MAX_RAY_STEPS
 #define ATARI_MAX_RAY_STEPS 32
 #endif
@@ -65,7 +65,7 @@ static int c_vx,c_vy;
 
 void InitialCast ( void );
 void Cast ( int curx );
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 static void HitWallFar (int curx, int vertical, int xtile, int ytile);
 #endif
 
@@ -248,7 +248,7 @@ void HitWall(int curx, int vertical, int xtile, int ytile)
    posts[curx].wallheight=CalcHeight();
 }
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 static void HitWallFar (int curx, int vertical, int xtile, int ytile)
 {
    int saved;
@@ -322,7 +322,7 @@ void InitialCast ( void )
       
       grid[0]=viewx>>16;
       grid[1]=viewy>>16;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       {
       int steps = 0;
       int forced = 0;
@@ -335,7 +335,7 @@ void InitialCast ( void )
          cnt+=incr[index];
          spotvis[grid[0]][grid[1]]=1;
          grid[index]+=thedir[index];
-#if PLATFORM_ATARI
+#if defined(__MINT__)
          if (++steps >= ATARI_MAX_RAY_STEPS)
             {
             HitWallFar(curx, cnt-incr[index], grid[0], grid[1]);
@@ -376,7 +376,7 @@ void InitialCast ( void )
             }
          }
       while (1);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       if (!forced)
          {
          HitWall(curx, cnt-incr[index], grid[0], grid[1]);
@@ -434,7 +434,7 @@ void Cast ( int curx )
    cnt=FixedMul(snx,incr[0])+FixedMul(sny,incr[1]);
    grid[0]=viewx>>16;
    grid[1]=viewy>>16;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    {
    int steps = 0;
    int forced = 0;
@@ -447,7 +447,7 @@ void Cast ( int curx )
       cnt+=incr[index];
       spotvis[grid[0]][grid[1]]=1;
       grid[index]+=thedir[index];
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       if (++steps >= ATARI_MAX_RAY_STEPS)
          {
          HitWallFar(curx, cnt-incr[index], grid[0], grid[1]);
@@ -488,7 +488,7 @@ void Cast ( int curx )
          }
       }
    while (1);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    if (!forced)
       {
       HitWall(curx, cnt-incr[index], grid[0], grid[1]);

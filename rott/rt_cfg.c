@@ -132,7 +132,7 @@ boolean AutoDetailOn     = false;
 int     DoubleClickSpeed = 20;
 boolean BobbinOn         = false;
 int     Menuflipspeed    = 15;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 int     DetailLevel      = 0;         // LOW DETAIL
 #else
 int     DetailLevel      = 2;         // HI DETAIL

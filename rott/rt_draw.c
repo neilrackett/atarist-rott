@@ -29,7 +29,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <dos.h>
 #include <conio.h>
 #endif
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #include <osbind.h>
 #endif
 
@@ -74,7 +74,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 
 extern void VH_UpdateScreen (void);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 extern int consoleplayer;
 #endif
 
@@ -161,7 +161,7 @@ static int nonbobpheight;
 static visobj_t * sortedvislist[MAXVISIBLE];
 
 static const fixed mindist = 0x1000;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #ifndef ATARI_MIN_SPRITE_HEIGHT
 #define ATARI_MIN_SPRITE_HEIGHT (1 << (HEIGHTFRACTION + 3))
 #endif
@@ -212,7 +212,7 @@ void InterpolateMaskedWall (visobj_t * plane);
 void InterpolateDoor (visobj_t * plane);
 void InterpolateWall (visobj_t * plane);
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
  #ifndef ATARI_DEBUG
   #define ATARI_DEBUG 0
  #endif
@@ -253,7 +253,7 @@ void BuildTables (void)
 //
 // load in tables file
 //
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    atari_dbg("ROTT: BuildTables entry\r\n");
    atari_dbg("ROTT: using Atari fallback tables\r\n");
    BuildTablesFallback();
@@ -262,7 +262,7 @@ void BuildTables (void)
 
    tables_lump = W_CheckNumForName("tables");
    tables_len = W_LumpLength(tables_lump);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    atari_dbg("ROTT: BuildTables start\r\n");
    atari_dbg_num("tables len=", tables_len);
 #endif
@@ -279,7 +279,7 @@ void BuildTables (void)
       Error("BuildTables: tables overflow (size0)");
    memcpy(&length,ptr,sizeof(int));
    SwapIntelLong(&length);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    atari_dbg_num("tables skip len=", length);
 #endif
    
@@ -299,7 +299,7 @@ void BuildTables (void)
    memcpy(&length,ptr,sizeof(int));
    SwapIntelLong(&length);
    ptr+=sizeof(int);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    atari_dbg_num("sincos len=", length);
 #endif
    
@@ -323,7 +323,7 @@ void BuildTables (void)
    memcpy(&length,ptr,sizeof(int));
    SwapIntelLong(&length);
    ptr+=sizeof(int);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    atari_dbg_num("tan len=", length);
 #endif
 
@@ -347,7 +347,7 @@ void BuildTables (void)
    memcpy(&length,ptr,sizeof(int));
    SwapIntelLong(&length);
    ptr+=sizeof(int);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    atari_dbg_num("gamma len=", length);
 #endif
 
@@ -362,12 +362,12 @@ void BuildTables (void)
 
 tables_done:
    costable = (fixed *)&(sintable[FINEANGLES/4]);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    atari_dbg("ROTT: BuildTables costable ok\r\n");
 #endif
 
    wstart=W_GetNumForName("WALLSTRT");
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    atari_dbg("ROTT: BuildTables WALLSTRT ok\r\n");
 #endif
 #if (SHAREWARE==0)
@@ -375,7 +375,7 @@ tables_done:
 #endif
    gmasklump=W_GetNumForName("p_gmask");
    G_gmasklump = gmasklump;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    atari_dbg("ROTT: BuildTables p_gmask ok\r\n");
 #endif
 
@@ -389,12 +389,12 @@ tables_done:
      if (angletodir[i] == 8)
 		angletodir[i] = 0;
 	 }
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    atari_dbg("ROTT: BuildTables angletodir ok\r\n");
 #endif
 
    // Check out VENDOR.DOC file
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    atari_dbg("ROTT: BuildTables skipping CheckVendor\r\n");
 #else
    CheckVendor();
@@ -703,7 +703,7 @@ boolean TransformPlane (int x1, int y1, int x2, int y2, visobj_t * plane)
 
   plane->viewheight=(plane->h1+plane->h2)>>1;
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
   if (plane->viewheight < ATARI_MIN_SPRITE_HEIGHT)
      return false;
 #endif
@@ -1138,7 +1138,7 @@ void DrawScaleds (void)
 
 			 result = TransformObject (statptr->x,statptr->y,&(visptr->viewx),&(visptr->viewheight));
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 			 if ((result==false) || (visptr->viewheight < ATARI_MIN_SPRITE_HEIGHT))
 				 continue;                         // too far on Atari
 #else
@@ -1264,7 +1264,7 @@ void DrawScaleds (void)
 
 //        result = TransformObject (obj->drawx, obj->drawy,&(visptr->viewx),&(visptr->viewheight));
         result = TransformObject (obj->x, obj->y,&(visptr->viewx),&(visptr->viewheight));
-#if PLATFORM_ATARI
+#if defined(__MINT__)
         if ((result==false) || (visptr->viewheight < ATARI_MIN_SPRITE_HEIGHT))
 			  continue;                         // too far on Atari
 #else
@@ -1646,7 +1646,7 @@ void AdaptDetail ( void )
 
 void CalcTics (void)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #ifndef ATARI_DEBUG
 #define ATARI_DEBUG 0
 #endif
@@ -1674,10 +1674,10 @@ void CalcTics (void)
 //
 
    tc=GetTicCount();
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    if (ATARI_DEBUG) Cconws("ROTT: CalcTics after GetTicCount\r\n");
 #endif
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    if (tc == oldtime)
       {
       int raw_start = I_GetTime();
@@ -1696,11 +1696,11 @@ void CalcTics (void)
 	while (tc==oldtime) { tc=GetTicCount(); } /* endwhile */
 #endif
    tics=tc-oldtime;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    if (ATARI_DEBUG) Cconws("ROTT: CalcTics after tics\r\n");
 #endif
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    if (tics > MAXTICS)
       {
       tc = oldtime + MAXTICS;
@@ -1726,7 +1726,7 @@ void CalcTics (void)
          }
       }
    oldtime=tc;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    if (ATARI_DEBUG) Cconws("ROTT: CalcTics done\r\n");
 #endif
 #if (DEVELOPMENT == 1)
@@ -2374,7 +2374,7 @@ void WallRefresh (void)
 	int mag;
    int yzangle;
    int p_tilex, p_tiley;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    static int wall_dbg = 0;
 #define ATARI_WALL_LOG(msg) do { if (ATARI_DEBUG && wall_dbg < 16) Cconws(msg); } while (0)
    ATARI_WALL_LOG("ROTT: WallRefresh entry\r\n");
@@ -2384,7 +2384,7 @@ void WallRefresh (void)
    firstcoloffset=(firstcoloffset+(tics<<8))&65535;
 
    dtime=GetFastTics();
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_WALL_LOG("ROTT: WallRefresh after tics\r\n");
    if (!player || !locplayerstate)
       {
@@ -2399,7 +2399,7 @@ void WallRefresh (void)
 #endif
    if (missobj)
       {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       ATARI_WALL_LOG("ROTT: WallRefresh missobj path\r\n");
 #endif
       viewangle=missobj->angle;
@@ -2408,7 +2408,7 @@ void WallRefresh (void)
 		viewy=missobj->y+sintable[viewangle];
       pheight = missobj->z + 32;
       nonbobpheight=pheight;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       if ((missobj->tilex < 0) || (missobj->tilex >= MAPSIZE) ||
           (missobj->tiley < 0) || (missobj->tiley >= MAPSIZE))
          {
@@ -2421,7 +2421,7 @@ void WallRefresh (void)
       }
    else
       {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       ATARI_WALL_LOG("ROTT: WallRefresh player path\r\n");
 #endif
       if (player->flags&FL_SHROOMS)
@@ -2437,12 +2437,12 @@ void WallRefresh (void)
       viewy = player->y;
       pheight = player->z + locplayerstate->playerheight + locplayerstate->heightoffset;
       nonbobpheight=pheight;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       ATARI_WALL_LOG("ROTT: WallRefresh player view ok\r\n");
 #endif
       p_tilex = (int)player->tilex;
       p_tiley = (int)player->tiley;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       if ((p_tilex < 0) || (p_tilex >= MAPSIZE) ||
           (p_tiley < 0) || (p_tiley >= MAPSIZE))
          {
@@ -2453,11 +2453,11 @@ void WallRefresh (void)
       else if (p_tilex >= MAPSIZE) p_tilex = MAPSIZE-1;
       if (p_tiley < 0) p_tiley = 0;
       else if (p_tiley >= MAPSIZE) p_tiley = MAPSIZE-1;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       ATARI_WALL_LOG("ROTT: WallRefresh tiles ok\r\n");
 #endif
       if (
-#if PLATFORM_ATARI
+#if defined(__MINT__)
            (player->z == nominalheight) &&
 #else
            (
@@ -2485,11 +2485,11 @@ void WallRefresh (void)
          weaponbobx=0;
          weaponboby=0;
          }
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       ATARI_WALL_LOG("ROTT: WallRefresh bob ok\r\n");
 #endif
       yzangle=player->yzangle & (FINEANGLES-1);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       if ((player->tilex < 0) || (player->tilex >= MAPSIZE) ||
           (player->tiley < 0) || (player->tiley >= MAPSIZE))
          {
@@ -2498,7 +2498,7 @@ void WallRefresh (void)
          }
 #endif
       spotvis[p_tilex][p_tiley]=1;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       ATARI_WALL_LOG("ROTT: WallRefresh spotvis ok\r\n");
 #endif
       }
@@ -2507,13 +2507,13 @@ void WallRefresh (void)
       pheight -= (sintable[yzangle&2047] >> 14);
 	else
       pheight += (sintable[yzangle&2047] >> 14);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_WALL_LOG("ROTT: WallRefresh yz ok\r\n");
 #endif
 
    viewx -= (FixedMul(sintable[yzangle&2047],costable[viewangle&2047])>>1);
    viewy += (FixedMul(sintable[yzangle&2047],sintable[viewangle&2047])>>1);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_WALL_LOG("ROTT: WallRefresh view offset ok\r\n");
 #endif
 
@@ -2525,7 +2525,7 @@ void WallRefresh (void)
 		centery-=FixedMul(FINEANGLES-yzangle,yzangleconverter);
 	else
 		centery+=FixedMul(yzangle,yzangleconverter);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_WALL_LOG("ROTT: WallRefresh centery ok\r\n");
 #endif
 
@@ -2540,7 +2540,7 @@ void WallRefresh (void)
       nonbobpheight = 1;
    else if (nonbobpheight > maxheight+30)
       nonbobpheight = maxheight+30;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_WALL_LOG("ROTT: WallRefresh pheight ok\r\n");
 #endif
 
@@ -2548,41 +2548,41 @@ void WallRefresh (void)
 
    mag=7+((3-gamestate.difficulty)<<2);
 
- #if PLATFORM_ATARI
+ #if defined(__MINT__)
    // Avoid timer-based modulation on Atari for now; this line is crashing before logs.
    transparentlevel=mag;
  #else
    transparentlevel=FixedMul(mag,sintable[(GetTicCount()<<5)&(FINEANGLES-1)])+mag;
  #endif
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_WALL_LOG("ROTT: WallRefresh trans ok\r\n");
 #endif
 
    viewsin = sintable[viewangle];
    viewcos = costable[viewangle];
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_WALL_LOG("ROTT: WallRefresh view trig ok\r\n");
 #endif
    c_startx=(scale*viewcos)-(centerx*viewsin);
    c_starty=(-scale*viewsin)-(centerx*viewcos);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_WALL_LOG("ROTT: WallRefresh Refresh\r\n");
 #endif
    Refresh ();
    UpdateClientControls();
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_WALL_LOG("ROTT: WallRefresh pushwalls\r\n");
 #endif
    TransformPushWalls();
    TransformDoors();
    UpdateClientControls();
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_WALL_LOG("ROTT: WallRefresh DrawWalls\r\n");
 #endif
    DrawWalls();
    UpdateClientControls();
    walltime=GetFastTics()-dtime;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #undef ATARI_WALL_LOG
 #endif
 
@@ -2991,7 +2991,7 @@ int playerview=0;
 void      ThreeDRefresh (void)
 {
    objtype * tempptr;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    static int threed_dbg = 0;
 #define ATARI_THREED_LOG(msg) do { if (ATARI_DEBUG && threed_dbg < 6) Cconws(msg); } while (0)
    ATARI_THREED_LOG("ROTT: 3D start\r\n");
@@ -3030,7 +3030,7 @@ void      ThreeDRefresh (void)
 // Erase old messages
 //
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
   // Skip message background restore/clear on Atari for now to avoid early crashes.
   bufferofs += screenofs;
 #else
@@ -3045,11 +3045,11 @@ void      ThreeDRefresh (void)
 //
 
 	visptr = &vislist[0];
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_THREED_LOG("ROTT: 3D pre-wall\r\n");
 #endif
 	WallRefresh ();
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_THREED_LOG("ROTT: 3D walls ok\r\n");
 #endif
 
@@ -3057,7 +3057,7 @@ void      ThreeDRefresh (void)
 
 	if (fandc)
 		DrawPlanes();
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_THREED_LOG("ROTT: 3D planes ok\r\n");
 #endif
 
@@ -3067,7 +3067,7 @@ void      ThreeDRefresh (void)
 // draw all the scaled images
 //
     DrawScaleds();                                         // draw scaled stuff
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_THREED_LOG("ROTT: 3D scaleds ok\r\n");
 #endif
 
@@ -3075,7 +3075,7 @@ void      ThreeDRefresh (void)
 
 	if (!missobj)
 		{
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       ATARI_POST_LOG("ROTT: post enter\r\n");
 #endif
 		if (locplayerstate->NETCAPTURED && (locplayerstate->NETCAPTURED != -2))
@@ -3088,26 +3088,26 @@ void      ThreeDRefresh (void)
 			  value = locplayerstate->NETCAPTURED;
 			DrawScreenSizedSprite(netlump+value-1);
 			}
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       ATARI_POST_LOG("ROTT: post weapon\r\n");
 #endif
 		DrawPlayerWeapon ();    // draw player's hand'
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       ATARI_POST_LOG("ROTT: post eye\r\n");
 #endif
 		if (SCREENEYE)
 		  DrawScreenSprite(SCREENEYE->targettilex,SCREENEYE->targettiley,SCREENEYE->state->condition + GIBEYE1 + shapestart);
       UpdateClientControls ();
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       ATARI_POST_LOG("ROTT: post gmask\r\n");
 #endif
 	   if (player->flags&FL_GASMASK)
 		   DrawScreenSizedSprite(gmasklump);
 
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       ATARI_POST_LOG("ROTT: post stats\r\n");
 #endif
       if ( SHOW_PLAYER_STATS() )
@@ -3115,7 +3115,7 @@ void      ThreeDRefresh (void)
          DrawStats ();
          }
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       ATARI_POST_LOG("ROTT: post border\r\n");
 #endif
       DoBorderShifts ();
@@ -3123,7 +3123,7 @@ void      ThreeDRefresh (void)
       UpdateClientControls ();
       }
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_POST_LOG("ROTT: post messages\r\n");
 #endif
       {
@@ -3131,14 +3131,14 @@ void      ThreeDRefresh (void)
       DrawMessages();
       bufferofs += screenofs;
       }
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_POST_LOG("ROTT: post messages done\r\n");
 #endif
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_POST_LOG("ROTT: post pause\r\n");
 #endif
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    if ((GamePaused==true) && (!Keyboard[sc_LShift]))
       DrawPause ();
 #else
@@ -3152,14 +3152,14 @@ void      ThreeDRefresh (void)
 // show screen and time last cycle
 //
    ATARI_POST_LOG("ROTT: post fizzle\r\n");
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #ifndef ATARI_SKIP_FIZZLE
 #define ATARI_SKIP_FIZZLE 1
 #endif
 #endif
    if ((fizzlein==true) && (modemgame==false))
    {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       if (ATARI_SKIP_FIZZLE)
       {
          // Atari-safe: disable fizzle effect entirely.
@@ -3177,7 +3177,7 @@ void      ThreeDRefresh (void)
       bufferofs+=screenofs;
       fizzlein = false;
       StartupClientControls();
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 atari_fizzle_done:
       ;
 #endif
@@ -3194,7 +3194,7 @@ atari_fizzle_done:
    gamestate.frame++;
 
    player=tempptr;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    if (threed_dbg < 6) threed_dbg++;
 #undef ATARI_THREED_LOG
 #endif
@@ -3731,7 +3731,7 @@ void DrawScaledPost ( int height, byte * src, int offset, int x)
 
 void ApogeeTitle (void)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    byte pal[768];
 
    IN_ClearKeysDown();

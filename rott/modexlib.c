@@ -25,7 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <stdio.h>
 #include <ctype.h>
 
-#if defined(PLATFORM_ATARI)
+#if defined(__MINT__)
 #include <mint/osbind.h>
 #include <mint/cookie.h>
 #include <string.h>
@@ -104,7 +104,7 @@ static void atari_input_shutdown(void);
 #define ATARI_ENABLE_FASTMODE 0
 #endif
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #ifndef ATARI_TARGET_FPS
 #define ATARI_TARGET_FPS 0
 #endif
@@ -365,7 +365,7 @@ static void atari_fill_rect(int x, int y, int w, int h, unsigned char color)
       memset(screenpixels + ((y + row) * iGLOBAL_SCREENWIDTH) + x, color, (size_t)w);
 }
 
-#if PLATFORM_ATARI && ATARI_SHOW_FPS
+#if defined(__MINT__) && ATARI_SHOW_FPS
 static void atari_draw_fps_overlay(void)
 {
    static int fps_last_tic = -1;
@@ -458,7 +458,7 @@ void SetTextMode(void)
 
 void TurnOffTextCursor(void)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    Cconws("\33H\33f");
 #endif
 }
@@ -518,7 +518,7 @@ void I_FinishUpdate(void)
    DSL_Service();
    if (dsl_debug_overlay)
       atari_draw_dsl_stats();
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    if (!ATARI_RenderAllowed())
       return;
 #if ATARI_SHOW_FPS
@@ -560,7 +560,7 @@ void I_FinishUpdate(void)
 #endif
    atari_c2p_screen((unsigned char *)Physbase(), screenpixels, zoom, center_x, center_y,
                     view_x, view_y, view_w, view_h, protect_top, protect_bottom);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_EndRenderFrame();
 #endif
 }

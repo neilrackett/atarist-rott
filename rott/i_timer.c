@@ -24,7 +24,7 @@
 //
 //-----------------------------------------------------------------------------
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #include <stddef.h>
 #include <mint/osbind.h>
 #include "i_timer.h"
@@ -53,7 +53,7 @@ static unsigned long tos_hz200(void)
 int I_GetTime(void)
 {
     static int dbg_count = 0;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #ifndef ATARI_DEBUG
 #define ATARI_DEBUG 0
 #endif
@@ -69,7 +69,7 @@ int I_GetTime(void)
         MUSIC_Service();
         music_service_hz200 += 4;
     }
-#if PLATFORM_ATARI
+#if defined(__MINT__)
     if (ATARI_DEBUG && dbg_count < 8)
         Cconws("ROTT: I_GetTime after hz200\r\n");
 #endif
@@ -78,7 +78,7 @@ int I_GetTime(void)
     ticks -= basetime;
     {
         int t = (int)((ticks * TICRATE) / PLATFORM_TIMER_HZ);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
         if (ATARI_DEBUG && dbg_count < 8)
         {
             Cconws("ROTT: I_GetTime done\r\n");

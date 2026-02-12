@@ -136,7 +136,7 @@ void  XFlipPage ( void );
 void  WaitVBL( void );
 void  TurnOffTextCursor ( void );
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 int ATARI_BeginRenderFrame(void);
 int ATARI_RenderAllowed(void);
 void ATARI_EndRenderFrame(void);

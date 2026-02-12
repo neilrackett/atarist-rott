@@ -8,7 +8,7 @@
   Uses the '__int64' type (see rt_def.h).
  */
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 static __inline fixed atari_fixed_mul16(fixed a, fixed b)
 {
 	int ah = a >> 16;
@@ -24,7 +24,7 @@ static __inline fixed atari_fixed_mul16(fixed a, fixed b)
 
 fixed FixedMul(fixed a, fixed b)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 	return atari_fixed_mul16(a, b);
 #else
 	__int64 scratch1 = (__int64) a * (__int64) b + (__int64) 0x8000;
@@ -34,7 +34,7 @@ fixed FixedMul(fixed a, fixed b)
 
 fixed FixedMulShift(fixed a, fixed b, fixed shift)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 	if (shift == 16)
 		return atari_fixed_mul16(a, b);
 #endif

@@ -4,7 +4,7 @@
 #include "dsl.h"
 #include "util.h"
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #include <mint/osbind.h>
 #include <mint/cookie.h>
 

@@ -66,7 +66,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //MED
 #include "memcheck.h"
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #ifndef ATARI_SKIP_FIZZLE
 #define ATARI_SKIP_FIZZLE 0
 #endif
@@ -1579,7 +1579,7 @@ void DrawTime
 
 void DrawMPPic (int xpos, int ypos, int width, int height, int heightmod, byte *src, boolean bufferofsonly)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    int pixwidth = width << 2;
    int fullheight = height + heightmod;
    int plane_size = width * fullheight;
@@ -1710,7 +1710,7 @@ void DrawMPPic (int xpos, int ypos, int width, int height, int heightmod, byte *
 
 void DrawColoredMPPic (int xpos, int ypos, int width, int height, int heightmod, byte *src, boolean bufferofsonly, int color)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    int pixwidth = width << 2;
    int fullheight = height + heightmod;
    int plane_size = width * fullheight;
@@ -1934,7 +1934,7 @@ void DrawTriads
 
 void DrawPPic (int xpos, int ypos, int width, int height, byte *src, int num, boolean up, boolean bufferofsonly)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    int pixwidth = width << 2;
    int step = up ? pixwidth : -pixwidth;
    int plane_size = width * height;
@@ -2200,7 +2200,7 @@ void DrawBarAmmo
 
 void SingleDrawPPic (int xpos, int ypos, int width, int height, byte *src, int num, boolean up)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    int pixwidth = width << 2;
    int step = up ? pixwidth : -pixwidth;
    int plane_size = width * height;
@@ -4492,7 +4492,7 @@ void Died (void)
    int   slowrate;
    playertype *pstate;
    objtype * killerobj=(objtype *)player->target;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    const boolean atari_skip_death_transition = (ATARI_SKIP_FIZZLE != 0);
 #else
    const boolean atari_skip_death_transition = false;

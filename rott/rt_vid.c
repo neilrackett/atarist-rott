@@ -48,7 +48,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // MED
 #include "memcheck.h"
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #ifndef ATARI_SKIP_FADES
 #define ATARI_SKIP_FADES 1
 #endif
@@ -115,7 +115,7 @@ static byte pixmasks[4] = {1, 2, 4, 8};
 static byte leftmasks[4] = {15, 14, 12, 8};
 static byte rightmasks[4] = {1, 3, 7, 15};
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 static void VL_PlanarToChunky(byte *destbase, const byte *src, int widthbytes, int height,
                               int dstx, int dsty, int transparent)
 {
@@ -206,7 +206,7 @@ void VL_MemToScreen(byte *source, int width, int height, int x, int y)
          dest++;
       }
    }
-#elif PLATFORM_ATARI
+#elif defined(__MINT__)
    VL_PlanarToChunky(bufferofs, source, width, height, x, y, 0);
 #else
    /* TODO please optimize me */
@@ -236,7 +236,7 @@ void VL_MemToScreen(byte *source, int width, int height, int x, int y)
 void VL_MemToScreenClipped(byte *source, int width, int height, int x, int y);
 void VL_MemToScreenClipped(byte *source, int width, int height, int x, int y)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    VL_PlanarToChunky(bufferofs, source, width, height, x, y, 1);
 #else
    byte *ptr, *destline;
@@ -266,7 +266,7 @@ void VL_MemToScreenClipped(byte *source, int width, int height, int x, int y)
 // copy picture to mem (bufferofs) in doublesize
 void VL_MemStrechedToScreen(byte *source, int width, int height, int x, int y)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    {
       int plane_size = width * height;
       const byte *p0 = source;
@@ -380,7 +380,7 @@ void DrawTiledRegion(
    int startoffset;
    int HeightIndex;
    int WidthIndex;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    int pixwidth;
 #endif
 
@@ -459,7 +459,7 @@ void DrawTiledRegion(
 
       plane--;
    }
-#elif PLATFORM_ATARI
+#elif defined(__MINT__)
    {
       int tilewidth = sourcewidth << 2;
       if (offx >= tilewidth)
@@ -1074,7 +1074,7 @@ void VL_FadeOut(int start, int end, int red, int green, int blue, int steps)
    int i, j, orig, delta;
    byte *origptr, *newptr;
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    if (ATARI_SKIP_FADES)
    {
       atari_fill_palette_rgb(red, green, blue);
@@ -1140,7 +1140,7 @@ void VL_FadeToColor(int time, int red, int green, int blue)
    byte *origptr, *newptr;
    int dmax, dmin;
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    if (ATARI_SKIP_FADES)
    {
       atari_fill_palette_rgb(red, green, blue);
@@ -1210,7 +1210,7 @@ void VL_FadeIn(int start, int end, byte *palette, int steps)
 {
    int i, j, delta;
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    if (ATARI_SKIP_FADES)
    {
       VL_SetPalette(palette);

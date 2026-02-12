@@ -71,7 +71,7 @@ static int readytoflip;
 static boolean MenuBufStarted=false;
 static int mindist=0x2700;
 static boolean BackgroundDrawn=false;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 static boolean atari_menu_dirty = false;
 
 static void ATARI_MenuMarkDirty(void)
@@ -447,7 +447,7 @@ void ShutdownMenuBuf ( void )
    MenuBufStarted=false;
    SafeFree(menubuffers[0]);
    SafeFree(menubuffers[1]);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    atari_menu_dirty = false;
 #endif
    if (loadedgame==false)
@@ -588,7 +588,7 @@ void RefreshMenuBuf( int time )
    if (readytoflip)
       return;
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    /*
    Skip full menu scene redraws unless content changed.
    This keeps the classic 3D menu look while avoiding per-poll renders.

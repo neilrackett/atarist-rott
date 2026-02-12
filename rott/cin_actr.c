@@ -297,7 +297,7 @@ void DrawCinematicActors ( void )
       }
       if (flippage==true)
          {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
          ATARI_ForceRender();
 #endif
          XFlipPage ();

@@ -12,7 +12,7 @@
 #define cdecl
 #endif
 
-#if !PLATFORM_ATARI
+#if !defined(__MINT__)
 #include <exec/exec.h>
 #include <dos/dos.h>
 #include <graphics/gfxbase.h>

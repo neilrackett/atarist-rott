@@ -1,7 +1,7 @@
 #ifndef _INCLUDE_PRAGMA_DOOMSND_LIB_H
 #define _INCLUDE_PRAGMA_DOOMSND_LIB_H
 
-#if !PLATFORM_ATARI
+#if !defined(__MINT__)
 #ifndef CLIB_DOOMSND_PROTOS_H
 #include <clib/doomsound_protos.h>
 #endif

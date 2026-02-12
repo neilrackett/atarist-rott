@@ -29,7 +29,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 **********************************************************************/
 
 #include <stdlib.h>
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #include <mint/osbind.h>
 #endif
 #include <string.h>
@@ -165,7 +165,7 @@ int DPMI_UnlockMemoryRegion
 
 int DPMI_GetDOSMemory( void **ptr, long *descriptor, unsigned length )
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 	void *p = (void *)Mxalloc(length, 0); /* ST-RAM */
 	if (!p)
 		p = (void *)malloc(length);
@@ -185,7 +185,7 @@ int DPMI_GetDOSMemory( void **ptr, long *descriptor, unsigned length )
 
 int DPMI_FreeDOSMemory( long descriptor )
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 	if (descriptor == 0)
 		return DPMI_Error;
 	if (Mfree((void *)descriptor) == 0)

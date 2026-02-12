@@ -26,12 +26,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #include <mint/osbind.h>
 #endif
  
  
-#if !PLATFORM_ATARI
+#if !defined(__MINT__)
 #include <signal.h>
 
 
@@ -88,7 +88,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //MED
 #include "memcheck.h"
 #include "m_fixed.h"
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #ifndef ATARI_MAX_CATCHUP_STEPS
 #define ATARI_MAX_CATCHUP_STEPS 2
 #endif
@@ -105,14 +105,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define ATARI_SKIP_FIZZLE 0
 #endif
 #endif
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 extern int __argc;
 extern char **__argv;
 #endif
  
 int cpu_type;
 int broken_pipe;
-#if !PLATFORM_ATARI
+#if !defined(__MINT__)
 extern struct ExecBase *SysBase;
 #endif
 
@@ -169,7 +169,7 @@ static boolean turbo;
 static int NoWait;
 static int startlevel=0;
 static int demonumber=-1;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 static boolean atari_first_title_menu_after_logo = true;
 #endif
 
@@ -232,12 +232,12 @@ int main (int argc, char *argv[])
     
     _argc = argc;
     _argv = argv;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
     __argc = argc;
     __argv = argv;
 #endif
          
-#if !PLATFORM_ATARI
+#if !defined(__MINT__)
     /* parse icon tooltypes and convert them to argc/argv format */
     
     if (argc <= 1)
@@ -278,7 +278,7 @@ int main (int argc, char *argv[])
 
 #endif
 
-#if !PLATFORM_ATARI
+#if !defined(__MINT__)
     Disable();
     
     if ((SysBase->AttnFlags & AFF_68060) != 0)
@@ -300,7 +300,7 @@ int main (int argc, char *argv[])
     else
         cpu_type = 68000;
  
-#if !defined C_FIXED_MATH && !PLATFORM_ATARI
+#if !defined C_FIXED_MATH && !defined(__MINT__)
     if (cpu_type >= 68060)
     {
     	__asm
@@ -358,7 +358,7 @@ int main (int argc, char *argv[])
     }
 #endif
 
-#if !PLATFORM_ATARI && !defined(DOS)
+#if !defined(__MINT__) && !defined(DOS)
    signal (11, crash_print);
 
    if (setup_homedir() == -1) return 1;
@@ -395,7 +395,7 @@ int main (int argc, char *argv[])
    InitializeGameCommands();
    if (standalone==false)
       {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       doublestep=0;
       SetupWads();
       BuildTables ();
@@ -585,7 +585,7 @@ int main (int argc, char *argv[])
 #else
       if ( NoWait == false )
          {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
          if (W_CheckNumForName("svendor") != -1)
             {
             lbm_t * LBM;
@@ -1217,7 +1217,7 @@ void Init_Tables (void)
 
    if (pal_num == -1)
    {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       int lbm_num = -1;
       lbm_num = W_CheckNumForName("ap_titl");
       if (lbm_num == -1)
@@ -1401,7 +1401,7 @@ void GameLoop (void)
                   {
                   int i;
                   byte *tempbuf;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
                   int shartit2 = W_CheckNumForName("shartit2");
                   int trilogo = W_CheckNumForName("trilogo");
                   int hold_end;
@@ -1505,7 +1505,7 @@ void GameLoop (void)
                   QuitGame();
                   }
                NoWait = false;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
                /*
                Avoid showing the previous title/logo frame while menu setup runs.
                */
@@ -1905,7 +1905,7 @@ void ShutDown ( void )
 #endif
    )
       {
-#if !PLATFORM_ATARI
+#if !defined(__MINT__)
       WriteConfig ();
 #endif
       }
@@ -2104,7 +2104,7 @@ void UpdateGameObjects ( void )
 	volatile int atime;
 	objtype * ob,*temp;
    battle_status BattleStatus;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    int catchup_steps = 0;
 #endif
 
@@ -2126,14 +2126,14 @@ void UpdateGameObjects ( void )
 
    UpdateClientControls ();
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    if (demoplayback == false && oldtime > (oldpolltime + 1))
       PollControls();
 #endif
 
    while (oldpolltime<oldtime)
 	   {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 	      if (ATARI_MAX_CATCHUP_STEPS > 0 && catchup_steps >= ATARI_MAX_CATCHUP_STEPS)
 	      {
 	         oldpolltime = oldtime;
@@ -2159,7 +2159,7 @@ void UpdateGameObjects ( void )
 		for (ob = firstactive; ob;)
 			{
 			 temp = ob->nextactive;
-#if PLATFORM_ATARI && (ATARI_ACTOR_THROTTLE_DIV > 1)
+#if defined(__MINT__) && (ATARI_ACTOR_THROTTLE_DIV > 1)
           if ((ob->obclass != playerobj) &&
               ((ob->flags & FL_KEYACTOR) == 0) &&
               !areabyplayer[ob->areanumber])
@@ -2227,7 +2227,7 @@ void UpdateGameObjects ( void )
       ResetCurrentCommand();
 
       oldpolltime++;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       catchup_steps++;
 #endif
       if (GamePaused==true)
@@ -2257,7 +2257,7 @@ void UpdateGameObjects ( void )
 void PauseLoop ( void )
 {
    StopWind();
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    int catchup_steps = 0;
 #endif
 
@@ -2265,7 +2265,7 @@ void PauseLoop ( void )
 
    while (oldpolltime<oldtime)
 	   {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       if (ATARI_MAX_CATCHUP_STEPS > 0 && catchup_steps >= ATARI_MAX_CATCHUP_STEPS)
       {
          oldpolltime = oldtime;
@@ -2277,7 +2277,7 @@ void PauseLoop ( void )
       CheckForSyncCheck();
 #endif
       oldpolltime++;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       catchup_steps++;
 #endif
       if (GamePaused==false)
@@ -2319,7 +2319,7 @@ void PlayLoop
 
    {
    volatile int atime;
-#if PLATFORM_ATARI && (ATARI_RENDER_DIVISOR > 1)
+#if defined(__MINT__) && (ATARI_RENDER_DIVISOR > 1)
    unsigned int atari_render_div_tick = 0;
 #endif
 
@@ -2356,7 +2356,7 @@ fromloadedgame:
 	SetFastTics(0);
 
    if ( (fizzlein == false)
-#if PLATFORM_ATARI
+#if defined(__MINT__)
         || (ATARI_SKIP_FIZZLE != 0)
 #endif
       )
@@ -2371,7 +2371,7 @@ fromloadedgame:
    // set detail level
    doublestep = 2 - DetailLevel;
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ResetMessageTime();
    MessagesEnabled = false;
 #else
@@ -2391,10 +2391,10 @@ fromloadedgame:
 	while( playstate == ex_stillplaying )
       {
       int atari_should_render = 1;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       IN_PumpEvents();
 #endif
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       atari_should_render = ATARI_BeginRenderFrame();
 #if (ATARI_RENDER_DIVISOR > 1)
       if (atari_should_render)
@@ -2429,7 +2429,7 @@ fromloadedgame:
          }
 	      else
 	         {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
          if (controlupdatestarted == 0)
             StartupClientControls();
 #endif
@@ -2692,7 +2692,7 @@ void PollKeyboard
       {
       IN_UpdateKeyboard();
       }
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    else
       {
       IN_UpdateKeyboard();

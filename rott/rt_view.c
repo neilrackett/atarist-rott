@@ -82,7 +82,7 @@ int    centery;
 int    centeryfrac;
 int    fulllight = 1;
 int    weaponscale;
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 int    viewsize = 2;
 #else
 int    viewsize = 8;
@@ -248,7 +248,7 @@ void CalcProjection ( void )
 
 //Hey, isn't this stuff already loaded in?
 //Why don't we make this a lump?
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    pangle = SafeMalloc(ATARI_PANGLE_LEN * sizeof(int));
    memcpy(pangle, atari_pangle, ATARI_PANGLE_LEN * sizeof(int));
    length = ATARI_PANGLE_LEN;
@@ -273,7 +273,7 @@ have_pangle:
       {
       // start 1/2 pixel over, so viewangle bisects two middle pixels
       intang=pangle[frac>>16];
-#if !PLATFORM_ATARI
+#if !defined(__MINT__)
       SwapIntelLong(&intang);
 #endif
       pixelangle[centerx-1-i] =(short) intang;
@@ -722,7 +722,7 @@ int GetLightRateTile ( void )
 */
 void UpdateLightLevel (int area)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #ifndef ATARI_SKIP_LIGHTLEVEL
 #define ATARI_SKIP_LIGHTLEVEL 0
 #endif

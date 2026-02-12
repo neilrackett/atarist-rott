@@ -20,7 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "rt_def.h"
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #include <mint/osbind.h>
 #endif
 
@@ -43,7 +43,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_main.h"
 #include "w_wad.h"
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 static int atari_lumpnum(const char *name)
 {
    int n = W_CheckNumForName((char *)name);
@@ -59,7 +59,7 @@ static int atari_lumpnum(const char *name)
 
 static void PreCacheGroupByName(const char *startname, const char *endname, int type)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    int start = atari_lumpnum(startname);
    int stop = atari_lumpnum(endname);
    if (start == -1 || stop == -1)
@@ -74,7 +74,7 @@ static void PreCacheGroupByName(const char *startname, const char *endname, int 
 
 static void PreCacheLumpByName(const char *name, int level, int type)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    int lump = atari_lumpnum(name);
    if (lump == -1)
       return;
@@ -664,7 +664,7 @@ void SetupAnimatedWall(int which)
    texture = W_CheckNumForName(animwallsinfo[which].firstlump);
    if (texture == -1)
       {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
       {
          char buf[80];
          sprintf(buf, "ROTT: animwall missing %s\r\n", animwallsinfo[which].firstlump);

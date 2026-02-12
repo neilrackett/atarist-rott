@@ -35,7 +35,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <mem.h>
 #include <conio.h>
 #endif
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #include <mint/osbind.h>
 #endif
 
@@ -759,7 +759,7 @@ static int ticbase;      /* game-supplied base */
 
 int GetTicCount (void)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #ifndef ATARI_DEBUG
 #define ATARI_DEBUG 0
 #endif

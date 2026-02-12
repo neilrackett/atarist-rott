@@ -52,7 +52,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define RANDOMTEST  0
 #define WHEREAMI    0
 
-#if defined(PLATFORM_ATARI)
+#if defined(__MINT__)
 #ifndef LITTLE_ENDIAN
 #define LITTLE_ENDIAN 1234
 #endif

@@ -20,7 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef _watcom_h_public
 #define _watcom_h_public
 
-#if defined(C_FIXED_MATH) || PLATFORM_ATARI
+#if defined(C_FIXED_MATH) || defined(__MINT__)
 fixed FixedMul(fixed a, fixed b);
 fixed FixedDiv2(fixed a, fixed b);
 #else

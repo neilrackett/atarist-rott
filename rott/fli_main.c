@@ -32,7 +32,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "cin_glob.h"
 #include <errno.h>
 #include <string.h>
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #include <unistd.h>
 #else
 #include <io.h>

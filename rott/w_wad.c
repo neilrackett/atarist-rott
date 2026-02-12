@@ -27,7 +27,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <unistd.h>
 #include <alloca.h>
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #include <mint/osbind.h>
 #include "atari_tables.h"
 #endif
@@ -46,11 +46,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "isr.h"
 #include "develop.h"
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 static void wad_dbg(const char *msg) { Cconws(msg); }
 #endif
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 static int wad_name_eq(const char *lumpname, const char *name8)
 {
     int i;
@@ -71,7 +71,7 @@ static int wad_name_eq(const char *lumpname, const char *name8)
 }
 #endif
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 static void wad_dbg_num(const char *label, long v)
 {
     char buf[64];
@@ -123,7 +123,7 @@ static byte *lumpcheck;
 
 void W_AddFile (char *_filename)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
     wad_dbg("W_AddFile: ");
     wad_dbg(_filename);
     wad_dbg("\r\n");
@@ -143,7 +143,7 @@ void W_AddFile (char *_filename)
         FixFilePath(filename);
 
 		//bna section start
-#if !PLATFORM_ATARI
+#if !defined(__MINT__)
 		if (access (filename, 0) != 0) {
 			strcpy (buf,"Error, Could not find User file '");
 			strcat (buf,filename);
@@ -157,7 +157,7 @@ void W_AddFile (char *_filename)
 // read the entire file in
 //      FIXME: shared opens
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
     wad_dbg("W_AddFile: open\r\n");
 #endif
 #ifdef PLATFORM_DOS
@@ -166,7 +166,7 @@ void W_AddFile (char *_filename)
         if ( (handle = open (filename,O_RDONLY | O_BINARY)) == -1)
 #endif
         {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
             char cwd[64];
             if (getcwd(cwd, sizeof(cwd)) == NULL)
                 strcpy(cwd, "?");
@@ -178,7 +178,7 @@ void W_AddFile (char *_filename)
 #endif
             return;
         }
-#if PLATFORM_ATARI
+#if defined(__MINT__)
         wad_dbg("W_AddFile: open ok\r\n");
 #endif
 
@@ -203,19 +203,19 @@ void W_AddFile (char *_filename)
                 if (!quiet)
                    printf("    Adding %s.\n",filename);
                 read (handle, &header, sizeof(header));
-#if PLATFORM_ATARI
+#if defined(__MINT__)
                 wad_dbg("W_AddFile: header ok\r\n");
 #endif
                 if (strncmp(header.identification,"IWAD",4))
                         Error ("Wad file %s doesn't have IWAD id\n",filename);
                 header.numlumps = IntelLong(LONG(header.numlumps));
                 header.infotableofs = IntelLong(LONG(header.infotableofs));
-#if PLATFORM_ATARI
+#if defined(__MINT__)
                 if (header.numlumps < 0 || header.numlumps > 20000)
                         Error ("Wad file %s has invalid lump count %d\n", filename, header.numlumps);
 #endif
                 length = header.numlumps*sizeof(filelump_t);
-#if PLATFORM_ATARI
+#if defined(__MINT__)
                 fileinfo = (filelump_t *)SafeMalloc(length);
                 if (!fileinfo)
                    Error ("Wad file could not allocate header info");
@@ -249,7 +249,7 @@ void W_AddFile (char *_filename)
                 lump_p->size = LONG(fileinfo->size);
                 strncpy (lump_p->name, fileinfo->name, 8);
         }
-#if PLATFORM_ATARI
+#if defined(__MINT__)
         if (fileinfo_base && fileinfo_base != &singleinfo)
         {
                 SafeFree((void *)fileinfo_base);
@@ -313,10 +313,10 @@ void W_CheckWADIntegrity ( void )
 
 void W_InitMultipleFiles (char **filenames)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
     wad_dbg("W_InitMultipleFiles\r\n");
 #endif
-#if PLATFORM_ATARI
+#if defined(__MINT__)
     wad_dbg("W_InitMultipleFiles: begin\r\n");
 #endif
 //
@@ -327,7 +327,7 @@ void W_InitMultipleFiles (char **filenames)
 
         for ( ; *filenames ; filenames++)
         {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
             wad_dbg("W_InitMultipleFiles: file ");
             wad_dbg(*filenames);
             wad_dbg("\r\n");
@@ -337,7 +337,7 @@ void W_InitMultipleFiles (char **filenames)
 
         if (!numlumps)
         {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
             wad_dbg("W_InitFiles: no files found\r\n");
 #endif
             Error ("W_InitFiles: no files found");
@@ -360,7 +360,7 @@ void W_InitMultipleFiles (char **filenames)
         if (!SOUNDSETUP)
 #endif
            W_CheckWADIntegrity ();
-#if PLATFORM_ATARI
+#if defined(__MINT__)
     wad_dbg("W_InitMultipleFiles: done\r\n");
 #endif
 }
@@ -420,7 +420,7 @@ int     W_CheckNumForName (char *name)
         lumpinfo_t      *lump_p;
         lumpinfo_t      *endlump;
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
         if (!strcmp(name, "tables") || !strcmp(name, "TABLES"))
         {
                 char buf[64];
@@ -443,7 +443,7 @@ int     W_CheckNumForName (char *name)
 
         while (lump_p != endlump)
            {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
            if (wad_name_eq(lump_p->name, name8))
               return lump_p - lumpinfo;
 #else
@@ -453,7 +453,7 @@ int     W_CheckNumForName (char *name)
            lump_p++;
            }
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
         if (!strcmp(name8, "TABLES"))
         {
                 int k;
@@ -492,7 +492,7 @@ int     W_GetNumForName (char *name)
         if (i != -1)
                 return i;
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
         if (!strcmpi(name, "mmbk"))
         {
                 int fb = W_CheckNumForName("backtile");
@@ -504,7 +504,7 @@ int     W_GetNumForName (char *name)
                         return fb;
         }
 #endif
-#if PLATFORM_ATARI
+#if defined(__MINT__)
         {
                 char buf[80];
                 sprintf(buf, "W_GetNumForName missing: %s\r\n", name);
@@ -694,7 +694,7 @@ void    *W_CacheLumpNum (int lump, int tag, converter_t converter, int numrec)
 
 void    *W_CacheLumpName (char *name, int tag, converter_t converter, int numrec)
 {
-#if PLATFORM_ATARI
+#if defined(__MINT__)
         if (!strcmpi(name, "tables"))
         {
                 static unsigned char *tables_blob = NULL;

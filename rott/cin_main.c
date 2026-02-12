@@ -224,7 +224,7 @@ void PlayMovie ( char * name, boolean uselumpy )
    GrabCinematicScript (name, uselumpy);
 
    PrecacheCinematic ( );
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    {
    int safety = static_max_tics;
 
@@ -236,7 +236,7 @@ void PlayMovie ( char * name, boolean uselumpy )
       cinematictime++;
       }
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
    ATARI_ForceRender();
 #endif
    DrawCinematicActors ();

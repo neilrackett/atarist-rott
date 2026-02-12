@@ -36,7 +36,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <ctype.h>
 #endif
  
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #include <dirent.h>
 #endif
 
@@ -62,7 +62,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define PATH_SEP_STR  "/"
 #define ROOTDIR       "/"
 #define CURDIR        ""
-#elif PLATFORM_ATARI
+#elif defined(__MINT__)
 #define PATH_SEP_CHAR '\\'
 #define PATH_SEP_STR  "\\"
 #define ROOTDIR       ""
@@ -147,7 +147,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
     char *ultoa(unsigned long, char *, int);
     char getch(void);
     long filelength(int handle);
-  #elif PLATFORM_ATARI
+  #elif defined(__MINT__)
     #define strcmpi(x, y) stricmp(x, y)
     #define _fstricmp(x, y) stricmp(x, y)
     int stricmp(const char *a, const char *b);

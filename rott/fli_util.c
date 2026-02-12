@@ -32,7 +32,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  * an article for Dr. Dobb's Journal March 1993 issue.
  */
 
-#if PLATFORM_ATARI
+#if defined(__MINT__)
 #include "cin_glob.h"
 #include <unistd.h>
 #include <time.h>
