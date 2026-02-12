@@ -6,11 +6,11 @@ Atari ST and WebAssembly (WASM) ports by [Neil Rackett](https://x.com/neilracket
 
 What better way to celebrate the 30th-ish anniversary of ROTT than to port it to a hardware platform currently celebrating its 40th: Welcome to _Rise of the Triad for Atari ST_ (and TT and WebAssembly).
 
-| Branch     | Name              | Description                                                          | Optimised for  | Compatibile with              | Compiler            |
-| ---------- | ----------------- | -------------------------------------------------------------------- | -------------- | ----------------------------- | ------------------- |
-| `atari-st` | ROTT for Atari ST | C2P rendering, 16 colour and Noir (greyscale) versions               | Atari Mega STE | ST, STE, Mega STE, TT, Falcon | m68k-atari-mint-gcc |
-| `atari-tt` | ROTT for Atari TT | SDL rendering, 16 colour (greyscale) on ST, 256 colours on TT/Falcon | Atari TT       | ST, STE, Mega STE, TT, Falcon | m68k-atari-mint-gcc |
-| `wasm`     | ROTT for the web  | Web version using WebAssembly                                        | Web            | Any modern browser            | emcc                |
+| Branch     | Name              | Description                                                          | Optimised for  | Compatibile with              | RAM | Compiler            |
+| ---------- | ----------------- | -------------------------------------------------------------------- | -------------- | ----------------------------- | --- | ------------------- |
+| `atari-st` | ROTT for Atari ST | C2P rendering, 16 colour and Noir (greyscale) versions               | Atari Mega STE | ST, STE, Mega STE, TT, Falcon | 4MB | m68k-atari-mint-gcc |
+| `atari-tt` | ROTT for Atari TT | SDL rendering, 16 colour (greyscale) on ST, 256 colours on TT/Falcon | Atari TT       | ST, STE, Mega STE, TT, Falcon | 4MB | m68k-atari-mint-gcc |
+| `wasm`     | ROTT for the web  | Web version using WebAssembly                                        | Web            | Any modern browser            | N/A | emcc                |
 
 All builds are experimental.
 
