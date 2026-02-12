@@ -47,10 +47,6 @@ stcmd make
 
 The build process outputs `build/ROTT_TT.TOS`, which will run on any Atari ST compatible computer, but is best experienced on an Atari TT.
 
-## Credits
-
-- Forked from [Amiga port](https://github.com/lantus/ROTT)
-
 ## License
 
 This software is distributed in source code format and is licensed under the
