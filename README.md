@@ -65,10 +65,6 @@ stcmd make rott-rottsite
 
 These builds output `build/ROTT_STD.TOS`, `build/ROTT_STC.TOS` and `build/ROTT_STS.TOS`, respectively.
 
-## Credits
-
-- Forked from [Amiga port](https://github.com/lantus/ROTT)
-
 ## License
 
 This software is distributed in source code format and is licensed under the
