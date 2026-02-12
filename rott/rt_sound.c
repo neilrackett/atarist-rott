@@ -1168,6 +1168,7 @@ void MU_PlaySong ( int num )
 {
    int lump;
    int size;
+   int status;
    
    if (MU_Started==false)
       return;
@@ -1189,15 +1190,23 @@ void MU_PlaySong ( int num )
 
 #ifdef PLATFORM_DOS
    if (rottsongs[num].loopflag == loop_yes)
-      MUSIC_PlaySong(currentsong,size,MUSIC_LoopSong);
+      status = MUSIC_PlaySong(currentsong,size,MUSIC_LoopSong);
    else
-      MUSIC_PlaySong(currentsong,size,MUSIC_PlayOnce);
+      status = MUSIC_PlaySong(currentsong,size,MUSIC_PlayOnce);
 #else 
    if (rottsongs[num].loopflag == loop_yes)
-      MUSIC_PlaySongROTT(currentsong,size,MUSIC_LoopSong);
+      status = MUSIC_PlaySongROTT(currentsong,size,MUSIC_LoopSong);
    else
-      MUSIC_PlaySongROTT(currentsong,size,MUSIC_PlayOnce);
+      status = MUSIC_PlaySongROTT(currentsong,size,MUSIC_PlayOnce);
 #endif
+
+   if (status != MUSIC_Ok)
+      {
+      printf("MUSIC: failed to play %s (%s): %s\n",
+         rottsongs[num].lumpname,
+         rottsongs[num].songname,
+         MUSIC_ErrorString(status));
+      }
 
    MU_SetVolume (MUvolume);
 }

@@ -30,11 +30,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <signal.h>
 
 
-#include <exec/exec.h>
-#include <exec/execbase.h>  
-#include <workbench/startup.h>
-#include <workbench/workbench.h>
-#include <workbench/icon.h>
 #include "rt_def.h"
 #include "lumpy.h"
 #include "watcom.h"
@@ -85,7 +80,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  
 int cpu_type;
 int broken_pipe;
-extern struct ExecBase *SysBase;
 
 volatile int    oldtime;
 volatile int    gametime;
@@ -176,90 +170,23 @@ extern void RecordDemoQuery ( void );
 
 #define MAXARGVS        100
 
-/* these command line arguments are flags */
-  static char *flags[] = {
-    "NOSOUND",
-    "EHB",
-    "CGX",
-    "AGA",
-    "NTSC",
-    "INDIVISION",
-    "LOMEM"    
-  };
-
 int main (int argc, char *argv[])
 {
-    struct WBStartup *argmsg;
-    struct WBArg *wb_arg;
-    struct DiskObject *obj;
-    char **toolarray, *s;
-
     int i, p;
-  
-    char *macwd;
-    
+
     _argc = argc;
     _argv = argv;
-         
-    /* parse icon tooltypes and convert them to argc/argv format */
-    
-    if (argc <= 1)
+
+    if (argc > 1)
     {
-        if (argc == 0) {
-            argmsg = (struct WBStartup *)argv;
-            wb_arg = argmsg->sm_ArgList;
-            if ((_argv[_argc] = malloc(strlen(wb_arg->wa_Name)+1)) == NULL)
-              Error ("malloc(%d) failed", strlen(wb_arg->wa_Name)+1);
-    
-            strcpy (_argv[_argc++], wb_arg->wa_Name);
-        }
-        if ((obj = GetDiskObject (_argv[0])) != NULL) {
-            toolarray = obj->do_ToolTypes;
-            for (i = 0; i < sizeof(flags)/sizeof(flags[0]); i++) {
-              if (FindToolType (toolarray, &flags[i][0]) != NULL) {
-                _argv[_argc++] = flags[i];
-              }
-            }
-    
-            FreeDiskObject (obj);
-        }
-    
-        if (argc != _argc) {
-            printf ("\nIcon tooltypes translated command line to:\n\n    ");
-            for (i = 0; i < _argc; i++)
-              printf (" %s", _argv[i]);
-            printf ("\n\n");
-        }
-    }
-    else
-    {
-        printf ("\Overriding Icon tooltypes command line with :\n\n    ");
-            for (i = 0; i < argc; i++)
-              printf (" %s", argv[i]);
-            printf ("\n\n");
+        printf ("\nCommand line:\n\n    ");
+        for (i = 0; i < argc; i++)
+            printf (" %s", argv[i]);
+        printf ("\n\n");
     }
 
-    Disable();
-    
-    if ((SysBase->AttnFlags & AFF_68060) != 0)
-    {
-        cpu_type = 68060;
-   
-    }
-    else if ((SysBase->AttnFlags & AFF_68040) != 0)
-    {
-        cpu_type = 68040;
- 
-    }
-    else if ((SysBase->AttnFlags & AFF_68030) != 0)
-        cpu_type = 68030;
-    else if ((SysBase->AttnFlags & AFF_68020) != 0)
-        cpu_type = 68020;
-    else if ((SysBase->AttnFlags & AFF_68010) != 0)
-        cpu_type = 68010;
-    else
-        cpu_type = 68000;
- 
+    cpu_type = 68060;
+
 #if !defined C_FIXED_MATH 
     if (cpu_type >= 68060)
     {
@@ -293,7 +220,6 @@ int main (int argc, char *argv[])
     }
 #endif
         
-    Enable();
  
 #if defined(PLATFORM_MACOSX)
     {
@@ -360,9 +286,6 @@ int main (int argc, char *argv[])
       GetMenuInfo ();
       }
 
-    iGLOBAL_SCREENWIDTH = 320;
-    iGLOBAL_SCREENHEIGHT = 200;
-    
    SetRottScreenRes (iGLOBAL_SCREENWIDTH, iGLOBAL_SCREENHEIGHT);
    
 //   if (modemgame==true)
@@ -491,7 +414,7 @@ int main (int argc, char *argv[])
 //   VL_SetVGAPlaneMode();
 //   VL_SetPalette(origpal);
 //   SetBorderColor(155);
-   SetViewSize(8);
+   SetViewSize(viewsize);
 
 #ifdef DOS
    if ( SOUNDSETUP )

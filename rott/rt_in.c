@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_main.h"
 #include "rt_spbal.h"
 #include "rt_def.h"
+#include "modexlib.h"
 #include "rt_in.h"
 #include "_rt_in.h"
 #include "isr.h"

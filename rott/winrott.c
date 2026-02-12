@@ -6,8 +6,8 @@
 
 //typedef unsigned char byte;
 
-int iGLOBAL_SCREENWIDTH  = 320;//bna val 800
-int iGLOBAL_SCREENHEIGHT = 200;//bna val 600
+int iGLOBAL_SCREENWIDTH  = 320;
+int iGLOBAL_SCREENHEIGHT = 200;
 int iGLOBAL_SCREENBWIDE ;
 int iG_SCREENWIDTH;// default screen width in bytes
 
@@ -33,7 +33,6 @@ extern int  viewwidth;
 #define FINEANGLES                        2048
 void SetRottScreenRes (int Width, int Height) 
 {
-	
 	iGLOBAL_SCREENWIDTH = Width;
 	iGLOBAL_SCREENHEIGHT = Height;
 
@@ -128,5 +127,4 @@ void MoveScreenDownRight()
 		memcpy(Ycnt+startoffset,Ycnt,viewwidth-startX);
 	}
 }
-
 

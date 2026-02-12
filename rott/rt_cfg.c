@@ -128,7 +128,7 @@ int     MidiAddress      = 0x330;
 boolean cybermanenabled  = false;
 boolean assassinenabled  = false;
 boolean spaceballenabled = false;
-boolean AutoDetailOn     = true;
+boolean AutoDetailOn     = false;
 int     DoubleClickSpeed = 20;
 boolean BobbinOn         = true;
 int     Menuflipspeed    = 15;
@@ -193,13 +193,26 @@ char CodeName[MAXCODENAMELENGTH];
 void ReadScores (void)
 {
    int file;
+   long len;
+   long want;
    char filename[ 128 ];
 
    GetPathFromEnvironment( filename, ApogeePath, ScoresName );
    if (access (filename, F_OK) == 0)
       {
       file = SafeOpenRead (filename);
-      SafeRead (file, &Scores, sizeof (Scores));
+      len = filelength(file);
+      want = (long) sizeof(Scores);
+
+      /* Keep built-in defaults if the on-disk layout is older/smaller. */
+      if (len > 0)
+         {
+         if (len < want)
+            SafeRead (file, &Scores, len);
+         else
+            SafeRead (file, &Scores, want);
+         }
+
       close(file);
       }
    else
@@ -946,8 +959,15 @@ void SetConfigDefaultValues (void)
    joystickenabled = false;
    joypadenabled   = false;
    joystickport    = 0;
-   viewsize        = 7;
+   iGLOBAL_SCREENWIDTH  = 320;
+   iGLOBAL_SCREENHEIGHT = 200;
+   sdl_fullscreen  = 1;
+   viewsize        = 8;
    mouseadjustment = 5;
+   AutoDetailOn    = false;
+   DetailLevel     = 2;
+   fulllight       = 0;
+   fandc           = 1;
    gammaindex      = 0;
    gamestate.violence = 3;
    passwordstring[0]=0x7d;
@@ -1862,8 +1882,8 @@ void WriteConfig (void)
    // Write in Light Dim
 
    SafeWriteString(file,"\n;\n");
-   SafeWriteString(file,"; 1 - Light Diminishing on\n");
-   SafeWriteString(file,"; 0 - Light Diminishing off\n");
+   SafeWriteString(file,"; 0 - Light Diminishing on\n");
+   SafeWriteString(file,"; 1 - Light Diminishing off\n");
    WriteParameter (file,"LightDim         ", fulllight);
 
    // Write in Bobbin' On
@@ -2185,4 +2205,3 @@ void ReadSETUPFiles (void)
 }
 
 #endif
-

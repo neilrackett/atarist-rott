@@ -22,103 +22,39 @@
 // DESCRIPTION:
 //      Timer functions.
 //
-//-----------------------------------------------------------------------------
+//----------------------------------------------------------------------------- 
 
-// Lantus 3/1/2013 - AmigaOS native
-
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <time.h>
-
-#include <devices/timer.h>
-#include <proto/exec.h>
- 
 #include "i_timer.h"
- 
-static ULONG basetime = 0;
-struct MsgPort *timer_msgport;
-struct timerequest *timer_ioreq;
-struct Library *TimerBase;
+#include "SDL.h"
+#ifdef __EMSCRIPTEN__
+extern void emscripten_sleep(unsigned int ms);
+#endif
 
-static int opentimer(ULONG unit){
-	timer_msgport = CreateMsgPort();
-	timer_ioreq = CreateIORequest(timer_msgport, sizeof(*timer_ioreq));
-	if (timer_ioreq){
-		if (OpenDevice(TIMERNAME, unit, (APTR) timer_ioreq, 0) == 0){
-			TimerBase = (APTR) timer_ioreq->tr_node.io_Device;
-			return 1;
-		}
-	}
-	return 0;
-}
-static void closetimer(void){
-	if (TimerBase){
-		CloseDevice((APTR) timer_ioreq);
-	}
-	DeleteIORequest(timer_ioreq);
-	DeleteMsgPort(timer_msgport);
-	TimerBase = 0;
-	timer_ioreq = 0;
-	timer_msgport = 0;
-}
+static Uint32 basetime = 0;
 
-static struct timeval startTime;
-
-void startup(){
-	GetSysTime(&startTime);
-}
-
-ULONG getMilliseconds(){
-	struct timeval endTime;
-
-	GetSysTime(&endTime);
-	SubTime(&endTime,&startTime);
-
-	return (endTime.tv_secs * 1000 + endTime.tv_micro / 1000);
-}
-
-int  I_GetTime (void)
+int I_GetTime(void)
 {
-    ULONG ticks;
-
-    ticks = getMilliseconds();
-
-    if (basetime == 0)
-        basetime = ticks;
-
-    ticks -= basetime;
-
-    return (ticks * TICRATE) / 1000;
+    const Uint32 ticks = SDL_GetTicks() - basetime;
+    return (int) ((ticks * TICRATE) / 1000);
 }
-
-//
-// Same as I_GetTime, but returns time in milliseconds
-//
 
 int I_GetTimeMS(void)
 {
-    ULONG ticks;
-
-    ticks = getMilliseconds();
-
-    if (basetime == 0)
-        basetime = ticks;
-
-    return ticks - basetime;
-}
-
-// Sleep for a specified number of ms
-
-
-void I_ExitTimer()
-{
-    closetimer();
+    return (int) (SDL_GetTicks() - basetime);
 }
 
 void I_Sleep(int ms)
 {
-    usleep(ms);
+    if (ms <= 0)
+    {
+        return;
+    }
+
+#ifdef __EMSCRIPTEN__
+    emscripten_sleep(ms);
+#else
+    SDL_Delay((Uint32) ms);
+#endif
 }
 
 void I_WaitVBL(int count)
@@ -126,12 +62,19 @@ void I_WaitVBL(int count)
     I_Sleep((count * 1000) / 70);
 }
 
-
 void I_InitTimer(void)
 {
-    // initialize timer
+    if (!SDL_WasInit(SDL_INIT_TIMER))
+    {
+        if (!SDL_WasInit(0))
+        {
+            SDL_Init(SDL_INIT_TIMER);
+        }
+        else
+        {
+            SDL_InitSubSystem(SDL_INIT_TIMER);
+        }
+    }
 
-   opentimer(UNIT_VBLANK);
-   startup();
+    basetime = SDL_GetTicks();
 }
-

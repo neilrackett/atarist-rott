@@ -121,11 +121,14 @@ char getch(void)
 	return 0;
 }
 
-extern char ApogeePath[256];
+extern char *ApogeePath;
+
+static char apogee_path_storage[256];
 
 int setup_homedir (void)
 {        
-    snprintf (ApogeePath, sizeof (ApogeePath), "");
+    apogee_path_storage[0] = '\0';
+    ApogeePath = apogee_path_storage;
 	return 0;
 }
 
@@ -173,7 +176,7 @@ void DisplayTextSplash(byte *text, int l)
 	printf ("\033[m");
 }
 
-#if !defined(__CYGWIN__) && !defined(__MINGW32__) && !defined(AMIGA)
+#if !defined(__CYGWIN__) && !defined(__MINGW32__) && !defined(AMIGA) && !defined(__EMSCRIPTEN__)
 #include <execinfo.h>
 
 void print_stack (int level)

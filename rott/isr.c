@@ -41,6 +41,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "isr.h"
 #include "_isr.h"
 #include "rt_in.h"
+#include "i_timer.h"
 #include "rt_util.h"
 #include "profile.h"
 #include "develop.h"

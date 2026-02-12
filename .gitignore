@@ -3,3 +3,5 @@
 /build
 /obj
 /tmp
+/web/build
+/web/obj

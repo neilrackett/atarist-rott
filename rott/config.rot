@@ -80,14 +80,14 @@ Threshold          1
 AutoDetail         0
 
 ;
-; 1 - Light Diminishing on
-; 0 - Light Diminishing off
+; 0 - Light Diminishing on
+; 1 - Light Diminishing off
 LightDim           0
 
 ;
 ; 1 - Bobbing on
 ; 0 - Bobbing off
-BobbingOn          0
+BobbingOn          1
 
 ;
 ; (slowest) 50 - 5 (fastest)
@@ -96,7 +96,7 @@ DoubleClickSpeed   23
 ;
 ; Menu Flip Speed
 ; (slowest) 100 - 5 (fastest)
-MenuFlipSpeed      5
+MenuFlipSpeed      20
 
 ;
 ; 0 - Detail Level Low

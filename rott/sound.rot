@@ -18,12 +18,12 @@ FXMode             6
 ;
 ; Music Volume
 ; (low) 0 - 255 (high)
-MusicVolume      20
+MusicVolume      128
 
 ;
 ; FX Volume
 ; (low) 0 - 255 (high)
-FXVolume         254
+FXVolume         196
 
 ;
 ; Number of Voices
@@ -34,13 +34,13 @@ NumVoices          4
 ; Stereo or Mono
 ; 1 - Mono
 ; 2 - Stereo
-NumChannels        1
+NumChannels        2
 
 ;
 ; Resolution
 ; 8 bit
 ; 16 bit
-NumBits            8
+NumBits            16
 
 ;
 ; ReverseStereo
