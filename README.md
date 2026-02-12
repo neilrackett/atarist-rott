@@ -18,7 +18,6 @@ Enjoy!
 
 ## Rise of the Triad for Atari ST (STROTT?)
 
-
 The Atari ST port of ROTT is a highly optimised version that uses C2P rendering to make it run on any Atari ST compatible computer or [Hatari](https://hatari-emu.org), with the primary goal of making it (just about) playable on an Atari Mega STE in 16Mhz mode.
 
 To achieve this, optimisations include:
