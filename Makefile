@@ -1,7 +1,7 @@
 CC = m68k-atari-mint-gcc
 
-BUILD_DIR ?= build
-OBJ_DIR ?= obj
+BUILDDIR ?= build
+OBJDIR ?= obj
 TARGET ?= ROTT_TT.TOS
 
 SHAREWARE ?= 1
@@ -100,24 +100,24 @@ SOURCES := \
 	rott/winrott.c \
 	rott/z_zone.c
 
-OBJECTS := $(addprefix $(OBJ_DIR)/,$(SOURCES:.c=.o))
+OBJECTS := $(addprefix $(OBJDIR)/,$(SOURCES:.c=.o))
 DEPS := $(OBJECTS:.o=.d)
 
 .PHONY: all clean
 
-all: $(BUILD_DIR)/$(TARGET)
+all: $(BUILDDIR)/$(TARGET)
 
-$(BUILD_DIR)/$(TARGET): $(OBJECTS) | $(BUILD_DIR)
+$(BUILDDIR)/$(TARGET): $(OBJECTS) | $(BUILDDIR)
 	$(CC) $(LDFLAGS) $(OBJECTS) $(LDLIBS) -o $@
 
-$(OBJ_DIR)/%.o: %.c
+$(OBJDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
-$(BUILD_DIR):
+$(BUILDDIR):
 	@mkdir -p $@
 
 clean:
-	$(RM) -r $(BUILD_DIR)/$(TARGET) $(OBJECTS) $(DEPS)
+	$(RM) -r $(BUILDDIR)/$(TARGET) $(OBJECTS) $(DEPS)
 
 -include $(DEPS)
