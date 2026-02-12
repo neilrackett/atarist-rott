@@ -6,15 +6,23 @@ Atari ST and WebAssembly (WASM) ports by [Neil Rackett](https://x.com/neilracket
 
 What better way to celebrate the 30th-ish anniversary of ROTT than to port it to a hardware platform currently celebrating its 40th: Welcome to _Rise of the Triad for Atari ST_ (and TT and WebAssembly).
 
-| Branch     | Description                                                                                                        | Optimised for  | Compatibile with              | Compiler            |
-| ---------- | ------------------------------------------------------------------------------------------------------------------ | -------------- | ----------------------------- | ------------------- |
-| `atari-st` | ROTT for Atari ST using C2P rendering and direct audio, SFX are STE-only, 16-colours and Noir (greyscale) versions | Atari Mega STE | ST, STE, Mega STE, TT, Falcon | m68k-atari-mint-gcc |
-| `atari-tt` | ROTT for Atari TT using SDL: 16 colour (greyscale) on ST or 256 colours on TT/Falcon, sound still WIP              | Atari TT       | ST, STE, Mega STE, TT, Falcon | m68k-atari-mint-gcc |
-| `wasm`     | ROTT for the web                                                                                                   | WASM           | Web browser                   | emcc                |
+| Branch     | Name              | Description                                                          | Optimised for  | Compatibile with              | Compiler            |
+| ---------- | ----------------- | -------------------------------------------------------------------- | -------------- | ----------------------------- | ------------------- |
+| `atari-st` | ROTT for Atari ST | C2P rendering, 16 colour and Noir (greyscale) versions               | Atari Mega STE | ST, STE, Mega STE, TT, Falcon | m68k-atari-mint-gcc |
+| `atari-tt` | ROTT for Atari TT | SDL rendering, 16 colour (greyscale) on ST, 256 colours on TT/Falcon | Atari TT       | ST, STE, Mega STE, TT, Falcon | m68k-atari-mint-gcc |
+| `wasm`     | ROTT for the web  | Web version using WebAssembly                                        | Web            | Any modern browser            | emcc                |
 
 All builds are experimental.
 
 Enjoy!
+
+## Rise of the Triad for Atari TT (ROTTTT?)
+
+The Atari TT version of ROTT that uses a small number of optimisations to maintain ROTT's original look and feel using the MiNTLib SDL library.
+
+Fun fact: this was actually my first attempt at porting ROTT to Atari ST by using a version of SDL I modified to support ST low resolution, but while it still technically runs on any ST compatible computer, and looks great in 16 shades of grey in ST low res, it's sadly too slow to realistically be playable on a regular ST, STE or even Mega STE. So I tried it in TT mode on [Hatari](https://hatari-emu.org). It was amazing and ROTTTT was born!
+
+Music and sound are still very much WIP, so I recommend switching both off in `SOUND.ROT`.
 
 ## Installation
 
@@ -31,9 +39,7 @@ The Atari TT build uses the SDL library for graphics and sound, and you can buil
 stcmd make
 ```
 
-The build process outputs `build/ROTT_TT.TOS`, which will run on Hatari or any Atari ST compatible computer. However, while it looks great on an ST, it's too slow to be very playable.
-
-Music and sound in this build is still very much WIP, so we recommend switching both off in `SOUND.ROT`.
+The build process outputs `build/ROTT_TT.TOS`, which will run on any Atari ST compatible computer, but is best experienced on an Atari TT.
 
 ## Credits
 
