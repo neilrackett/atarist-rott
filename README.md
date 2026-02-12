@@ -24,6 +24,12 @@ Fun fact: this was actually my first attempt at porting ROTT to Atari ST by usin
 
 Music and sound are still very much WIP, so I recommend switching both off in `SOUND.ROT`.
 
+## Screenshots
+
+<img width="638" height="397" alt="image" src="https://github.com/user-attachments/assets/1558c670-be05-427a-b1ce-1ee767a4870e" />
+
+<img width="638" height="397" alt="image" src="https://github.com/user-attachments/assets/17067577-e151-4d6d-a9c6-69a1ef9d9837" />
+
 ## Installation
 
 - Install the shareware version of ROTT for DOS using DOSbox, or [download the files from Internet.org](https://archive.org/details/rott_shareware)
