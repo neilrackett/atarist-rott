@@ -1,5 +1,7 @@
-BUILDDIR ?= build
-OBJDIR ?= obj
+SRCDIR ?= rott
+DATADIR ?= tmp/ROTT
+BUILDDIR ?= build/atari
+OBJDIR ?= obj/atari
 
 ATARI_DEBUG ?= 0
 ATARI_SHOW_FPS ?= 0
@@ -59,33 +61,42 @@ ATARI_CFLAGS ?= -O2 -fomit-frame-pointer -s -std=gnu99 -m68000 \
 	-DATARI_SKIP_LIGHTLEVEL=$(ATARI_SKIP_LIGHTLEVEL) -DATARI_SKIP_FIZZLE=$(ATARI_SKIP_FIZZLE)
 ATARI_LDFLAGS ?= -s -nostdlib -L/freemint/libcmini/lib /freemint/libcmini/lib/crt0.o -m68000
 ATARI_LIBS ?= -lcmini -lgcc
-ATARI_INCLUDES ?= -Irott -Irott/audiolib -I/freemint/libcmini/include
+ATARI_INCLUDES ?= -I$(SRCDIR) -I$(SRCDIR)/audiolib -I/freemint/libcmini/include
 ATARI_AUDIOLIB_SOURCES := \
-	rott/audiolib/atari_stubs.c \
-	rott/audiolib/atari_music.c \
-	rott/audiolib/atari_music_api.c \
-	rott/audiolib/debugio.c \
-	rott/audiolib/dsl.c \
-	rott/audiolib/fx_man.c \
-	rott/audiolib/ll_man.c \
-	rott/audiolib/multivoc.c \
-	rott/audiolib/mv_mix.c \
-	rott/audiolib/mvreverb.c \
-	rott/audiolib/nodpmi.c \
-	rott/audiolib/pitch.c \
-	rott/audiolib/user.c \
-	rott/audiolib/usrhooks.c
-ATARI_SOURCES := $(filter-out rott/amiga_%.c rott/dosutil.c rott/dukemusc.c rott/fx_man.c rott/lookups.c rott/vocdecode.c,$(wildcard rott/*.c)) $(ATARI_AUDIOLIB_SOURCES)
+	$(SRCDIR)/audiolib/atari_stubs.c \
+	$(SRCDIR)/audiolib/atari_music.c \
+	$(SRCDIR)/audiolib/atari_music_api.c \
+	$(SRCDIR)/audiolib/debugio.c \
+	$(SRCDIR)/audiolib/dsl.c \
+	$(SRCDIR)/audiolib/fx_man.c \
+	$(SRCDIR)/audiolib/ll_man.c \
+	$(SRCDIR)/audiolib/multivoc.c \
+	$(SRCDIR)/audiolib/mv_mix.c \
+	$(SRCDIR)/audiolib/mvreverb.c \
+	$(SRCDIR)/audiolib/nodpmi.c \
+	$(SRCDIR)/audiolib/pitch.c \
+	$(SRCDIR)/audiolib/user.c \
+	$(SRCDIR)/audiolib/usrhooks.c
+ATARI_SOURCES := $(filter-out $(SRCDIR)/amiga_%.c $(SRCDIR)/dosutil.c $(SRCDIR)/dukemusc.c $(SRCDIR)/fx_man.c $(SRCDIR)/lookups.c $(SRCDIR)/vocdecode.c,$(wildcard $(SRCDIR)/*.c)) $(ATARI_AUDIOLIB_SOURCES)
 ATARI_OBJECTS := $(addprefix $(OBJDIR)/,$(ATARI_SOURCES:.c=.o))
 ATARI_OUTPUT_SHAREWARE ?= $(BUILDDIR)/ROTT_ST.TOS
 ATARI_OUTPUT_DARKWAR ?= $(BUILDDIR)/ROTT_STD.TOS
 ATARI_OUTPUT_ROTTCD ?= $(BUILDDIR)/ROTT_STC.TOS
 ATARI_OUTPUT_ROTTSITE ?= $(BUILDDIR)/ROTT_STS.TOS
 ATARI_OUTPUTS := $(ATARI_OUTPUT_SHAREWARE) $(ATARI_OUTPUT_DARKWAR) $(ATARI_OUTPUT_ROTTCD) $(ATARI_OUTPUT_ROTTSITE)
+ATARI_RUNTIME_FILES := \
+	$(DATADIR)/HUNTBGIN.WAD \
+	$(DATADIR)/HUNTBGIN.RTL \
+	$(DATADIR)/HUNTBGIN.RTC \
+	$(DATADIR)/REMOTE1.RTS \
+	$(SRCDIR)/config.rot \
+	$(SRCDIR)/sound.rot \
+	$(SRCDIR)/battle.rot \
+	$(SRCDIR)/scores.rot
 ATARI_FLAGS_STAMP := $(OBJDIR)/.atari_flags
 
 all: rott-huntbgin
-.PHONY: FORCE rott-huntbgin rott-darkwar rott-rottcd rott-rottsite
+.PHONY: FORCE rott-huntbgin rott-darkwar rott-rottcd rott-rottsite atari-stage-runtime-files
 .SECONDARY: $(ATARI_OBJECTS)
 FORCE:
 
@@ -93,25 +104,25 @@ FORCE:
 rott-huntbgin: ATARI_SHAREWARE = 1
 rott-huntbgin: ATARI_SUPERROTT = 0
 rott-huntbgin: ATARI_SITELICENSE = 0
-rott-huntbgin: $(ATARI_OUTPUT_SHAREWARE)
+rott-huntbgin: atari-stage-runtime-files $(ATARI_OUTPUT_SHAREWARE)
 
 # Commercial build
 rott-darkwar: ATARI_SHAREWARE = 0
 rott-darkwar: ATARI_SUPERROTT = 0
 rott-darkwar: ATARI_SITELICENSE = 0
-rott-darkwar: $(ATARI_OUTPUT_DARKWAR)
+rott-darkwar: atari-stage-runtime-files $(ATARI_OUTPUT_DARKWAR)
 
 # CD build
 rott-rottcd: ATARI_SHAREWARE = 0
 rott-rottcd: ATARI_SUPERROTT = 0
 rott-rottcd: ATARI_SITELICENSE = 0
-rott-rottcd: $(ATARI_OUTPUT_ROTTCD)
+rott-rottcd: atari-stage-runtime-files $(ATARI_OUTPUT_ROTTCD)
 
 # Site license build
 rott-rottsite: ATARI_SHAREWARE = 0
 rott-rottsite: ATARI_SUPERROTT = 0
 rott-rottsite: ATARI_SITELICENSE = 0
-rott-rottsite: $(ATARI_OUTPUT_ROTTSITE)
+rott-rottsite: atari-stage-runtime-files $(ATARI_OUTPUT_ROTTSITE)
 
 clean:
 	$(RM) -r $(ATARI_OUTPUTS) $(OBJDIR)
@@ -121,6 +132,14 @@ $(BUILDDIR)/%.TOS: $(ATARI_OBJECTS) | $(BUILDDIR)
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
+
+atari-stage-runtime-files: | $(BUILDDIR)
+	@for src in $(ATARI_RUNTIME_FILES); do \
+		dst="$(BUILDDIR)/$$(basename "$$src")"; \
+		if [ ! -e "$$dst" ]; then \
+			cp "$$src" "$$dst"; \
+		fi; \
+	done
 
 $(OBJDIR):
 	mkdir -p $(OBJDIR)
