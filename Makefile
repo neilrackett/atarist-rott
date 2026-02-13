@@ -134,12 +134,14 @@ $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
 
 atari-stage-runtime-files: | $(BUILDDIR)
-	@for src in $(ATARI_RUNTIME_FILES); do \
-		dst="$(BUILDDIR)/$$(basename "$$src")"; \
-		if [ ! -e "$$dst" ]; then \
-			cp "$$src" "$$dst"; \
-		fi; \
-	done
+	@if [ -d "$(DATADIR)" ]; then \
+		for src in $(ATARI_RUNTIME_FILES); do \
+			dst="$(BUILDDIR)/$$(basename "$$src")"; \
+			if [ -e "$$src" ] && [ ! -e "$$dst" ]; then \
+				cp "$$src" "$$dst"; \
+			fi; \
+		done; \
+	fi
 
 $(OBJDIR):
 	mkdir -p $(OBJDIR)
