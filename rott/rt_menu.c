@@ -2011,7 +2011,10 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
       {
          if (!(keyscan || ci.dir != dir_None || ci.button0 || ci.button1 || ci.button2 || ci.button3 ||
             Keyboard[sc_Space] || Keyboard[sc_Enter] || Keyboard[sc_Escape]))
+         {
+            WaitVBL();
             continue;
+         }
       }
       else
       {

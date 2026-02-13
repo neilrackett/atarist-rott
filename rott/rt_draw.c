@@ -1681,9 +1681,13 @@ void CalcTics (void)
    if (tc == oldtime)
       {
       int raw_start = I_GetTime();
+      int spin_count = 0;
       while (tc == oldtime)
          {
          tc = GetTicCount();
+         spin_count++;
+         if ((spin_count & 31) == 0)
+            I_Sleep(1);
          if ((I_GetTime() - raw_start) > VBLCOUNTER)
             break;
          }

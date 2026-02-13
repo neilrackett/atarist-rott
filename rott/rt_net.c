@@ -36,6 +36,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_actor.h"
 #include "rt_playr.h"
 #include "isr.h"
+#include "i_timer.h"
 #include "z_zone.h"
 #include "develop.h"
 #include "rottnet.h"
@@ -2599,6 +2600,8 @@ void CheckUnPause ( void )
                if ((atari_spin & 3) == 0)
                   PollControls();
                atari_spin++;
+               if ((atari_spin & 31) == 0)
+                  I_Sleep(1);
                }
 #endif
             UpdateClientControls();
@@ -2696,6 +2699,8 @@ void ControlPlayerObj (objtype * ob)
                if ((atari_spin & 3) == 0)
                   PollControls();
                atari_spin++;
+               if ((atari_spin & 31) == 0)
+                  I_Sleep(1);
                }
 #endif
             UpdateClientControls();

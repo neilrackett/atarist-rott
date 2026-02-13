@@ -1262,9 +1262,12 @@ void QueueLetterInput (void)
      we shall update here.  The hack is there to prevent IN_UpdateKeyboard 
      from stealing any keys... - SBF
     */
-   IN_PumpEvents();
-   head = Keyhead;
-   tail = Keytail;
+   if (head == tail)
+      {
+      IN_PumpEvents();
+      head = Keyhead;
+      tail = Keytail;
+      }
    queuegotit=1;
    /* HACK HACK HACK */
 #endif

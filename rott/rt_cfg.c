@@ -1055,6 +1055,76 @@ void ReadConfig (void)
    ConfigLoaded = true;
 }
 
+void ReadAtariSoundToggles (void)
+{
+#if defined(__MINT__)
+   char filename[128];
+   struct stat st;
+   void *buffer = NULL;
+   long size = 0;
+   int parsed_music_mode = MusicMode;
+   int parsed_fx_mode = FXMode;
+
+   GetPathFromEnvironment(filename, ApogeePath, SoundName);
+   if (stat(filename, &st) == 0)
+      {
+      size = LoadFile(filename, &buffer);
+      if (buffer && size > 0)
+         {
+         char *p = (char *)buffer;
+         char *end = p + size;
+
+         while (p < end)
+            {
+            char *line = p;
+            char *line_end;
+
+            while (p < end && *p != '\n' && *p != '\r')
+               p++;
+            line_end = p;
+
+            while (line < line_end && isspace((unsigned char)*line))
+               line++;
+
+            if (line < line_end && *line != ';')
+               {
+               if ((line_end - line) > 9 && !strncmp(line, "MusicMode", 9))
+                  {
+                  long v;
+                  char *q = line + 9;
+                  char *qend;
+                  while (q < line_end && isspace((unsigned char)*q))
+                     q++;
+                  v = strtol(q, &qend, 10);
+                  if (qend > q)
+                     parsed_music_mode = (v == 0) ? 0 : 6;
+                  }
+               else if ((line_end - line) > 6 && !strncmp(line, "FXMode", 6))
+                  {
+                  long v;
+                  char *q = line + 6;
+                  char *qend;
+                  while (q < line_end && isspace((unsigned char)*q))
+                     q++;
+                  v = strtol(q, &qend, 10);
+                  if (qend > q)
+                     parsed_fx_mode = (v == 0) ? 0 : 6;
+                  }
+               }
+
+            while (p < end && (*p == '\n' || *p == '\r'))
+               p++;
+            }
+
+         SafeFree(buffer);
+         }
+      }
+
+   MusicMode = parsed_music_mode;
+   FXMode = parsed_fx_mode;
+#endif
+}
+
 //******************************************************************************
 //
 // CheckVendor ()

@@ -101,6 +101,27 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef ATARI_ACTOR_THROTTLE_DIV
 #define ATARI_ACTOR_THROTTLE_DIV 1
 #endif
+#ifndef ATARI_ADAPTIVE_RENDER
+#define ATARI_ADAPTIVE_RENDER 0
+#endif
+#ifndef ATARI_ADAPTIVE_RENDER_MAX_DIV
+#define ATARI_ADAPTIVE_RENDER_MAX_DIV ATARI_RENDER_DIVISOR
+#endif
+#ifndef ATARI_ADAPTIVE_RENDER_UP_TICS
+#define ATARI_ADAPTIVE_RENDER_UP_TICS 2
+#endif
+#ifndef ATARI_ADAPTIVE_RENDER_DOWN_FRAMES
+#define ATARI_ADAPTIVE_RENDER_DOWN_FRAMES 10
+#endif
+#ifndef ATARI_ADAPTIVE_ACTOR_THROTTLE
+#define ATARI_ADAPTIVE_ACTOR_THROTTLE 0
+#endif
+#ifndef ATARI_ACTOR_THROTTLE_MAX_DIV
+#define ATARI_ACTOR_THROTTLE_MAX_DIV ATARI_ACTOR_THROTTLE_DIV
+#endif
+#ifndef ATARI_WALL_ANIM_DIVISOR
+#define ATARI_WALL_ANIM_DIVISOR 1
+#endif
 #ifndef ATARI_SKIP_FIZZLE
 #define ATARI_SKIP_FIZZLE 0
 #endif
@@ -399,6 +420,7 @@ int main (int argc, char *argv[])
       doublestep=0;
       SetupWads();
       BuildTables ();
+      ReadAtariSoundToggles();
       GetMenuInfo ();
 #else
       ReadConfig ();
@@ -2126,10 +2148,6 @@ void UpdateGameObjects ( void )
 
    UpdateClientControls ();
 
-#if defined(__MINT__)
-   if (demoplayback == false && oldtime > (oldpolltime + 1))
-      PollControls();
-#endif
 
    while (oldpolltime<oldtime)
 	   {
@@ -2140,7 +2158,7 @@ void UpdateGameObjects ( void )
 	         break;
 	      }
 #if ATARI_CATCHUP_POLL_INTERVAL > 0
-      if (demoplayback == false && ((catchup_steps % ATARI_CATCHUP_POLL_INTERVAL) == 0))
+      if (demoplayback == false && catchup_steps > 0 && ((catchup_steps % ATARI_CATCHUP_POLL_INTERVAL) == 0))
          PollControls();
 #endif
 #endif
@@ -2156,19 +2174,34 @@ void UpdateGameObjects ( void )
 			   ((gamestate.TimeCount == Clocks[j].time1) ||
 			   (gamestate.TimeCount == Clocks[j].time2)))
 				TRIGGER[Clocks[j].linkindex]=1;
+#if defined(__MINT__) && ((ATARI_ACTOR_THROTTLE_DIV > 1) || (ATARI_ADAPTIVE_ACTOR_THROTTLE > 0))
+      unsigned int actor_div = (unsigned int)((ATARI_ACTOR_THROTTLE_DIV > 1) ? ATARI_ACTOR_THROTTLE_DIV : 1);
+#if (ATARI_ADAPTIVE_ACTOR_THROTTLE > 0)
+      {
+      unsigned int actor_max_div = (unsigned int)((ATARI_ACTOR_THROTTLE_MAX_DIV > 1) ? ATARI_ACTOR_THROTTLE_MAX_DIV : actor_div);
+      if (actor_max_div < actor_div)
+         actor_max_div = actor_div;
+      if (tics >= 3 && actor_div < actor_max_div)
+         actor_div++;
+      if (tics >= 4 && actor_div < actor_max_div)
+         actor_div++;
+      }
+#endif
+      const unsigned int actor_time_phase = (unsigned int)gamestate.TimeCount % actor_div;
+#endif
 		for (ob = firstactive; ob;)
 			{
 			 temp = ob->nextactive;
-#if defined(__MINT__) && (ATARI_ACTOR_THROTTLE_DIV > 1)
-          if ((ob->obclass != playerobj) &&
+#if defined(__MINT__) && ((ATARI_ACTOR_THROTTLE_DIV > 1) || (ATARI_ADAPTIVE_ACTOR_THROTTLE > 0))
+          if ((actor_div > 1) &&
+              (ob->obclass != playerobj) &&
               ((ob->flags & FL_KEYACTOR) == 0) &&
               !areabyplayer[ob->areanumber])
           {
-             unsigned int div = (unsigned int)ATARI_ACTOR_THROTTLE_DIV;
              unsigned int phase = ((unsigned int)ob->tilex +
                                    ((unsigned int)ob->tiley << 1) +
-                                   (unsigned int)ob->obclass) % div;
-             if (((unsigned int)gamestate.TimeCount % div) == phase)
+                                   (unsigned int)ob->obclass) % actor_div;
+             if (actor_time_phase == phase)
                 DoActor(ob);
           }
           else
@@ -2319,8 +2352,13 @@ void PlayLoop
 
    {
    volatile int atime;
-#if defined(__MINT__) && (ATARI_RENDER_DIVISOR > 1)
+#if defined(__MINT__)
    unsigned int atari_render_div_tick = 0;
+   unsigned int atari_render_runtime_div = (unsigned int)((ATARI_RENDER_DIVISOR > 1) ? ATARI_RENDER_DIVISOR : 1);
+   unsigned int atari_render_stable_frames = 0;
+#if (ATARI_WALL_ANIM_DIVISOR > 1)
+   unsigned int atari_wall_anim_tick = 0;
+#endif
 #endif
 
    boolean canquit = true;
@@ -2396,17 +2434,15 @@ fromloadedgame:
 #endif
 #if defined(__MINT__)
       atari_should_render = ATARI_BeginRenderFrame();
-#if (ATARI_RENDER_DIVISOR > 1)
       if (atari_should_render)
       {
          atari_render_div_tick++;
-         if ((atari_render_div_tick % ATARI_RENDER_DIVISOR) != 0)
+         if (atari_render_runtime_div > 1 && ((atari_render_div_tick % atari_render_runtime_div) != 0))
          {
             atari_should_render = 0;
             ATARI_EndRenderFrame();
          }
       }
-#endif
 #endif
       UpdateClientControls();
 
@@ -2435,6 +2471,30 @@ fromloadedgame:
 #endif
 	         if (controlupdatestarted == 1)
 	            UpdateGameObjects();
+#if defined(__MINT__) && (ATARI_ADAPTIVE_RENDER > 0)
+         if (controlupdatestarted == 1)
+         {
+            const unsigned int base_div = (unsigned int)((ATARI_RENDER_DIVISOR > 1) ? ATARI_RENDER_DIVISOR : 1);
+            unsigned int max_div = (unsigned int)((ATARI_ADAPTIVE_RENDER_MAX_DIV > 1) ? ATARI_ADAPTIVE_RENDER_MAX_DIV : base_div);
+            if (max_div < base_div)
+               max_div = base_div;
+            if (tics >= ATARI_ADAPTIVE_RENDER_UP_TICS)
+            {
+               if (atari_render_runtime_div < max_div)
+                  atari_render_runtime_div++;
+               atari_render_stable_frames = 0;
+            }
+            else if (atari_render_runtime_div > base_div)
+            {
+               atari_render_stable_frames++;
+               if (atari_render_stable_frames >= ATARI_ADAPTIVE_RENDER_DOWN_FRAMES)
+               {
+                  atari_render_runtime_div--;
+                  atari_render_stable_frames = 0;
+               }
+            }
+         }
+#endif
          atime = GetFastTics();
 
          if (atari_should_render)
@@ -2455,7 +2515,13 @@ fromloadedgame:
 
       MISCVARS->madenoise = false;
 
+#if defined(__MINT__) && (ATARI_WALL_ANIM_DIVISOR > 1)
+      atari_wall_anim_tick++;
+      if (atari_should_render || ((atari_wall_anim_tick % ATARI_WALL_ANIM_DIVISOR) == 0))
+         AnimateWalls();
+#else
       AnimateWalls();
+#endif
 
       UpdateClientControls();
 
