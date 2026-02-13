@@ -47,6 +47,8 @@ stcmd make
 
 The build process outputs `build/ROTT_TT.TOS`, which will run on any Atari ST compatible computer, but is best experienced on an Atari TT.
 
+For a ready-to-go build, install the DOS version (see above) then copy the `ROTT` install folder (the actual folder, not just the contents) into a `tmp` folder in the root of this project and the required files will automatically be copied into the build folder for you.
+
 ## License
 
 This software is distributed in source code format and is licensed under the
