@@ -39,7 +39,7 @@ To achieve this, optimisations include:
 ## Installation
 
 - Install the shareware version of ROTT for DOS using DOSbox, or [download the files from Internet.org](https://archive.org/details/rott_shareware)
-- Copy the latest release of `ROTT_ST.TOS` to the installation folder
+- Copy the latest release of `ROTT_ST.TOS` from [the releases page](https://github.com/neilrackett/rott/releases) to the installation folder
 - Run `ROTT_ST.TOS`
 - Enjoy!
 
@@ -53,7 +53,9 @@ stcmd make ATARI_NOIR=1
 stcmd make ATARI_NOIR=1 ATARI_NOIR_DITHERING=1
 ```
 
-The build process outputs `build/ROTT_ST.TOS`, which will run on Hatari or any Atari ST compatible computer in ST low resolution.
+For a ready-to-go build, install the DOS version (see above) then copy the `ROTT` install folder (the actual folder, not just the contents) into a `tmp` folder in the root of this project and the required files will automatically be copied into the build folder for you.
+
+The build process outputs `build/atari/ROTT_ST.TOS`, which will run on Hatari or any Atari ST compatible computer in ST low resolution.
 
 You can compile the commercial versions of ROTT using:
 
@@ -63,7 +65,11 @@ stcmd make rott-rottcd
 stcmd make rott-rottsite
 ```
 
-These builds output `build/ROTT_STD.TOS`, `build/ROTT_STC.TOS` and `build/ROTT_STS.TOS`, respectively.
+These builds output
+
+- `build/atari/ROTT_STD.TOS`
+- `build/atari/ROTT_STC.TOS`
+- `build/atari/ROTT_STS.TOS`
 
 ## License
 
