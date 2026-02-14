@@ -1993,6 +1993,12 @@ int HandleMenu (CP_iteminfo *item_i, CP_itemtype *items, void (*routine)(int w))
    if (routine)
       routine (handlewhich);
 
+#if defined(__MINT__) && ATARI_MENU_EVENT_DRIVEN
+   /* Ensure first cursor frame is visible before waiting for input events. */
+   ATARI_MenuForceRender();
+   RefreshMenuBuf(0);
+#endif
+
    count    = 2;
    exit     = 0;
    timer    = GetTicCount();

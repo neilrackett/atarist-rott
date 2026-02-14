@@ -100,10 +100,6 @@ static void atari_input_shutdown(void);
 #define ATARI_ENABLE_KBDINT 0
 #endif
 
-#ifndef ATARI_ENABLE_FASTMODE
-#define ATARI_ENABLE_FASTMODE 0
-#endif
-
 #if defined(__MINT__)
 #ifndef ATARI_TARGET_FPS
 #define ATARI_TARGET_FPS 0
@@ -209,9 +205,6 @@ static void atari_restore_blitter_mode(void);
 
 static void atari_set_fast_mode(void)
 {
-#if !ATARI_ENABLE_FASTMODE
-   return;
-#endif
    if (is_megaste())
       megaste_enable_16mhz_cache();
 }

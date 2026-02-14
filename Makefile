@@ -1,71 +1,81 @@
+# Makefile for building ROTT for Atari ST
+
+# Build settings
+
 SRCDIR ?= rott
 DATADIR ?= tmp/ROTT
 BUILDDIR ?= build/atari
 OBJDIR ?= obj/atari
 
-ATARI_DEBUG ?= 0
-ATARI_SHOW_FPS ?= 1
-ATARI_TARGET_FPS ?= 9
+# Debugging
 
-ATARI_NOIR ?= 0
-ATARI_NOIR_DITHERING ?= 0
+ATARI_DEBUG ?= 0 # Enable debug logging
+ATARI_SHOW_FPS ?= 1 # Show FPS overlay
+
+# ROTT Noir?
+
+ATARI_NOIR ?= 0 # Use grayscale palette
+ATARI_NOIR_DITHERING ?= 0 # Dither noir output
+
+# Rendering and performance settings
+
+ATARI_ACTOR_BUDGET ?= 0 # Max actor updates
+ATARI_ACTOR_THROTTLE_DIV ?= 3 # Actor update divisor
+ATARI_ACTOR_THROTTLE_MAX_DIV ?= 5 # Max actor throttle
+ATARI_ADAPTIVE_ACTOR_THROTTLE ?= 1 # Auto throttle actors
+ATARI_ADAPTIVE_RENDER ?= 1 # Auto adjust render rate
+ATARI_ADAPTIVE_RENDER_DOWN_FRAMES ?= 10 # Frames before speedup
+ATARI_ADAPTIVE_RENDER_MAX_DIV ?= 4 # Max render divisor
+ATARI_ADAPTIVE_RENDER_UP_TICS ?= 2 # Tics before slowdown
+ATARI_C2P_DIRTY_TILES ?= 1 # Update only dirty tiles
+ATARI_C2P_DIRTY_TILE_THRESHOLD ?= 200 # Dirty-tile cutoff
+ATARI_C2P_FAST_COPY ?= 1 # Use fast C2P copy
+ATARI_C2P_STRICT_NO_OVERLAP ?= 1 # Prevent HUD overlap
+ATARI_C2P_VIEW_ZOOM ?= 1 # Auto zoom viewport
+ATARI_CATCHUP_POLL_INTERVAL ?= 4 # Input poll interval
+ATARI_DYNAMIC_QUALITY ?= 1 # Enable dynamic quality
+ATARI_DYNAMIC_QUALITY_DOWN_FRAMES ?= 12 # Frames before quality drop
+ATARI_DYNAMIC_QUALITY_MAX ?= 3 # Max quality level
+ATARI_DYNAMIC_QUALITY_UP_TICS ?= 1 # Tics before quality raise
+ATARI_EFFECT_BUDGET ?= 0 # Max effect passes
+ATARI_ENABLE_BLITTER ?= 1 # Use Atari blitter
+ATARI_ENABLE_KBDINT ?= 1 # Use keyboard interrupt
+ATARI_FADE_SCALE ?= 4 # Fade speed scale
+ATARI_FLAT_WALL_LIGHT ?= 0 # Flatten wall lighting
+ATARI_FLAT_WORLD ?= 0 # Disable floors and ceilings
+ATARI_HIDE_WEAPON ?= 0 # Hide weapon sprite
+ATARI_LOWP ?= 1 # Enable low precision mode
+ATARI_LOWP_ANGLE_SHIFT ?= 1 # Angle precision shift
+ATARI_LOWP_HEIGHT_SHIFT ?= 1 # Height precision shift
+ATARI_LOWP_TEXTURE_SHIFT ?= 2 # Texture precision shift
+ATARI_MAX_CATCHUP_STEPS ?= 0 # Max logic catch-up steps
+ATARI_MAX_RAY_STEPS ?= 24 # Max ray steps
+ATARI_MENU_CURSOR_DELAY_TICS ?= 0 # Cursor animation delay
+ATARI_MENU_EVENT_DRIVEN ?= 1 # Event-driven menu loop
+ATARI_MIN_SPRITE_HEIGHT ?= 768 # Min sprite draw height
+ATARI_PROFILE ?= 0 # Enable perf profiling
+ATARI_RAYCAST_STEP ?= 4 # Base ray step size
+ATARI_RENDER_DIVISOR ?= 1 # Frame render divisor
+ATARI_SHAREWARE ?= 1 # Build shareware data
+ATARI_SITELICENSE ?= 0 # Build site license data
+ATARI_SKIP_PRECACHE ?= 1 # Skip startup precache
+ATARI_SKIP_FADES ?= 1 # Skip fade effects
+ATARI_SKIP_LIGHTLEVEL ?= 1 # Skip lightlevel setup
+ATARI_SKIP_FIZZLE ?= 1 # Skip fizzle transition
+ATARI_SPRITE_BUDGET ?= 0 # Max sprite draws
+ATARI_SPRITE_FRAME_DIV ?= 1 # Sprite frame skip
+ATARI_SUPERROTT ?= 0 # Build Super ROTT data
+ATARI_TARGET_FPS ?= 5 # Target render FPS
+ATARI_USE_ASM_HOTSPOTS ?= 0 # Enable asm hotspots
+ATARI_VIEW_SCALE_DIV ?= 1 # Divide view resolution
+ATARI_WALL_ANIM_DIVISOR ?= 2 # Wall animation divisor
+
+# Compiler and linker settings
 
 ATARI_CC ?= m68k-atari-mint-gcc
-ATARI_SHAREWARE ?= 1
-ATARI_SUPERROTT ?= 0
-ATARI_SITELICENSE ?= 0
-ATARI_ENABLE_FASTMODE ?= 1
-ATARI_ENABLE_KBDINT ?= 1
-ATARI_ENABLE_BLITTER ?= 1
-ATARI_FADE_SCALE ?= 4
-ATARI_C2P_VIEW_ZOOM ?= 1
-ATARI_C2P_STRICT_NO_OVERLAP ?= 1
-ATARI_C2P_FAST_COPY ?= 1
-ATARI_C2P_DIRTY_TILES ?= 1
-ATARI_C2P_DIRTY_TILE_THRESHOLD ?= 200
-ATARI_MAX_CATCHUP_STEPS ?= 0
-ATARI_CATCHUP_POLL_INTERVAL ?= 4
-ATARI_RENDER_DIVISOR ?= 1
-ATARI_ACTOR_THROTTLE_DIV ?= 3
-ATARI_ADAPTIVE_RENDER ?= 1
-ATARI_ADAPTIVE_RENDER_MAX_DIV ?= 4
-ATARI_ADAPTIVE_RENDER_UP_TICS ?= 2
-ATARI_ADAPTIVE_RENDER_DOWN_FRAMES ?= 10
-ATARI_ADAPTIVE_ACTOR_THROTTLE ?= 1
-ATARI_ACTOR_THROTTLE_MAX_DIV ?= 5
-ATARI_WALL_ANIM_DIVISOR ?= 2
-ATARI_MAX_RAY_STEPS ?= 24
-ATARI_MIN_SPRITE_HEIGHT ?= 768
-ATARI_PROFILE ?= 0
-ATARI_DYNAMIC_QUALITY ?= 1
-ATARI_DYNAMIC_QUALITY_MAX ?= 3
-ATARI_DYNAMIC_QUALITY_UP_TICS ?= 2
-ATARI_DYNAMIC_QUALITY_DOWN_FRAMES ?= 12
-ATARI_LOWP ?= 1
-ATARI_LOWP_TEXTURE_SHIFT ?= 2
-ATARI_LOWP_HEIGHT_SHIFT ?= 1
-ATARI_LOWP_ANGLE_SHIFT ?= 1
-ATARI_RAYCAST_STEP ?= 4
-ATARI_ACTOR_BUDGET ?= 0
-ATARI_SPRITE_BUDGET ?= 0
-ATARI_EFFECT_BUDGET ?= 0
-ATARI_FLAT_WORLD ?= 0
-ATARI_VIEW_SCALE_DIV ?= 1
-ATARI_SPRITE_FRAME_DIV ?= 1
-ATARI_HIDE_WEAPON ?= 0
-ATARI_FLAT_WALL_LIGHT ?= 0
-ATARI_USE_ASM_HOTSPOTS ?= 0
-ATARI_MENU_CURSOR_DELAY_TICS ?= 0
-ATARI_MENU_EVENT_DRIVEN ?= 1
-
-ATARI_SKIP_PRECACHE ?= 1
-ATARI_SKIP_FADES ?= 1
-ATARI_SKIP_LIGHTLEVEL ?= 1
-ATARI_SKIP_FIZZLE ?= 1
-
 ATARI_CFLAGS ?= -O2 -fomit-frame-pointer -s -std=gnu99 -m68000 \
 	-fno-strict-aliasing -DPLATFORM_TIMER_HZ=200 \
-	-DSHAREWARE=$(ATARI_SHAREWARE) -DATARI_ENABLE_FASTMODE=$(ATARI_ENABLE_FASTMODE) \
+		-DSHAREWARE=$(ATARI_SHAREWARE) \
 	-DSUPERROTT=$(ATARI_SUPERROTT) -DSITELICENSE=$(ATARI_SITELICENSE) \
 	-DATARI_ENABLE_KBDINT=$(ATARI_ENABLE_KBDINT) \
 	-DATARI_ENABLE_BLITTER=$(ATARI_ENABLE_BLITTER) \
@@ -152,15 +162,24 @@ ATARI_RUNTIME_CONFIG_FILES := \
 	$(SRCDIR)/scores.rot
 ATARI_FLAGS_STAMP := $(OBJDIR)/.atari_flags
 
+# Build targets
+
 all: rott-huntbgin
-.PHONY: FORCE rott-huntbgin rott-darkwar rott-rottcd rott-rottsite rott-dev atari-stage-runtime-files
+.PHONY: FORCE rott-huntbgin rott-darkwar rott-rottcd rott-rottsite rott-dev rott-68882 atari-stage-runtime-files
 .SECONDARY: $(ATARI_OBJECTS)
 FORCE:
 
-# Shareware build (experimental aggressive profile for playability testing)
-rott-dev: ATARI_SHAREWARE = 1
-rott-dev: ATARI_SUPERROTT = 0
-rott-dev: ATARI_SITELICENSE = 0
+# Shareware build (default)
+rott-huntbgin: ATARI_SHAREWARE = 1
+rott-huntbgin: ATARI_SUPERROTT = 0
+rott-huntbgin: ATARI_SITELICENSE = 0
+rott-huntbgin: atari-stage-runtime-files $(ATARI_OUTPUT_SHAREWARE)
+
+# Shareware build with 68882 FPU code generation
+rott-68882: ATARI_LDFLAGS += -m68882
+rott-68882: rott-huntbgin
+
+# Shareware build (experimental dev settings)
 rott-dev: ATARI_TARGET_FPS = 0
 rott-dev: ATARI_ADAPTIVE_RENDER = 1
 rott-dev: ATARI_ADAPTIVE_RENDER_MAX_DIV = 6
@@ -182,13 +201,7 @@ rott-dev: ATARI_SPRITE_FRAME_DIV = 2
 rott-dev: ATARI_HIDE_WEAPON = 1
 rott-dev: ATARI_FLAT_WALL_LIGHT = 1
 rott-dev: ATARI_SHOW_FPS = 1
-rott-dev: atari-stage-runtime-files $(ATARI_OUTPUT_SHAREWARE)
-
-# Shareware build (default)
-rott-huntbgin: ATARI_SHAREWARE = 1
-rott-huntbgin: ATARI_SUPERROTT = 0
-rott-huntbgin: ATARI_SITELICENSE = 0
-rott-huntbgin: atari-stage-runtime-files $(ATARI_OUTPUT_SHAREWARE)
+rott-dev: rott-huntbgin
 
 # Commercial build
 rott-darkwar: ATARI_SHAREWARE = 0
