@@ -69,6 +69,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_rand.h"
 #include "rt_net.h"
 #include "rt_sc_a.h"
+#include "atari_perf.h"
+#include "atari_hotspots.h"
 //MED
 #include "memcheck.h"
 
@@ -165,6 +167,30 @@ static const fixed mindist = 0x1000;
 #ifndef ATARI_MIN_SPRITE_HEIGHT
 #define ATARI_MIN_SPRITE_HEIGHT (1 << (HEIGHTFRACTION + 3))
 #endif
+#ifndef ATARI_LOWP_TEXTURE_SHIFT
+#define ATARI_LOWP_TEXTURE_SHIFT 2
+#endif
+#ifndef ATARI_LOWP_HEIGHT_SHIFT
+#define ATARI_LOWP_HEIGHT_SHIFT 1
+#endif
+#ifndef ATARI_LOWP_ANGLE_SHIFT
+#define ATARI_LOWP_ANGLE_SHIFT 1
+#endif
+#ifndef ATARI_SPRITE_FRAME_DIV
+#define ATARI_SPRITE_FRAME_DIV 1
+#endif
+#ifndef ATARI_HIDE_WEAPON
+#define ATARI_HIDE_WEAPON 0
+#endif
+#ifndef ATARI_FLAT_WALL_LIGHT
+#define ATARI_FLAT_WALL_LIGHT 0
+#endif
+#endif
+#ifndef ATARI_FLAT_CEILING_COLOR
+#define ATARI_FLAT_CEILING_COLOR 24
+#endif
+#ifndef ATARI_FLAT_FLOOR_COLOR
+#define ATARI_FLAT_FLOOR_COLOR 32
 #endif
 
 static int walltime=0;
@@ -728,7 +754,8 @@ boolean TransformPlane (int x1, int y1, int x2, int y2, visobj_t * plane)
 
 int       CalcHeight (void)
 {
-        fixed  gxt,gyt,nx;
+   fixed  gxt,gyt,nx;
+   int height;
    long            gx,gy;
 
    whereami=0;
@@ -744,7 +771,12 @@ int       CalcHeight (void)
 	if (nx<mindist)
 		nx=mindist; // don't let divide overflo'
 
-	return (heightnumerator/nx);
+	height = (heightnumerator/nx);
+#if defined(__MINT__)
+   if (atari_lowp_runtime && (ATARI_LOWP_HEIGHT_SHIFT > 0))
+      height &= ~((1 << ATARI_LOWP_HEIGHT_SHIFT) - 1);
+#endif
+	return height;
 }
 
 
@@ -1051,6 +1083,10 @@ void DrawScaleds (void)
   statobj_t *statptr;
   objtype   *obj;
   maskedwallobj_t* tmwall;
+#if defined(__MINT__)
+  unsigned int sprite_budget = atari_sprite_budget_runtime;
+  unsigned int sprite_count = 0;
+#endif
 
 	whereami=6;
 
@@ -1114,6 +1150,13 @@ void DrawScaleds (void)
   UpdateClientControls();
   for (statptr = firstactivestat ; statptr; statptr=statptr->nextactive)
   {  //redraw:
+#if defined(__MINT__)
+          if (sprite_budget > 0 && sprite_count >= sprite_budget)
+          {
+             statptr->flags &= ~FL_VISIBLE;
+             continue;
+          }
+#endif
 			 if((visptr->shapenum = statptr->shapenum) == NOTHING)
 				  continue;
 
@@ -1225,7 +1268,12 @@ void DrawScaleds (void)
 				 }
 
 			 if (visptr < &vislist[MAXVISIBLE-1]) // don't let it overflo'
+            {
 				visptr++;
+#if defined(__MINT__)
+            sprite_count++;
+#endif
+            }
 
 
   }
@@ -1237,6 +1285,14 @@ void DrawScaleds (void)
 	  {
 	  if (obj==player)
 		  continue;
+#if defined(__MINT__)
+      if (sprite_budget > 0 && sprite_count >= sprite_budget &&
+          ((obj->flags & FL_KEYACTOR) == 0))
+      {
+         obj->flags &= ~FL_VISIBLE;
+         continue;
+      }
+#endif
 
 	  if ((visptr->shapenum = obj->shapenum) == NOTHING)
 		  continue;                         // no shape
@@ -1357,7 +1413,12 @@ void DrawScaleds (void)
            }
 
 		  if (visptr < &vislist[MAXVISIBLE-1]) // don't let it overflo'
+           {
 			  visptr++;
+#if defined(__MINT__)
+           sprite_count++;
+#endif
+           }
 		  obj->flags |= FL_SEEN;
 		  obj->flags |= FL_VISIBLE;
 		  }
@@ -1370,6 +1431,9 @@ void DrawScaleds (void)
 	numvisible = visptr-&vislist[0];
 	if (!numvisible)
 		return;                                     // no visible objects
+#if defined(__MINT__)
+   atari_frame_sprite_draws += (unsigned int)numvisible;
+#endif
 	SortVisibleList( numvisible, &vislist[0] );
    UpdateClientControls();
    for (i = 0; i<numvisible; i++)
@@ -1428,6 +1492,9 @@ void DrawPlayerWeapon (void)
  int altshape=0;
 
    whereami=7;
+#if defined(__MINT__) && (ATARI_HIDE_WEAPON > 0)
+   return;
+#endif
 
  SoftError("\n attackframe: %d, weaponframe: %d, weapondowntics: %d"
            " weaponuptics: %d",locplayerstate->attackframe,
@@ -1979,10 +2046,16 @@ void DrawWallPost ( wallcast_t * post, byte * buf)
    int ht;
    int topscreen;
    int bottomscreen;
+   int texture;
    byte * src;
    byte * src2;
 
    whereami=42;
+   texture = post->texture;
+#if defined(__MINT__)
+   if (atari_lowp_runtime && (ATARI_LOWP_TEXTURE_SHIFT > 0))
+      texture &= ~((1 << ATARI_LOWP_TEXTURE_SHIFT) - 1);
+#endif
    if (post->lump)
       src=W_CacheLumpNum(post->lump,PU_CACHE, CvtNull, 1);
 	if (post->alttile!=0)
@@ -2053,7 +2126,7 @@ void DrawWallPost ( wallcast_t * post, byte * buf)
 
    post->ceilingclip=dc_yl;
    post->floorclip=dc_yh-1;
-   dc_source=src2+((post->texture>>4)&0xfc0);
+   dc_source=src2+((texture>>4)&0xfc0);
    R_DrawWallColumn (buf);
 
 bottomcheck:
@@ -2076,7 +2149,7 @@ bottomcheck:
    else if (dc_yh > viewheight)
       dc_yh = viewheight;
    post->floorclip=dc_yh-1;
-   dc_source=src+((post->texture>>4)&0xfc0);
+   dc_source=src+((texture>>4)&0xfc0);
    R_DrawWallColumn (buf);
 }
 
@@ -2087,6 +2160,21 @@ bottomcheck:
 =
 ====================
 */
+
+static void ATARI_DrawWallColumnBudgeted(wallcast_t *post, byte *buf)
+{
+#if defined(__MINT__) && (ATARI_FLAT_WALL_LIGHT > 0)
+   shadingtable = colormap + (1 << 12);
+#else
+   SetWallLightLevel(post);
+#endif
+#if defined(__MINT__)
+   if (!ATARI_HotspotDrawWallPost(post, buf))
+      DrawWallPost(post, buf);
+#else
+   DrawWallPost(post, buf);
+#endif
+}
 
 void   DrawWalls (void)
 {
@@ -2112,10 +2200,9 @@ void   DrawWalls (void)
          for (post=&posts[plane];post<&posts[viewwidth];post+=2,buf+=2)
 #endif
             {
-            SetWallLightLevel(post);
-            DrawWallPost(post,buf);
+            ATARI_DrawWallColumnBudgeted(post, buf);
 #ifndef DOS            
-            DrawWallPost(post,buf+1); 
+            ATARI_DrawWallColumnBudgeted(post, buf + 1);
 #endif
             (post+1)->ceilingclip=post->ceilingclip;
             (post+1)->floorclip=post->floorclip;
@@ -2136,8 +2223,7 @@ void   DrawWalls (void)
          for (post=&posts[plane];post<&posts[viewwidth];post++,buf++)
 #endif
             {
-            SetWallLightLevel(post);
-            DrawWallPost(post,buf);
+            ATARI_DrawWallColumnBudgeted(post, buf);
             }
          }
       }
@@ -2408,6 +2494,10 @@ void WallRefresh (void)
 #endif
       viewangle=missobj->angle;
       viewangle &= (FINEANGLES-1);
+#if defined(__MINT__)
+      if (atari_lowp_runtime && (ATARI_LOWP_ANGLE_SHIFT > 0))
+         viewangle &= ~((1 << ATARI_LOWP_ANGLE_SHIFT) - 1);
+#endif
 		viewx=missobj->x-costable[viewangle];
 		viewy=missobj->y+sintable[viewangle];
       pheight = missobj->z + 32;
@@ -2435,6 +2525,10 @@ void WallRefresh (void)
          }
       else
          viewangle = player->angle & (FINEANGLES-1);
+#if defined(__MINT__)
+      if (atari_lowp_runtime && (ATARI_LOWP_ANGLE_SHIFT > 0))
+         viewangle &= ~((1 << ATARI_LOWP_ANGLE_SHIFT) - 1);
+#endif
       if ((viewangle<0) && (viewangle>=FINEANGLES))
          Error ("View angle out of range = %d\n",viewangle);
       viewx = player->x;
@@ -2991,6 +3085,19 @@ void DrawPlayerLocation ( void )
 */
 
 
+static void ATARI_DrawFlatWorldBackdrop(void)
+{
+#if defined(__MINT__)
+   int top = viewheight >> 1;
+   int bottom = viewheight - top;
+
+   if (top > 0)
+      VL_Bar(0, 0, viewwidth, top, ATARI_FLAT_CEILING_COLOR);
+   if (bottom > 0)
+      VL_Bar(0, top, viewwidth, bottom, ATARI_FLAT_FLOOR_COLOR);
+#endif
+}
+
 int playerview=0;
 void      ThreeDRefresh (void)
 {
@@ -3035,8 +3142,10 @@ void      ThreeDRefresh (void)
 //
 
 #if defined(__MINT__)
-  // Skip message background restore/clear on Atari for now to avoid early crashes.
   bufferofs += screenofs;
+  memset(spotvis, 0, sizeof(spotvis));
+  if (atari_flat_world_runtime)
+     ATARI_DrawFlatWorldBackdrop();
 #else
   RestoreMessageBackground();
   bufferofs += screenofs;
@@ -3060,7 +3169,14 @@ void      ThreeDRefresh (void)
    UpdateClientControls ();
 
 	if (fandc)
+      {
+#if defined(__MINT__)
+      if (!atari_flat_world_runtime && ATARI_PerfTryUseEffectPass())
+         DrawPlanes();
+#else
 		DrawPlanes();
+#endif
+      }
 #if defined(__MINT__)
    ATARI_THREED_LOG("ROTT: 3D planes ok\r\n");
 #endif
@@ -3070,7 +3186,16 @@ void      ThreeDRefresh (void)
 //
 // draw all the scaled images
 //
+#if defined(__MINT__) && (ATARI_SPRITE_FRAME_DIV > 1)
+    {
+    static unsigned int atari_sprite_frame_tick = 0;
+    atari_sprite_frame_tick++;
+    if ((atari_sprite_frame_tick % ATARI_SPRITE_FRAME_DIV) == 0)
+       DrawScaleds();                                      // draw scaled stuff
+    }
+#else
     DrawScaleds();                                         // draw scaled stuff
+#endif
 #if defined(__MINT__)
    ATARI_THREED_LOG("ROTT: 3D scaleds ok\r\n");
 #endif
@@ -6380,8 +6505,8 @@ void DrawSkyPost (byte * buf, byte * src, int height)
 	}*/
 }
 
-#define CEILINGCOLOR 24 //default color when no sky or floor
-#define FLOORCOLOR 32
+#define CEILINGCOLOR ATARI_FLAT_CEILING_COLOR //default color when no sky or floor
+#define FLOORCOLOR ATARI_FLAT_FLOOR_COLOR
 
 void RefreshClear (void)
 {

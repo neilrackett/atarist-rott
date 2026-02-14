@@ -52,6 +52,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define LIGHTNINGLEVEL 4
 #define MINLIGHTNINGLEVEL   2
 #define MAXLIGHTNINGLEVEL   10
+#if defined(__MINT__)
+#ifndef ATARI_VIEW_SCALE_DIV
+#define ATARI_VIEW_SCALE_DIV 1
+#endif
+#endif
 
 /*
 =============================================================================
@@ -327,6 +332,19 @@ void SetViewSize
 
    viewwidth  = viewsizes[ size << 1 ];         // must be divisable by 16
    viewheight = viewsizes[ ( size << 1 ) + 1 ]; // must be even
+#if defined(__MINT__) && (ATARI_VIEW_SCALE_DIV > 1)
+   {
+   int div = ATARI_VIEW_SCALE_DIV;
+   viewwidth /= div;
+   viewheight /= div;
+   if (viewwidth < 48)
+      viewwidth = 48;
+   if (viewheight < 36)
+      viewheight = 36;
+   viewwidth &= ~3;
+   viewheight &= ~1;
+   }
+#endif
 
    maxheight = iGLOBAL_SCREENHEIGHT;
    topy      = 0;

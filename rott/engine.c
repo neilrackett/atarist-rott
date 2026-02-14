@@ -26,6 +26,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_stat.h"
 #include "rt_ted.h"
 #include "rt_view.h"
+#include "atari_perf.h"
 #include <stdlib.h>
 //MED
 #include "memcheck.h"
@@ -97,9 +98,43 @@ void Interpolate (int x1, int x2)
 void Refresh ( void )
 {
    int x;
+#if defined(__MINT__)
+   int ray_step = (int)atari_raycast_step_runtime;
+#endif
 
 // Cast Initial comb filter
+#if defined(__MINT__)
+   if (viewwidth <= 0)
+      return;
+#endif
 
+#if defined(__MINT__)
+   if (ray_step < 4)
+      ray_step = 4;
+   if (ray_step > viewwidth)
+      ray_step = viewwidth;
+
+   if (ray_step > 4)
+      {
+      int x2;
+
+      for (x = 0; x <= viewwidth; x += ray_step)
+         Cast(x);
+
+      if (((viewwidth % ray_step) != 0) && (viewwidth > 0))
+         Cast(viewwidth);
+
+      for (x = 0; x < viewwidth; x += ray_step)
+         {
+         x2 = x + ray_step;
+         if (x2 > viewwidth)
+            x2 = viewwidth;
+         if (x2 > x)
+            Interpolate(x, x2);
+         }
+      return;
+      }
+#endif
    InitialCast();
 
    for (x=0;x<=viewwidth-4;x+=4)

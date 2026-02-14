@@ -82,6 +82,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "cin_main.h"
 #include "rottnet.h"
 #include "rt_scale.h"
+#include "atari_perf.h"
 
 #include "music.h"
 #include "fx_man.h"
@@ -2189,9 +2190,25 @@ void UpdateGameObjects ( void )
 #endif
       const unsigned int actor_time_phase = (unsigned int)gamestate.TimeCount % actor_div;
 #endif
+#if defined(__MINT__)
+      unsigned int actor_budget = atari_actor_budget_runtime;
+      unsigned int actor_updates_this_tick = 0;
+#endif
 		for (ob = firstactive; ob;)
 			{
 			 temp = ob->nextactive;
+#if defined(__MINT__)
+          int actor_high_priority = ((ob->obclass == playerobj) ||
+                                     (ob->flags & FL_KEYACTOR) ||
+                                     areabyplayer[ob->areanumber]);
+          if (actor_budget > 0 &&
+              actor_updates_this_tick >= actor_budget &&
+              !actor_high_priority)
+          {
+             ob = temp;
+             continue;
+          }
+#endif
 #if defined(__MINT__) && ((ATARI_ACTOR_THROTTLE_DIV > 1) || (ATARI_ADAPTIVE_ACTOR_THROTTLE > 0))
           if ((actor_div > 1) &&
               (ob->obclass != playerobj) &&
@@ -2202,14 +2219,24 @@ void UpdateGameObjects ( void )
                                    ((unsigned int)ob->tiley << 1) +
                                    (unsigned int)ob->obclass) % actor_div;
              if (actor_time_phase == phase)
+             {
                 DoActor(ob);
+                actor_updates_this_tick++;
+                atari_frame_actor_updates++;
+             }
           }
           else
           {
              DoActor(ob);
+             actor_updates_this_tick++;
+             atari_frame_actor_updates++;
           }
 #else
 			 DoActor (ob);
+#if defined(__MINT__)
+          actor_updates_this_tick++;
+          atari_frame_actor_updates++;
+#endif
 #endif
 #if (DEVELOPMENT == 1)
 			 if ((ob->x<=0) || (ob->y<=0))
@@ -2445,6 +2472,9 @@ fromloadedgame:
       }
 #endif
       UpdateClientControls();
+#if defined(__MINT__)
+      ATARI_PerfBeginFrame(tics);
+#endif
 
       if ( GamePaused )
          {
@@ -2568,6 +2598,9 @@ fromloadedgame:
                {
                QuitGame();
                }
+#if defined(__MINT__)
+            ATARI_PerfEndFrame();
+#endif
             return;
             }
 
@@ -2580,6 +2613,9 @@ fromloadedgame:
 
          if ( playstate == ex_titles )
             {
+#if defined(__MINT__)
+            ATARI_PerfEndFrame();
+#endif
             return;
             }
 
@@ -2590,6 +2626,9 @@ fromloadedgame:
 
          if ( loadedgame == true )
             {
+#if defined(__MINT__)
+            ATARI_PerfEndFrame();
+#endif
             goto fromloadedgame;
             }
 
@@ -2664,6 +2703,9 @@ fromloadedgame:
                }
             }
          }
+#if defined(__MINT__)
+      ATARI_PerfEndFrame();
+#endif
       }
    waminot();
    }
