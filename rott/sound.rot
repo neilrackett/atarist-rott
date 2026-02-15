@@ -18,12 +18,12 @@ FXMode             0
 ;
 ; Music Volume
 ; (low) 0 - 255 (high)
-MusicVolume      20
+MusicVolume      96
 
 ;
 ; FX Volume
 ; (low) 0 - 255 (high)
-FXVolume         140
+FXVolume         192
 
 ;
 ; Number of Voices

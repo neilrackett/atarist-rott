@@ -16,11 +16,9 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 #include <stdlib.h>
 
 #include "SDL.h"
-#if defined(__MINT__)
-#include <mint/osbind.h>
-#endif
 
 #include "modexlib.h"
+#include "atari_sdl.h"
 #include "keyb.h"
 #include "isr.h"
 #include "rt_in.h"
@@ -58,8 +56,6 @@ extern boolean sdl_fullscreen;
 #endif
 
 #if defined(__MINT__)
-static char sdl_video_driver_env[48];
-
 #ifndef ATARI_TARGET_FPS
 #define ATARI_TARGET_FPS 12
 #endif
@@ -142,16 +138,6 @@ void ATARI_EndRenderFrame(void)
 void ATARI_ForceRender(void)
 {
     mint_force_render = 1;
-}
-
-static void atari_set_video_driver(const char *driver)
-{
-    if (driver == NULL || *driver == '\0')
-        return;
-
-    snprintf(sdl_video_driver_env, sizeof(sdl_video_driver_env),
-             "SDL_VIDEODRIVER=%s", driver);
-    SDL_putenv(sdl_video_driver_env);
 }
 #else
 int ATARI_BeginRenderFrame(void)
@@ -292,23 +278,6 @@ static void draw_fps_overlay(SDL_Surface *target)
     draw_fps_text(target, x, y, text, 255, 0);
 }
 #endif
-
-static SDL_Surface *try_set_video_mode(int width, int height, Uint32 flags)
-{
-    /* Order matters: prefer paletted 8-bit, then common fallbacks. */
-    static const int bpp_try[] = { 8, 0, 4, 16, 32 };
-    int i;
-    SDL_Surface *surface = NULL;
-
-    for (i = 0; i < (int)(sizeof(bpp_try) / sizeof(bpp_try[0])); ++i)
-    {
-        surface = SDL_SetVideoMode(width, height, bpp_try[i], flags);
-        if (surface != NULL)
-            break;
-    }
-
-    return surface;
-}
 
 static int map_key_to_scancode(SDLKey key)
 {
@@ -492,108 +461,18 @@ void WaitVBL(void)
 
 void GraphicsMode(void)
 {
-    Uint32 flags;
     int want_fullscreen = 0;
-    int prefer_xbios = 0;
-    char driver_name[32];
-    const char *active_driver = NULL;
 
     if (video_initialized)
         return;
 
-#if defined(__MINT__)
     want_fullscreen = (sdl_fullscreen != 0);
-    prefer_xbios = want_fullscreen;
-    atari_set_video_driver(prefer_xbios ? "xbios" : "gem");
-#else
-    want_fullscreen = (sdl_fullscreen != 0);
-#endif
-
-    if (SDL_WasInit(SDL_INIT_VIDEO) == 0)
+    if (ATARI_SDL_OpenVideo(iGLOBAL_SCREENWIDTH, iGLOBAL_SCREENHEIGHT,
+                            &want_fullscreen, &video_surface, &blit_surface) < 0)
     {
-        if (SDL_Init(SDL_INIT_VIDEO) < 0)
-        {
-#if defined(__MINT__)
-            if (prefer_xbios)
-            {
-                atari_set_video_driver("gem");
-                want_fullscreen = 0;
-                sdl_fullscreen = 0;
-                if (SDL_Init(SDL_INIT_VIDEO) >= 0)
-                    goto sdl_video_inited;
-            }
-#endif
-            Error("SDL video init failed: %s", SDL_GetError());
-        }
+        Error("SDL video setup failed: %s", SDL_GetError());
     }
-
-#if defined(__MINT__)
-sdl_video_inited:
-#endif
-
-#if defined(__MINT__)
-    active_driver = SDL_VideoDriverName(driver_name, (int)sizeof(driver_name));
-    if (active_driver == NULL)
-        active_driver = "unknown";
-    printf("SDL video driver: %s\n", active_driver);
-    printf("SDL target FPS: %d\n", (int)ATARI_TARGET_FPS);
-    printf("SDL video: free before mode = %ld bytes\n", Malloc(-1L));
-#endif
-
-    flags = SDL_SWSURFACE;
-    if (want_fullscreen)
-        flags |= SDL_FULLSCREEN;
-
-    video_surface = try_set_video_mode(iGLOBAL_SCREENWIDTH, iGLOBAL_SCREENHEIGHT, flags);
-
-#if defined(__MINT__)
-    if ((video_surface == NULL) && want_fullscreen)
-    {
-        /* XBIOS failed: retry with GEM backend/windowed software mode. */
-        SDL_QuitSubSystem(SDL_INIT_VIDEO);
-        atari_set_video_driver("gem");
-        if (SDL_Init(SDL_INIT_VIDEO) >= 0)
-        {
-            want_fullscreen = 0;
-            sdl_fullscreen = 0;
-            flags = SDL_SWSURFACE;
-            video_surface = try_set_video_mode(iGLOBAL_SCREENWIDTH, iGLOBAL_SCREENHEIGHT, flags);
-        }
-    }
-
-    if ((video_surface == NULL) && !want_fullscreen)
-    {
-        /* GEM failed (often depth/mode mismatch): retry with XBIOS fullscreen. */
-        SDL_QuitSubSystem(SDL_INIT_VIDEO);
-        atari_set_video_driver("xbios");
-        if (SDL_Init(SDL_INIT_VIDEO) >= 0)
-        {
-            want_fullscreen = 1;
-            sdl_fullscreen = 1;
-            flags = SDL_SWSURFACE | SDL_FULLSCREEN;
-            video_surface = try_set_video_mode(iGLOBAL_SCREENWIDTH, iGLOBAL_SCREENHEIGHT, flags);
-        }
-    }
-#else
-    if ((video_surface == NULL) && want_fullscreen)
-    {
-        video_surface = try_set_video_mode(iGLOBAL_SCREENWIDTH, iGLOBAL_SCREENHEIGHT, SDL_SWSURFACE);
-    }
-#endif
-
-    if (video_surface == NULL)
-        Error("SDL_SetVideoMode failed: %s", SDL_GetError());
-
-    blit_surface = video_surface;
-    if (video_surface->format->BitsPerPixel != 8)
-    {
-        blit_surface = SDL_CreateRGBSurface(SDL_SWSURFACE,
-                                            iGLOBAL_SCREENWIDTH,
-                                            iGLOBAL_SCREENHEIGHT,
-                                            8, 0, 0, 0, 0);
-        if (blit_surface == NULL)
-            Error("SDL_CreateRGBSurface failed: %s", SDL_GetError());
-    }
+    sdl_fullscreen = want_fullscreen;
 
     SDL_WM_SetCaption("Rise of the Triad", "ROTT");
     SDL_ShowCursor(SDL_DISABLE);
@@ -632,16 +511,9 @@ void SetTextMode(void)
         screenpixels = NULL;
     }
 
-    if ((blit_surface != NULL) && (blit_surface != video_surface))
-    {
-        SDL_FreeSurface(blit_surface);
-    }
-    blit_surface = NULL;
-
     if (video_initialized)
     {
-        SDL_QuitSubSystem(SDL_INIT_VIDEO);
-        video_surface = NULL;
+        ATARI_SDL_CloseVideo(&video_surface, &blit_surface);
         video_initialized = 0;
     }
 

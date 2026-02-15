@@ -2,9 +2,10 @@ CC = m68k-atari-mint-gcc
 
 SRCDIR ?= rott
 DATADIR ?= tmp/ROTT
-BUILDDIR ?= build/atari
-OBJDIR ?= obj/atari
+BUILDDIR ?= build/atari-tt
+OBJDIR ?= obj/atari-tt
 TARGET ?= ROTT_TT.TOS
+TARGET_030 ?= ROTT_030.TOS
 
 SHAREWARE ?= 1
 SUPERROTT ?= 0
@@ -14,17 +15,21 @@ ATARI_TIC_WAIT_MS ?= 0
 ATARI_SKIP_FADES ?= 0
 ATARI_SKIP_FIZZLE ?= 0
 ATARI_SKIP_LIGHTLEVEL ?= 0
-ATARI_SHOW_FPS ?= 0
+ATARI_SHOW_FPS ?= 1
 
-ATARI_RUNTIME_FILES := \
+ATARI_RUNTIME_DATA_FILES := \
 	$(DATADIR)/HUNTBGIN.WAD \
 	$(DATADIR)/HUNTBGIN.RTL \
 	$(DATADIR)/HUNTBGIN.RTC \
-	$(DATADIR)/REMOTE1.RTS \
+	$(DATADIR)/REMOTE1.RTS
+
+ATARI_RUNTIME_CONFIG_FILES := \
 	$(SRCDIR)/config.rot \
 	$(SRCDIR)/sound.rot \
 	$(SRCDIR)/battle.rot \
 	$(SRCDIR)/scores.rot
+
+ATARI_RUNTIME_FILES := $(ATARI_RUNTIME_DATA_FILES) $(ATARI_RUNTIME_CONFIG_FILES)
 
 SDL_CFLAGS ?= $(shell m68k-atari-mint-pkg-config --cflags sdl 2>/dev/null)
 SDL_LIBS ?= $(shell m68k-atari-mint-pkg-config --libs sdl 2>/dev/null)
@@ -61,6 +66,7 @@ LDLIBS ?= $(SDL_LIBS) -lm
 SOURCES := \
 	$(SRCDIR)/audio_stubs.c \
 	$(SRCDIR)/atari_megaste.c \
+	$(SRCDIR)/atari_sdl.c \
 	$(SRCDIR)/byteordr.c \
 	$(SRCDIR)/cin_actr.c \
 	$(SRCDIR)/cin_efct.c \
@@ -112,26 +118,45 @@ SOURCES := \
 	$(SRCDIR)/winrott.c \
 	$(SRCDIR)/z_zone.c
 
-OBJECTS := $(addprefix $(OBJDIR)/,$(SOURCES:.c=.o))
-DEPS := $(OBJECTS:.o=.d)
+OBJDIR_TT := $(OBJDIR)/tt
+OBJDIR_030 := $(OBJDIR)/030
+OBJECTS_TT := $(addprefix $(OBJDIR_TT)/,$(SOURCES:.c=.o))
+OBJECTS_030 := $(addprefix $(OBJDIR_030)/,$(SOURCES:.c=.o))
+DEPS_TT := $(OBJECTS_TT:.o=.d)
+DEPS_030 := $(OBJECTS_030:.o=.d)
+CFLAGS_030 := $(subst -m68000,-m68030,$(CFLAGS))
+LDFLAGS_030 := $(subst -m68000,-m68030 -m68882,$(LDFLAGS))
 
 .PHONY: all clean atari-stage-runtime-files
 
-all: $(BUILDDIR)/$(TARGET)
+all: $(BUILDDIR)/$(TARGET) $(BUILDDIR)/$(TARGET_030)
 
-$(BUILDDIR)/$(TARGET): atari-stage-runtime-files $(OBJECTS) | $(BUILDDIR)
-	$(CC) $(LDFLAGS) $(OBJECTS) $(LDLIBS) -o $@
+$(BUILDDIR)/$(TARGET): atari-stage-runtime-files $(OBJECTS_TT) | $(BUILDDIR)
+	$(CC) $(LDFLAGS) $(OBJECTS_TT) $(LDLIBS) -o $@
 
-$(OBJDIR)/%.o: %.c
+$(BUILDDIR)/$(TARGET_030): atari-stage-runtime-files $(OBJECTS_030) | $(BUILDDIR)
+	$(CC) $(LDFLAGS_030) $(OBJECTS_030) $(LDLIBS) -o $@
+
+$(OBJDIR_TT)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
+
+$(OBJDIR_030)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS_030) -MMD -MP -c $< -o $@
 
 $(BUILDDIR):
 	@mkdir -p $@
 
 atari-stage-runtime-files: | $(BUILDDIR)
+	@for src in $(ATARI_RUNTIME_CONFIG_FILES); do \
+		dst="$(BUILDDIR)/$$(basename "$$src")"; \
+		if [ -e "$$src" ]; then \
+			cp -f "$$src" "$$dst"; \
+		fi; \
+	done
 	@if [ -d "$(DATADIR)" ]; then \
-		for src in $(ATARI_RUNTIME_FILES); do \
+		for src in $(ATARI_RUNTIME_DATA_FILES); do \
 			dst="$(BUILDDIR)/$$(basename "$$src")"; \
 			if [ -e "$$src" ] && [ ! -e "$$dst" ]; then \
 				cp "$$src" "$$dst"; \
@@ -140,6 +165,7 @@ atari-stage-runtime-files: | $(BUILDDIR)
 	fi
 
 clean:
-	$(RM) -r $(BUILDDIR)/$(TARGET) $(OBJECTS) $(DEPS)
+	$(RM) -r $(BUILDDIR)/$(TARGET) $(BUILDDIR)/$(TARGET_030) \
+		$(OBJECTS_TT) $(OBJECTS_030) $(DEPS_TT) $(DEPS_030)
 
--include $(DEPS)
+-include $(DEPS_TT) $(DEPS_030)
