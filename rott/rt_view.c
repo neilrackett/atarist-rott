@@ -135,7 +135,7 @@ byte    mapmasks3[4][9] = {
 =============================================================================
 */
 
-static char *YourComputerSucksString = "Buy an 060! :)";
+static char *YourComputerSucksString = "Buy a TT! :)";
 
 static int viewsizes[MAXVIEWSIZES*2]={ 80,48,
                            128,72,

@@ -46,7 +46,7 @@ JoystickPort       0
 ;
 ; 0 - Start in windowed mode
 ; 1 - Start in fullscreen mode
-FullScreen         0
+FullScreen         1
 
 ;
 ; Screen Resolution, supported resolutions: 
