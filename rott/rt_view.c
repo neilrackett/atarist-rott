@@ -355,12 +355,16 @@ void SetViewSize
    height = viewheight;
    if ( height > 168 )
    {
-        // Prevent weapon from being scaled too big
-	    height = 168;
-	 
+      // Base weapon scale on full-size view, then apply optional user factor.
+      height = 168;
    }
 
-   if ((G_weaponscale > 150)&&(G_weaponscale <600)){height = G_weaponscale;}
+   if ((G_weaponscale > 150) && (G_weaponscale < 600))
+   {
+      /* Keep weapon scaling tied to current view size instead of fixed size. */
+      height = (height * G_weaponscale + 84) / 168;
+   }
+
    weaponscale = ( height << 16 ) / 168;//( height << 16 ) = 170 * 65536
 
   
