@@ -4,8 +4,8 @@
 
 SRCDIR ?= rott
 DATADIR ?= tmp/ROTT
-BUILDDIR ?= build/atari
-OBJDIR ?= obj/atari
+BUILDDIR ?= build/atari-st
+OBJDIR ?= obj/atari-st
 
 # Debugging
 
