@@ -1,7 +1,7 @@
 ;Rise of the Triad Configuration File
 ;                  (c) 1995
 
-; *** Best config for Atari TT ***
+; *** Best config for Atari ST (manually copy to your config.rot to use) ***
 
 Version            14
 
@@ -59,12 +59,12 @@ ScreenHeight       200
 ;
 ; Size of View port.
 ; (smallest) 0 - 10 (largest)
-ViewSize           7
+ViewSize           0
 
 ;
 ; Size of Weaponscale.
 ; (smallest) 150 - 600 (largest)
-Weaponscale           168
+Weaponscale           150
 
 ;
 ; Sensitivity of Mouse
@@ -89,7 +89,7 @@ LightDim           0
 ;
 ; 1 - Bobbing on
 ; 0 - Bobbing off
-BobbingOn          1
+BobbingOn          0
 
 ;
 ; (slowest) 50 - 5 (fastest)
@@ -109,7 +109,7 @@ DetailLevel        0
 ;
 ; 1 - Floor and Ceiling on
 ; 0 - Floor and Ceiling off
-FloorCeiling       1
+FloorCeiling       0
 
 ;
 ; 1 - Messages on

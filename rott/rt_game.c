@@ -4502,7 +4502,9 @@ player->yzangle=0;
 
       do
          {
+         bufferofs += screenofs;
          DoBorderShifts ();
+         bufferofs -= screenofs;
          change = tics<<rate;
          if (clockwise==1)
             curangle+=change;
@@ -4524,9 +4526,11 @@ player->yzangle=0;
       FlipPage();
       }
 
+   bufferofs += screenofs;
    while (damagecount)
       DoBorderShifts ();
    DoBorderShifts ();
+   bufferofs -= screenofs;
 
    locplayerstate->weapon = -1;        // take away weapon
 

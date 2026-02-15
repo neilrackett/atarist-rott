@@ -1238,12 +1238,14 @@ void GameLoop (void)
 	   {
       if ( playstate == ex_battledone )
          {
+         bufferofs += screenofs;
          while( damagecount > 0 )
             {
             DoBorderShifts();
             }
          damagecount = 0;
          SetBorderColor (0);
+         bufferofs -= screenofs;
 
          StopWind();
 
@@ -1498,11 +1500,13 @@ void GameLoop (void)
             Died ();
             StopWind();
 			 DisableScreenStretch();//bna++ shut off streech mode
+            bufferofs += screenofs;
             while (damagecount>0)
                DoBorderShifts();
 
             damagecount = 0;
             SetBorderColor (0);
+            bufferofs -= screenofs;
             if (demorecord)
                {
                FreeDemo ();
@@ -2269,7 +2273,9 @@ fromloadedgame:
             }
          TurnShakeOff();
          StopWind();
+         bufferofs += screenofs;
          SetBorderColor( 0 );
+         bufferofs -= screenofs;
          ShutdownClientControls();
          if (demoplayback==true)
             {
