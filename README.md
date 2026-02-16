@@ -1,53 +1,63 @@
-# Rise of the Triad
+# Rise of the Triad (ROTT) for Atari ST, TT & Falcon
 
-Atari ST and WebAssembly (WASM) ports by [Neil Rackett](https://x.com/neilrackett)
+Ported by [Neil Rackett](https://x.com/neilrackett)
 
 ## Introduction
 
-What better way to celebrate the 30th-ish anniversary of ROTT than to port it to a hardware platform currently celebrating its 40th: Welcome to _Rise of the Triad for Atari ST_ (and TT and WebAssembly).
+What better way to celebrate the 30th-ish anniversary of ROTT than to port it to a hardware platform currently celebrating its 40th: _Welcome to Rise of the Triad for Atari ST, TT & Falcon!_
 
-| Branch     | Name              | Description                                                          | Optimised for  | Compatibile with              | RAM | Compiler            |
-| ---------- | ----------------- | -------------------------------------------------------------------- | -------------- | ----------------------------- | --- | ------------------- |
-| `atari-st` | ROTT for Atari ST | C2P rendering, 16 colour and Noir (greyscale) versions               | Atari Mega STE | ST, STE, Mega STE, TT, Falcon | 4MB | m68k-atari-mint-gcc |
-| `atari-tt` | ROTT for Atari TT | SDL rendering, 16 colour (greyscale) on ST, 256 colours on TT/Falcon | Atari TT       | ST, STE, Mega STE, TT, Falcon | 4MB | m68k-atari-mint-gcc |
-| `wasm`     | ROTT for the web  | Web version using WebAssembly                                        | Web            | Any modern browser            | N/A | emcc                |
+This repository contains 2 versions of ROTT:
 
-All builds are experimental.
+| Branch | Description                                                                                     | Target                        |
+| ------ | ----------------------------------------------------------------------------------------------- | ----------------------------- |
+| `sdl`  | SDL based port aiming to be as close to original ROTT as possible on all ST-compatible hardware | ST, STE, Mega STE, TT, Falcon |
+| `c2p`  | Aggressively optimised direct-to-hardware port with C2P rendering for best performance on ST    | ST, STE, Mega STE             |
+
+All builds:
+
+- Require 4MB RAM
+- Need you to install or download the DOS version of [ROTT shareware ("The Hunt Begins")](https://archive.org/details/rott_shareware)
+- Support keyboard and mouse input
+
+Stable builds are avilable on the [releases page](https://github.com/neilrackett/atarist-rott/releases).
 
 Enjoy!
 
-## Rise of the Triad for Atari TT (ROTTTT? TTROTT?)
+## Rise of the Triad (SDL)
 
-The Atari TT version of ROTT uses a small number of optimisations to maintain ROTT's original look and feel using the MiNTLib SDL library.
+<img width="640" height="400" alt="image" src="https://github.com/user-attachments/assets/1558c670-be05-427a-b1ce-1ee767a4870e" /> <img width="640" height="400" alt="image" src="https://github.com/user-attachments/assets/17067577-e151-4d6d-a9c6-69a1ef9d9837" />
 
-Fun fact: this was actually my first attempt at porting ROTT to Atari ST by using a version of SDL I modified to support ST low resolution, but while it still technically runs on any ST compatible computer, and looks great in 16 shades of grey in ST low res, it's sadly too slow to realistically be playable on a regular ST, STE or even Mega STE. So I tried it in TT mode on [Hatari](https://hatari-emu.org). It was amazing and TTROTT was born!
+This port uses the Simple DirectMedia Layer (SDL) framework, patched to support Atari ST low-res, to bring ROTT to the Atari ST, TT & Falcon with a minimal number of tweaks and performance optimisations to retain as much of the game's original look and feel as possible, including intro videos and menu animations. TT screenshots shown.
 
-Music and sound are still very much WIP, so I recommend switching both off in `SOUND.ROT` for now.
+| Model    | Colours        | Music | SFX | Typical FPS |
+| -------- | -------------- | ----- | --- | ----------- |
+| ST       | 16 (greyscale) | ✅    | ❌  | 1-2         |
+| STE      | 16 (greyscale) | ✅    | ✅  | 1-2         |
+| Mega STE | 16 (greyscale) | ✅    | ✅  | 2-3         |
+| TT       | 256            | ✅    | ✅  | 12-15       |
+| Falcon   | 256            | ✅    | ✅  | 10-12       |
 
-## Screenshots
-
-<img width="638" height="397" alt="image" src="https://github.com/user-attachments/assets/1558c670-be05-427a-b1ce-1ee767a4870e" />
-
-<img width="638" height="397" alt="image" src="https://github.com/user-attachments/assets/17067577-e151-4d6d-a9c6-69a1ef9d9837" />
+FPS based on running ROTT with automatic detail selection enabled. Music and sound are still WIP, so I recommend switching both off in `SOUND.ROT` for now.
 
 ## Installation
 
 - Install the shareware version of ROTT for DOS using DOSbox, or [download the files from Internet.org](https://archive.org/details/rott_shareware)
-- Copy `ROTT_TT.TOS` to the installation folder
-- Run `ROTT_TT.TOS`
+- Copy the installation folder to your Atari's hard disk
+- Copy `ROTT_SDL.TOS` and/or `ROTT_030.TOS` to the the same folder (the 030 build runs 20-30% faster on TT/Falcon)
+- Run `ROTT_SDL.TOS` or `ROTT_030.TOS`
 - Enjoy!
+
+Edit `CONFIG.ROT` to adjust rendering and performance settings.
 
 ## Build
 
-The Atari TT build uses the SDL library for graphics and sound, and you can build the shareware version of ROTT ("The Hunt Begins") for Atari TT using [atarist-toolkit-docker](https://github.com/sidecartridge/atarist-toolkit-docker):
+The quickest way to build ROTT for yourself is to install [atarist-toolkit-docker](https://github.com/sidecartridge/atarist-toolkit-docker) then run:
 
 ```bash
 stcmd make
 ```
 
-The build process outputs `build/ROTT_TT.TOS`, which will run on any Atari ST compatible computer, but is best experienced on an Atari TT.
-
-For a ready-to-go build, install the DOS version (see above) then copy the `ROTT` install folder (the actual folder, not just the contents) into a `tmp` folder in the root of this project and the required files will automatically be copied into the build folder for you.
+The build process outputs `build/sdl/ROTT_SDL.TOS`, which will run on any Atari ST compatible computer, and `build/sdl/ROTT_030.TOS` which is optimised for 68030 CPU with 68882 FPU (TT & Falcon).
 
 ## License
 
