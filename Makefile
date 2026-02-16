@@ -4,13 +4,13 @@
 
 SRCDIR ?= rott
 DATADIR ?= tmp/ROTT
-BUILDDIR ?= build/atari-st
-OBJDIR ?= obj/atari-st
+BUILDDIR ?= build/c2p
+OBJDIR ?= obj/c2p
 
 # Debugging
 
 ATARI_DEBUG ?= 0 # Enable debug logging
-ATARI_SHOW_FPS ?= 1 # Show FPS overlay
+ATARI_SHOW_FPS ?= 0 # Show FPS overlay
 
 # ROTT Noir?
 
@@ -145,11 +145,7 @@ ATARI_AUDIOLIB_SOURCES := \
 	$(SRCDIR)/audiolib/usrhooks.c
 ATARI_SOURCES := $(filter-out $(SRCDIR)/amiga_%.c $(SRCDIR)/dosutil.c $(SRCDIR)/dukemusc.c $(SRCDIR)/fx_man.c $(SRCDIR)/lookups.c $(SRCDIR)/vocdecode.c,$(wildcard $(SRCDIR)/*.c)) $(ATARI_AUDIOLIB_SOURCES)
 ATARI_OBJECTS := $(addprefix $(OBJDIR)/,$(ATARI_SOURCES:.c=.o))
-ATARI_OUTPUT_SHAREWARE ?= $(BUILDDIR)/ROTT_ST.TOS
-ATARI_OUTPUT_DARKWAR ?= $(BUILDDIR)/ROTT_STD.TOS
-ATARI_OUTPUT_ROTTCD ?= $(BUILDDIR)/ROTT_STC.TOS
-ATARI_OUTPUT_ROTTSITE ?= $(BUILDDIR)/ROTT_STS.TOS
-ATARI_OUTPUTS := $(ATARI_OUTPUT_SHAREWARE) $(ATARI_OUTPUT_DARKWAR) $(ATARI_OUTPUT_ROTTCD) $(ATARI_OUTPUT_ROTTSITE)
+ATARI_OUTPUT ?= $(BUILDDIR)/ROTT_C2P.TOS
 ATARI_RUNTIME_DATA_FILES := \
 	$(DATADIR)/HUNTBGIN.WAD \
 	$(DATADIR)/HUNTBGIN.RTL \
@@ -173,7 +169,7 @@ FORCE:
 rott-huntbgin: ATARI_SHAREWARE = 1
 rott-huntbgin: ATARI_SUPERROTT = 0
 rott-huntbgin: ATARI_SITELICENSE = 0
-rott-huntbgin: atari-stage-runtime-files $(ATARI_OUTPUT_SHAREWARE)
+rott-huntbgin: atari-stage-runtime-files $(ATARI_OUTPUT)
 
 # Shareware build with 68882 FPU code generation
 rott-68882: ATARI_LDFLAGS += -m68882
@@ -207,22 +203,22 @@ rott-dev: rott-huntbgin
 rott-darkwar: ATARI_SHAREWARE = 0
 rott-darkwar: ATARI_SUPERROTT = 0
 rott-darkwar: ATARI_SITELICENSE = 0
-rott-darkwar: atari-stage-runtime-files $(ATARI_OUTPUT_DARKWAR)
+rott-darkwar: atari-stage-runtime-files $(ATARI_OUTPUT)
 
 # CD build
 rott-rottcd: ATARI_SHAREWARE = 0
 rott-rottcd: ATARI_SUPERROTT = 0
 rott-rottcd: ATARI_SITELICENSE = 0
-rott-rottcd: atari-stage-runtime-files $(ATARI_OUTPUT_ROTTCD)
+rott-rottcd: atari-stage-runtime-files $(ATARI_OUTPUT)
 
 # Site license build
 rott-rottsite: ATARI_SHAREWARE = 0
 rott-rottsite: ATARI_SUPERROTT = 0
-rott-rottsite: ATARI_SITELICENSE = 0
-rott-rottsite: atari-stage-runtime-files $(ATARI_OUTPUT_ROTTSITE)
+rott-rottsite: ATARI_SITELICENSE = 1
+rott-rottsite: atari-stage-runtime-files $(ATARI_OUTPUT)
 
 clean:
-	$(RM) -r $(ATARI_OUTPUTS) $(OBJDIR)
+	$(RM) -r $(ATARI_OUTPUT) $(OBJDIR)
 
 $(BUILDDIR)/%.TOS: $(ATARI_OBJECTS) | $(BUILDDIR)
 	$(ATARI_CC) $(ATARI_LDFLAGS) $(ATARI_OBJECTS) $(ATARI_LIBS) -o $@
