@@ -59,7 +59,7 @@ DEFINES := \
 
 INCLUDES := -I$(SRCDIR) -I$(SRCDIR)/audiolib $(SDL_CFLAGS)
 
-CFLAGS ?= -O2 -m68000 -fomit-frame-pointer -fno-strict-aliasing -ffast-math -std=gnu89
+CFLAGS ?= -O3 -m68000 -fomit-frame-pointer -fno-strict-aliasing -ffast-math -std=gnu89
 CFLAGS += $(DEFINES) $(INCLUDES)
 
 LDFLAGS ?= -m68000
