@@ -73,7 +73,7 @@ ATARI_WALL_ANIM_DIVISOR ?= 2 # Wall animation divisor
 # Compiler and linker settings
 
 ATARI_CC ?= m68k-atari-mint-gcc
-ATARI_CFLAGS ?= -O2 -fomit-frame-pointer -s -std=gnu99 -m68000 \
+ATARI_CFLAGS ?= -O3 -fomit-frame-pointer -s -std=gnu99 -m68000 \
 	-fno-strict-aliasing -DPLATFORM_TIMER_HZ=200 \
 		-DSHAREWARE=$(ATARI_SHAREWARE) \
 	-DSUPERROTT=$(ATARI_SUPERROTT) -DSITELICENSE=$(ATARI_SITELICENSE) \
