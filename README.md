@@ -25,7 +25,7 @@ Enjoy!
 
 ## Rise of the Triad (SDL)
 
-<img width="640" height="400" alt="image" src="https://github.com/user-attachments/assets/1558c670-be05-427a-b1ce-1ee767a4870e" /> <img width="640" height="400" alt="image" src="https://github.com/user-attachments/assets/17067577-e151-4d6d-a9c6-69a1ef9d9837" />
+<img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/1558c670-be05-427a-b1ce-1ee767a4870e" /> <img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/17067577-e151-4d6d-a9c6-69a1ef9d9837" />
 
 This port uses the Simple DirectMedia Layer (SDL) framework, patched to support Atari ST low-res, to bring ROTT to the Atari ST, TT & Falcon with a minimal number of tweaks and performance optimisations to retain as much of the game's original look and feel as possible, including intro videos and menu animations. TT screenshots shown.
 
@@ -38,6 +38,8 @@ This port uses the Simple DirectMedia Layer (SDL) framework, patched to support 
 | Falcon   | 256            | ✅    | ✅  | 10-12       |
 
 FPS based on running ROTT with automatic detail selection enabled. Music and sound are still WIP, so I recommend switching both off in `SOUND.ROT` for now.
+
+Screenshots from Atari TT & Falcon.
 
 ## Installation
 
