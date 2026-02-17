@@ -25,7 +25,7 @@ Enjoy!
 
 ## Rise of the Triad (C2P)
 
-<img width="638" height="397" alt="image" src="https://github.com/user-attachments/assets/f1d21051-bd68-41bb-a2a0-a9e23586cc83" /> <img width="638" height="397" alt="image" src="https://github.com/user-attachments/assets/49880232-74c0-4317-93aa-d295792db07f" />
+<img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/f1d21051-bd68-41bb-a2a0-a9e23586cc83" /> <img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/49880232-74c0-4317-93aa-d295792db07f" />
 
 This port talks directly to the ST's hardware alongside C2P rendering and aggressive code optimisations with the goal of making ROTT as playable as possible on a regular Atari ST, STE or Mega STE (automatically switched to 16Mhz mode).
 
