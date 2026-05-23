@@ -11,7 +11,7 @@ This repository contains 2 versions of ROTT:
 | Branch | Description                                                                                     | Target                        |
 | ------ | ----------------------------------------------------------------------------------------------- | ----------------------------- |
 | `sdl`  | SDL based port aiming to be as close to original ROTT as possible on all ST-compatible hardware | ST, STE, Mega STE, TT, Falcon |
-| `c2p`  | Aggressively optimised direct-to-hardware port with C2P rendering for best performance on ST    | ST, STE, Mega STE             |
+| `atarist`  | Aggressively optimised native Atari ST port    | ST, STE, Mega STE             |
 
 All builds:
 
@@ -23,7 +23,7 @@ Stable builds are avilable on the [releases page](https://github.com/neilrackett
 
 Enjoy!
 
-## Rise of the Triad (C2P)
+## Rise of the Triad (Atari ST)
 
 <img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/f1d21051-bd68-41bb-a2a0-a9e23586cc83" /> <img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/49880232-74c0-4317-93aa-d295792db07f" />
 
