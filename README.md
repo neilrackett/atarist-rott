@@ -11,7 +11,7 @@ This repository contains 2 versions of ROTT:
 | Branch | Description                                                                                     | Target                        |
 | ------ | ----------------------------------------------------------------------------------------------- | ----------------------------- |
 | `sdl`  | SDL based port aiming to be as close to original ROTT as possible on all ST-compatible hardware | ST, STE, Mega STE, TT, Falcon |
-| `c2p`  | Aggressively optimised direct-to-hardware port with C2P rendering for best performance on ST    | ST, STE, Mega STE             |
+| `atarist`  | Aggressively optimised native Atari ST port    | ST, STE, Mega STE             |
 
 All builds:
 
