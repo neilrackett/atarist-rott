@@ -4,8 +4,8 @@
 
 SRCDIR ?= rott
 DATADIR ?= tmp/ROTT
-BUILDDIR ?= build/c2p
-OBJDIR ?= obj/c2p
+BUILDDIR ?= build/atarist
+OBJDIR ?= obj/atarist
 
 # Debugging
 
@@ -145,7 +145,7 @@ ATARI_AUDIOLIB_SOURCES := \
 	$(SRCDIR)/audiolib/usrhooks.c
 ATARI_SOURCES := $(filter-out $(SRCDIR)/amiga_%.c $(SRCDIR)/dosutil.c $(SRCDIR)/dukemusc.c $(SRCDIR)/fx_man.c $(SRCDIR)/lookups.c $(SRCDIR)/vocdecode.c,$(wildcard $(SRCDIR)/*.c)) $(ATARI_AUDIOLIB_SOURCES)
 ATARI_OBJECTS := $(addprefix $(OBJDIR)/,$(ATARI_SOURCES:.c=.o))
-ATARI_OUTPUT ?= $(BUILDDIR)/ROTT_C2P.TOS
+ATARI_OUTPUT ?= $(BUILDDIR)/ROTT_ST.TOS
 ATARI_RUNTIME_DATA_FILES := \
 	$(DATADIR)/HUNTBGIN.WAD \
 	$(DATADIR)/HUNTBGIN.RTL \

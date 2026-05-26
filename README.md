@@ -8,10 +8,10 @@ What better way to celebrate the 30th-ish anniversary of ROTT than to port it to
 
 This repository contains 2 versions of ROTT:
 
-| Branch | Description                                                                                     | Target                        |
-| ------ | ----------------------------------------------------------------------------------------------- | ----------------------------- |
-| `sdl`  | SDL based port aiming to be as close to original ROTT as possible on all ST-compatible hardware | ST, STE, Mega STE, TT, Falcon |
-| `atarist`  | Aggressively optimised native Atari ST port    | ST, STE, Mega STE             |
+| Branch    | Description                                                                                     | Target                        |
+| --------- | ----------------------------------------------------------------------------------------------- | ----------------------------- |
+| `sdl`     | SDL based port aiming to be as close to original ROTT as possible on all ST-compatible hardware | ST, STE, Mega STE, TT, Falcon |
+| `atarist` | Aggressively optimised native Atari ST port                                                     | ST, STE, Mega STE             |
 
 All builds:
 
@@ -56,8 +56,8 @@ FPS based on running ROTT with automatic detail selection enabled.
 
 - Install the shareware version of ROTT for DOS using DOSbox, or [download the files from Internet.org](https://archive.org/details/rott_shareware)
 - Copy the installation folder to your Atari's hard disk
-- Copy `ROTT_C2P.TOS` to the the same folder
-- Run `ROTT_C2P.TOS`
+- Copy `ROTT_ST.TOS` to the the same folder
+- Run `ROTT_ST.TOS`
 - Enjoy!
 
 ## Build
@@ -75,7 +75,7 @@ stcmd make ATARI_NOIR=1
 stcmd make ATARI_NOIR=1 ATARI_NOIR_DITHERING=1
 ```
 
-The build process outputs `build/sdl/ROTT_C2P.TOS`, which is optimised for Atari ST computers, but will run on any Atari ST compatible hardware.
+The build process outputs `build/atarist/ROTT_ST.TOS`, which is optimised for Atari ST computers, but will run on any Atari ST compatible hardware.
 
 You can compile the commercial versions of ROTT using:
 
