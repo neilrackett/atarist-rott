@@ -41,9 +41,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef ATARI_DEBUG
 #define ATARI_DEBUG 0
 #endif
-#ifndef ATARI_ENABLE_BLITTER
-#define ATARI_ENABLE_BLITTER 0
-#endif
 #if ATARI_DEBUG
 static void atari_dbg(const char *msg)
 {
@@ -75,10 +72,6 @@ static unsigned char screenpixels[320 * 200];
 static int atari_prev_rez = -1;
 static unsigned char atari_overlay_text_color = 255;
 static unsigned char atari_overlay_bg_color = 0;
-#if ATARI_ENABLE_BLITTER
-static short atari_prev_blitmode = -1;
-static int atari_blitmode_saved = 0;
-#endif
 
 extern int iG_X_center;
 extern int iG_Y_center;
@@ -101,86 +94,23 @@ static void atari_input_shutdown(void);
 #endif
 
 #if defined(__MINT__)
-#ifndef ATARI_TARGET_FPS
-#define ATARI_TARGET_FPS 0
-#endif
 #ifndef ATARI_SHOW_FPS
 #define ATARI_SHOW_FPS 0
 #endif
 
-static int atari_frame_interval = 0;
-static int atari_frame_accum = 0;
-static int atari_frame_last_tic = -1;
 static int atari_render_granted = 0;
-static int atari_force_render = 0;
-
-static int atari_compute_frame(void)
-{
-#if (ATARI_TARGET_FPS <= 0) || (ATARI_TARGET_FPS >= VBLCOUNTER)
-   return 1;
-#else
-   int now = GetTicCount();
-   int delta;
-
-   if (atari_frame_interval == 0)
-   {
-      atari_frame_interval = (VBLCOUNTER << 16) / ATARI_TARGET_FPS;
-      if (atari_frame_interval <= 0)
-         atari_frame_interval = 1 << 16;
-   }
-
-   if (atari_frame_last_tic < 0)
-   {
-      atari_frame_last_tic = now;
-      atari_frame_accum = atari_frame_interval;
-      return 1;
-   }
-
-   delta = now - atari_frame_last_tic;
-   if (delta < 0)
-   {
-      atari_frame_last_tic = now;
-      atari_frame_accum = atari_frame_interval;
-      return 1;
-   }
-
-   atari_frame_last_tic = now;
-   atari_frame_accum += (delta << 16);
-
-   if (atari_frame_accum > atari_frame_interval * 4)
-      atari_frame_accum = atari_frame_interval * 4;
-
-   if (atari_frame_accum >= atari_frame_interval)
-   {
-      atari_frame_accum -= atari_frame_interval;
-      return 1;
-   }
-
-   return 0;
-#endif
-}
 
 int ATARI_BeginRenderFrame(void)
 {
    if (atari_render_granted)
       return 1;
-   if (atari_force_render)
-   {
-      atari_force_render = 0;
-      atari_render_granted = 1;
-      return 1;
-   }
-   if (atari_compute_frame())
-   {
-      atari_render_granted = 1;
-      return 1;
-   }
-   return 0;
+   atari_render_granted = 1;
+   return 1;
 }
 
 int ATARI_RenderAllowed(void)
 {
-   return ATARI_BeginRenderFrame();
+   return 1;
 }
 
 void ATARI_EndRenderFrame(void)
@@ -190,7 +120,6 @@ void ATARI_EndRenderFrame(void)
 
 void ATARI_ForceRender(void)
 {
-   atari_force_render = 1;
 }
 #else
 int ATARI_BeginRenderFrame(void) { return 1; }
@@ -200,8 +129,6 @@ void ATARI_ForceRender(void) {}
 #endif
 
 static void atari_super_set_vector(void **slot, void *handler);
-static void atari_set_blitter_mode(void);
-static void atari_restore_blitter_mode(void);
 
 static void atari_set_fast_mode(void)
 {
@@ -214,31 +141,6 @@ static void atari_super_set_vector(void **slot, void *handler)
    long old = Super(0);
    *slot = handler;
    Super(old);
-}
-
-static void atari_set_blitter_mode(void)
-{
-#if ATARI_ENABLE_BLITTER
-   short mode = Blitmode(-1);
-   if (mode >= 0)
-   {
-      atari_prev_blitmode = mode;
-      atari_blitmode_saved = 1;
-      Blitmode(1);
-   }
-#endif
-}
-
-static void atari_restore_blitter_mode(void)
-{
-#if ATARI_ENABLE_BLITTER
-   if (atari_blitmode_saved)
-   {
-      Blitmode(atari_prev_blitmode);
-      atari_blitmode_saved = 0;
-      atari_prev_blitmode = -1;
-   }
-#endif
 }
 
 static void atari_draw_char(int x, int y, char ch, unsigned char color)
@@ -425,7 +327,6 @@ void GraphicsMode(void)
    atari_dbg("ATARI: GraphicsMode Setscreen\r\n");
    if (atari_prev_rez != 0)
       Setscreen((void *)-1, (void *)-1, 0);
-   atari_set_blitter_mode();
    TurnOffTextCursor();
 
    atari_dbg("ATARI: GraphicsMode memset\r\n");
@@ -443,7 +344,6 @@ void SetTextMode(void)
 {
    atari_input_shutdown();
    atari_c2p_shutdown();
-   atari_restore_blitter_mode();
    if (atari_prev_rez >= 0 && atari_prev_rez != 0)
       Setscreen((void *)-1, (void *)-1, atari_prev_rez);
    graphicsmode = false;

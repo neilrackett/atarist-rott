@@ -23,13 +23,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_def.h"
 
 #if defined(__MINT__)
-extern unsigned int atari_dynamic_quality_level;
-extern unsigned int atari_raycast_step_runtime;
 extern unsigned int atari_actor_budget_runtime;
 extern unsigned int atari_sprite_budget_runtime;
 extern unsigned int atari_effect_budget_runtime;
 extern int atari_flat_world_runtime;
-extern int atari_lowp_runtime;
 
 extern unsigned int atari_frame_actor_updates;
 extern unsigned int atari_frame_sprite_draws;

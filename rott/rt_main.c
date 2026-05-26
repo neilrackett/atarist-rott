@@ -96,29 +96,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef ATARI_CATCHUP_POLL_INTERVAL
 #define ATARI_CATCHUP_POLL_INTERVAL 4
 #endif
-#ifndef ATARI_RENDER_DIVISOR
-#define ATARI_RENDER_DIVISOR 1
-#endif
 #ifndef ATARI_ACTOR_THROTTLE_DIV
 #define ATARI_ACTOR_THROTTLE_DIV 1
-#endif
-#ifndef ATARI_ADAPTIVE_RENDER
-#define ATARI_ADAPTIVE_RENDER 0
-#endif
-#ifndef ATARI_ADAPTIVE_RENDER_MAX_DIV
-#define ATARI_ADAPTIVE_RENDER_MAX_DIV ATARI_RENDER_DIVISOR
-#endif
-#ifndef ATARI_ADAPTIVE_RENDER_UP_TICS
-#define ATARI_ADAPTIVE_RENDER_UP_TICS 2
-#endif
-#ifndef ATARI_ADAPTIVE_RENDER_DOWN_FRAMES
-#define ATARI_ADAPTIVE_RENDER_DOWN_FRAMES 10
-#endif
-#ifndef ATARI_ADAPTIVE_ACTOR_THROTTLE
-#define ATARI_ADAPTIVE_ACTOR_THROTTLE 0
-#endif
-#ifndef ATARI_ACTOR_THROTTLE_MAX_DIV
-#define ATARI_ACTOR_THROTTLE_MAX_DIV ATARI_ACTOR_THROTTLE_DIV
 #endif
 #ifndef ATARI_WALL_ANIM_DIVISOR
 #define ATARI_WALL_ANIM_DIVISOR 1
@@ -2175,19 +2154,8 @@ void UpdateGameObjects ( void )
 			   ((gamestate.TimeCount == Clocks[j].time1) ||
 			   (gamestate.TimeCount == Clocks[j].time2)))
 				TRIGGER[Clocks[j].linkindex]=1;
-#if defined(__MINT__) && ((ATARI_ACTOR_THROTTLE_DIV > 1) || (ATARI_ADAPTIVE_ACTOR_THROTTLE > 0))
-      unsigned int actor_div = (unsigned int)((ATARI_ACTOR_THROTTLE_DIV > 1) ? ATARI_ACTOR_THROTTLE_DIV : 1);
-#if (ATARI_ADAPTIVE_ACTOR_THROTTLE > 0)
-      {
-      unsigned int actor_max_div = (unsigned int)((ATARI_ACTOR_THROTTLE_MAX_DIV > 1) ? ATARI_ACTOR_THROTTLE_MAX_DIV : actor_div);
-      if (actor_max_div < actor_div)
-         actor_max_div = actor_div;
-      if (tics >= 3 && actor_div < actor_max_div)
-         actor_div++;
-      if (tics >= 4 && actor_div < actor_max_div)
-         actor_div++;
-      }
-#endif
+#if defined(__MINT__) && (ATARI_ACTOR_THROTTLE_DIV > 1)
+      const unsigned int actor_div = (unsigned int)ATARI_ACTOR_THROTTLE_DIV;
       const unsigned int actor_time_phase = (unsigned int)gamestate.TimeCount % actor_div;
 #endif
 #if defined(__MINT__)
@@ -2209,7 +2177,7 @@ void UpdateGameObjects ( void )
              continue;
           }
 #endif
-#if defined(__MINT__) && ((ATARI_ACTOR_THROTTLE_DIV > 1) || (ATARI_ADAPTIVE_ACTOR_THROTTLE > 0))
+#if defined(__MINT__) && (ATARI_ACTOR_THROTTLE_DIV > 1)
           if ((actor_div > 1) &&
               (ob->obclass != playerobj) &&
               ((ob->flags & FL_KEYACTOR) == 0) &&
@@ -2379,13 +2347,8 @@ void PlayLoop
 
    {
    volatile int atime;
-#if defined(__MINT__)
-   unsigned int atari_render_div_tick = 0;
-   unsigned int atari_render_runtime_div = (unsigned int)((ATARI_RENDER_DIVISOR > 1) ? ATARI_RENDER_DIVISOR : 1);
-   unsigned int atari_render_stable_frames = 0;
-#if (ATARI_WALL_ANIM_DIVISOR > 1)
+#if defined(__MINT__) && (ATARI_WALL_ANIM_DIVISOR > 1)
    unsigned int atari_wall_anim_tick = 0;
-#endif
 #endif
 
    boolean canquit = true;
@@ -2455,21 +2418,9 @@ fromloadedgame:
 
 	while( playstate == ex_stillplaying )
       {
-      int atari_should_render = 1;
 #if defined(__MINT__)
       IN_PumpEvents();
-#endif
-#if defined(__MINT__)
-      atari_should_render = ATARI_BeginRenderFrame();
-      if (atari_should_render)
-      {
-         atari_render_div_tick++;
-         if (atari_render_runtime_div > 1 && ((atari_render_div_tick % atari_render_runtime_div) != 0))
-         {
-            atari_should_render = 0;
-            ATARI_EndRenderFrame();
-         }
-      }
+      ATARI_BeginRenderFrame();
 #endif
       UpdateClientControls();
 #if defined(__MINT__)
@@ -2483,15 +2434,9 @@ fromloadedgame:
          atime = GetFastTics();
 
          if ( RefreshPause )
-            {
-            if (atari_should_render)
-               ThreeDRefresh();
-            }
+            ThreeDRefresh();
          else
-            {
-            if (atari_should_render)
-               UpdateScreenSaver();
-            }
+            UpdateScreenSaver();
          }
 	      else
 	         {
@@ -2501,42 +2446,15 @@ fromloadedgame:
 #endif
 	         if (controlupdatestarted == 1)
 	            UpdateGameObjects();
-#if defined(__MINT__) && (ATARI_ADAPTIVE_RENDER > 0)
-         if (controlupdatestarted == 1)
-         {
-            const unsigned int base_div = (unsigned int)((ATARI_RENDER_DIVISOR > 1) ? ATARI_RENDER_DIVISOR : 1);
-            unsigned int max_div = (unsigned int)((ATARI_ADAPTIVE_RENDER_MAX_DIV > 1) ? ATARI_ADAPTIVE_RENDER_MAX_DIV : base_div);
-            if (max_div < base_div)
-               max_div = base_div;
-            if (tics >= ATARI_ADAPTIVE_RENDER_UP_TICS)
-            {
-               if (atari_render_runtime_div < max_div)
-                  atari_render_runtime_div++;
-               atari_render_stable_frames = 0;
-            }
-            else if (atari_render_runtime_div > base_div)
-            {
-               atari_render_stable_frames++;
-               if (atari_render_stable_frames >= ATARI_ADAPTIVE_RENDER_DOWN_FRAMES)
-               {
-                  atari_render_runtime_div--;
-                  atari_render_stable_frames = 0;
-               }
-            }
-         }
-#endif
+
          atime = GetFastTics();
 
-         if (atari_should_render)
-            ThreeDRefresh();
+         ThreeDRefresh();
          }
 
       SyncToServer();
 
-      if (atari_should_render)
-         drawtime = GetFastTics() - atime;
-      else
-         drawtime = 0;
+      drawtime = GetFastTics() - atime;
 
       // Don't allow player to quit if entering message
       canquit = !MSG.messageon;
@@ -2547,7 +2465,7 @@ fromloadedgame:
 
 #if defined(__MINT__) && (ATARI_WALL_ANIM_DIVISOR > 1)
       atari_wall_anim_tick++;
-      if (atari_should_render || ((atari_wall_anim_tick % ATARI_WALL_ANIM_DIVISOR) == 0))
+      if ((atari_wall_anim_tick % ATARI_WALL_ANIM_DIVISOR) == 0)
          AnimateWalls();
 #else
       AnimateWalls();
@@ -2571,8 +2489,7 @@ fromloadedgame:
 
       UpdatePlayers();
 
-      if (atari_should_render)
-         DrawTime( false );
+      DrawTime( false );
 
       UpdateClientControls();
 

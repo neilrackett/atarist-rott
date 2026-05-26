@@ -167,18 +167,6 @@ static const fixed mindist = 0x1000;
 #ifndef ATARI_MIN_SPRITE_HEIGHT
 #define ATARI_MIN_SPRITE_HEIGHT (1 << (HEIGHTFRACTION + 3))
 #endif
-#ifndef ATARI_LOWP_TEXTURE_SHIFT
-#define ATARI_LOWP_TEXTURE_SHIFT 2
-#endif
-#ifndef ATARI_LOWP_HEIGHT_SHIFT
-#define ATARI_LOWP_HEIGHT_SHIFT 1
-#endif
-#ifndef ATARI_LOWP_ANGLE_SHIFT
-#define ATARI_LOWP_ANGLE_SHIFT 1
-#endif
-#ifndef ATARI_SPRITE_FRAME_DIV
-#define ATARI_SPRITE_FRAME_DIV 1
-#endif
 #ifndef ATARI_HIDE_WEAPON
 #define ATARI_HIDE_WEAPON 0
 #endif
@@ -772,10 +760,6 @@ int       CalcHeight (void)
 		nx=mindist; // don't let divide overflo'
 
 	height = (heightnumerator/nx);
-#if defined(__MINT__)
-   if (atari_lowp_runtime && (ATARI_LOWP_HEIGHT_SHIFT > 0))
-      height &= ~((1 << ATARI_LOWP_HEIGHT_SHIFT) - 1);
-#endif
 	return height;
 }
 
@@ -2052,10 +2036,6 @@ void DrawWallPost ( wallcast_t * post, byte * buf)
 
    whereami=42;
    texture = post->texture;
-#if defined(__MINT__)
-   if (atari_lowp_runtime && (ATARI_LOWP_TEXTURE_SHIFT > 0))
-      texture &= ~((1 << ATARI_LOWP_TEXTURE_SHIFT) - 1);
-#endif
    if (post->lump)
       src=W_CacheLumpNum(post->lump,PU_CACHE, CvtNull, 1);
 	if (post->alttile!=0)
@@ -2494,10 +2474,6 @@ void WallRefresh (void)
 #endif
       viewangle=missobj->angle;
       viewangle &= (FINEANGLES-1);
-#if defined(__MINT__)
-      if (atari_lowp_runtime && (ATARI_LOWP_ANGLE_SHIFT > 0))
-         viewangle &= ~((1 << ATARI_LOWP_ANGLE_SHIFT) - 1);
-#endif
 		viewx=missobj->x-costable[viewangle];
 		viewy=missobj->y+sintable[viewangle];
       pheight = missobj->z + 32;
@@ -2525,10 +2501,6 @@ void WallRefresh (void)
          }
       else
          viewangle = player->angle & (FINEANGLES-1);
-#if defined(__MINT__)
-      if (atari_lowp_runtime && (ATARI_LOWP_ANGLE_SHIFT > 0))
-         viewangle &= ~((1 << ATARI_LOWP_ANGLE_SHIFT) - 1);
-#endif
       if ((viewangle<0) && (viewangle>=FINEANGLES))
          Error ("View angle out of range = %d\n",viewangle);
       viewx = player->x;
@@ -3186,16 +3158,7 @@ void      ThreeDRefresh (void)
 //
 // draw all the scaled images
 //
-#if defined(__MINT__) && (ATARI_SPRITE_FRAME_DIV > 1)
-    {
-    static unsigned int atari_sprite_frame_tick = 0;
-    atari_sprite_frame_tick++;
-    if ((atari_sprite_frame_tick % ATARI_SPRITE_FRAME_DIV) == 0)
-       DrawScaleds();                                      // draw scaled stuff
-    }
-#else
     DrawScaleds();                                         // draw scaled stuff
-#endif
 #if defined(__MINT__)
    ATARI_THREED_LOG("ROTT: 3D scaleds ok\r\n");
 #endif
