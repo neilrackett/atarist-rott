@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2026 Neil Rackett
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 #ifndef _INCLUDE_PRAGMA_DOOMSND_LIB_H
 #define _INCLUDE_PRAGMA_DOOMSND_LIB_H
 

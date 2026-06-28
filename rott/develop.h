@@ -1,4 +1,8 @@
 /*
+ * Copyright (C) 2026 Neil Rackett
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+/*
 Copyright (C) 1994-1995 Apogee Software, Ltd.
 
 This program is free software; you can redistribute it and/or

@@ -1,4 +1,8 @@
 /*
+ * Copyright (C) 2026 Neil Rackett
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+/*
 Atari ST low-res chunky-to-planar conversion with Bayer dithering.
 Based on STDOOM's atari_c2p.c, adapted for dynamic palette weighting.
 */

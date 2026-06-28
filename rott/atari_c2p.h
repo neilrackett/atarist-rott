@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2026 Neil Rackett
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 #ifndef ATARI_C2P_H
 #define ATARI_C2P_H
 

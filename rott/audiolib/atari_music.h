@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2026 Neil Rackett
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 #ifndef AUDIOLIB_ATARI_MUSIC_H
 #define AUDIOLIB_ATARI_MUSIC_H
 

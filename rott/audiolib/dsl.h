@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2026 Neil Rackett
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 #ifndef AUDIOLIB__DSL_H
 #define AUDIOLIB__DSL_H
 

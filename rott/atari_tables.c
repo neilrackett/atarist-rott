@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2026 Neil Rackett
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 #include "atari_tables.h"
 
 const int atari_sintable[2561] = {
