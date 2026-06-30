@@ -1360,6 +1360,16 @@ void R_DrawColumn (byte * buf)
 	int frac, fracstep;
 	byte *dest;
 
+	/*
+	 * Hoist the globals the inner loop reads every iteration into locals.
+	 * Because '*dest' is a byte store, strict aliasing otherwise forces the
+	 * compiler to reload shadingtable/dc_source/iGLOBAL_SCREENWIDTH from
+	 * memory on every pixel; locals let them stay in registers.
+	 */
+	const byte *src = dc_source;
+	const byte *shade = shadingtable;
+	const int swidth = iGLOBAL_SCREENWIDTH;
+
 	count = dc_yh - dc_yl + 1;
 	if (count < 0) return;
 
@@ -1370,8 +1380,8 @@ void R_DrawColumn (byte * buf)
 
 	while (count--) {
 		//*dest = test++;
-		*dest = shadingtable[dc_source[(frac>>SFRACBITS)]];
-		dest += iGLOBAL_SCREENWIDTH;
+		*dest = shade[src[(frac>>SFRACBITS)]];
+		dest += swidth;
 		frac += fracstep;
 	}
 }
@@ -1400,6 +1410,10 @@ void R_DrawWallColumn (byte * buf)
 	int frac, fracstep;
 	byte *dest;
 
+	const byte *src = dc_source;
+	const byte *shade = shadingtable;
+	const int swidth = iGLOBAL_SCREENWIDTH;
+
 	count = dc_yh - dc_yl;
 	if (count < 0) return;
 
@@ -1412,8 +1426,8 @@ void R_DrawWallColumn (byte * buf)
 
 	while (count--) {
 		//*dest = 6;
-		*dest = shadingtable[dc_source[(((unsigned)frac)>>26)]];
-		dest += iGLOBAL_SCREENWIDTH;
+		*dest = shade[src[(((unsigned)frac)>>26)]];
+		dest += swidth;
 		frac += fracstep;
 	}
 }
@@ -1426,6 +1440,10 @@ void R_DrawClippedColumn (byte * buf)
 	byte *dest;
 //		byte *b;int y;
 
+	const byte *src = dc_source;
+	const byte *shade = shadingtable;
+	const int swidth = iGLOBAL_SCREENWIDTH;
+
 	count = dc_yh - dc_yl + 1;
 	if (count < 0) return;
 
@@ -1436,8 +1454,8 @@ void R_DrawClippedColumn (byte * buf)
 	frac = dc_texturemid + (dc_yl-centeryclipped)*fracstep;
 
 	while (count--) {
-		*dest = shadingtable[dc_source[(((unsigned)frac)>>SFRACBITS)]];
-		dest += iGLOBAL_SCREENWIDTH;
+		*dest = shade[src[(((unsigned)frac)>>SFRACBITS)]];
+		dest += swidth;
 		frac += fracstep;
 	}
 }

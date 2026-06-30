@@ -12,29 +12,23 @@
   Uses the '__int64' type (see rt_def.h).
  */
 
+/*
+ * On __MINT__ builds the body is the inlined atari_fixed_mul16() from
+ * watcom.h, which uses hardware mulu.w instead of software __mulsi3. Other
+ * targets keep the 64-bit version.
+ */
 #if defined(__MINT__)
-static __inline fixed atari_fixed_mul16(fixed a, fixed b)
-{
-	int ah = a >> 16;
-	int bh = b >> 16;
-	unsigned int al = (unsigned short)a;
-	unsigned int bl = (unsigned short)b;
-	unsigned int lo = (al * bl) + 0x8000u;
-	int mid = (ah * (int)bl) + (bh * (int)al);
-	int hi = ah * bh;
-	return (fixed)((hi << 16) + mid + (int)(lo >> 16));
-}
-#endif
-
 fixed FixedMul(fixed a, fixed b)
 {
-#if defined(__MINT__)
 	return atari_fixed_mul16(a, b);
+}
 #else
+fixed FixedMul(fixed a, fixed b)
+{
 	__int64 scratch1 = (__int64) a * (__int64) b + (__int64) 0x8000;
 	return (scratch1 >> 16) & 0xffffffff;
-#endif
 }
+#endif
 
 fixed FixedMulShift(fixed a, fixed b, fixed shift)
 {

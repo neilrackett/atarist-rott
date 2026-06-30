@@ -24,7 +24,54 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef _watcom_h_public
 #define _watcom_h_public
 
-#if defined(C_FIXED_MATH) || defined(__MINT__)
+#if defined(__MINT__)
+/*
+ * 16.16 fixed-point multiply for the 68000 (which has hardware mulu.w/muls.w
+ * but no 32x32 muls.l). Defined inline so the ~228 call sites avoid the
+ * JSR/RTS + argument marshalling of an out-of-line helper.
+ *
+ * Multiplies the absolute values so all four 16x16 partial products are
+ * unsigned (each compiles to a single hardware mulu.w instead of a software
+ * __mulsi3 call), then reapplies the sign once at the end. Rounding is
+ * round-half-away-from-zero, which differs from the original signed
+ * round-half-toward-+inf by at most 1/65536 on negative results -- below the
+ * precision the renderer and movement code care about.
+ */
+static __inline fixed atari_fixed_mul16(fixed a, fixed b)
+{
+	int neg = 0;
+	unsigned int ua, ub;
+	unsigned short al, ah, bl, bh;
+	unsigned int lo, mid, hi, res;
+
+	if (a < 0) { ua = (unsigned int)(-a); neg = 1; }  else ua = (unsigned int)a;
+	if (b < 0) { ub = (unsigned int)(-b); neg ^= 1; } else ub = (unsigned int)b;
+
+	al = (unsigned short)ua;
+	ah = (unsigned short)(ua >> 16);
+	bl = (unsigned short)ub;
+	bh = (unsigned short)(ub >> 16);
+
+	lo  = (unsigned int)al * (unsigned int)bl + 0x8000u;
+	mid = (unsigned int)al * (unsigned int)bh + (unsigned int)ah * (unsigned int)bl;
+	hi  = (unsigned int)ah * (unsigned int)bh;
+
+	res = (hi << 16) + mid + (lo >> 16);
+
+	return neg ? -(fixed)res : (fixed)res;
+}
+
+/*
+ * FixedMul stays an out-of-line function (its body is just the inlined
+ * atari_fixed_mul16 above, so it gets the hardware-mulu.w win without the
+ * nested __mulsi3 calls). It is intentionally NOT declared inline here: this
+ * toolchain's GNU89 __inline semantics don't emit an out-of-line copy for the
+ * calls it declines to inline, which breaks linking, and m_fixed.h declares
+ * FixedMul as a real function symbol.
+ */
+fixed FixedMul(fixed a, fixed b);
+fixed FixedDiv2(fixed a, fixed b);
+#elif defined(C_FIXED_MATH)
 fixed FixedMul(fixed a, fixed b);
 fixed FixedDiv2(fixed a, fixed b);
 #else
