@@ -7,6 +7,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <mint/osbind.h>
+#include <mint/ostruct.h>
 
 int __argc = 0;
 char **__argv = 0;
@@ -113,12 +115,17 @@ long filelength(int handle) {
     return end;
 }
 
+/* These used to call themselves (a tail call: an endless loop), which hung
+ * ROTT in the first STUB_FUNCTION or access() it met. */
 int access(const char *path, int mode) {
-    return access(path, mode);
+    long attr = Fattrib(path, 0, 0);
+    if (attr < 0) return -1;
+    if ((mode & W_OK) && (attr & FA_RDONLY)) return -1;
+    return 0;
 }
 
 int getpid(void) {
-    return (int)getpid();
+    return 1;
 }
 
 int setup_homedir(void) {

@@ -798,6 +798,9 @@ int Z_AvailHeap ( void )
 #elif defined(__MINT__)
    {
       long avail = Mxalloc(-1, 0);
+      // TOS 1.0x has no Mxalloc (EINVFN): ask the old way, ST RAM anyway.
+      if (avail < 0)
+         avail = (long)Malloc(-1);
       if (avail < 0)
          avail = 0;
       return (int)avail;
