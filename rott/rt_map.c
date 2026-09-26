@@ -1,4 +1,8 @@
 /*
+ * Copyright (C) 2026 Neil Rackett
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+/*
 Copyright (C) 1994-1995 Apogee Software, Ltd.
 
 This program is free software; you can redistribute it and/or
@@ -51,6 +55,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "engine.h"
 #include "develop.h"
 #include "rt_spbal.h"
+#include "atari_md.h"
 #include "rt_menu.h"
 #include "rt_net.h"
 #include "rt_str.h"
@@ -912,6 +917,10 @@ void DoMap (int cx, int cy)
    int quitkey;
    ControlInfo control;
 
+#if defined(__MINT__) && ATARI_MD_RENDER
+   // MD/ROTT: the walls the Multi-device saw belong on the map too.
+   ATARI_MD_SyncMapSeen();
+#endif
 EnableScreenStretch();//bna++
 
    ShutdownClientControls();

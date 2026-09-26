@@ -1,0 +1,53 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Unix Makefiles",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_BUILD_TYPE": "MinSizeRel"
+      }
+    },
+    {
+      "name": "pico_w-debug",
+      "displayName": "Pico W Debug",
+      "description": "RP2040 Pico W, MinSizeRel optimisation, _DEBUG=1 (DPRINTF + setvbuf active, newlib printf chain linked).",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/../build-pico_w-debug",
+      "environment": {
+        "PICO_BOARD": "pico_w",
+        "DEBUG_MODE": "1"
+      }
+    },
+    {
+      "name": "pico_w-release",
+      "displayName": "Pico W Release",
+      "description": "RP2040 Pico W, MinSizeRel optimisation, _DEBUG=0 (DPRINTF compiled out, newlib printf chain dropped).",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/../build-pico_w-release",
+      "environment": {
+        "PICO_BOARD": "pico_w",
+        "DEBUG_MODE": "0"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "pico_w-debug",
+      "configurePreset": "pico_w-debug",
+      "jobs": 4
+    },
+    {
+      "name": "pico_w-release",
+      "configurePreset": "pico_w-release",
+      "jobs": 4
+    }
+  ]
+}

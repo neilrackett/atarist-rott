@@ -10,7 +10,7 @@ Build + Artifacts
 
 - Primary build command: `stcmd make`
 - Parallel build: `stcmd make -j4`
-- Output executable: `build/ROTT.TOS`
+- Output executable: `build/atarist/ROTT_ST.TOS`
 - Object files: `obj/...`
 
 Current Makefile Defaults
@@ -72,6 +72,21 @@ Common Pitfalls
 - Re-enabling heavy cinematic/effect paths causes major regressions quickly.
 - Startup prints from old debugging can affect perceived stability/usability.
 - Confusing `ATARI_SHOW_FPS` with old `ATARI_ENABLE_FPS` naming.
+
+ROTT Accelerator (MD/ROTT in the source; SidecarTridge Multi-device renderer)
+
+- `ATARI_MD_RENDER=1` (default): `ROTT_ST.TOS` looks for the MD/ROTT
+  firmware at startup and, if found, the Multi-device renders the 3D view;
+  otherwise the C2P renderer runs as before. See `sidecart/README.md`.
+- ST side: `rott/atari_md.c` (+ `sidecart_md.c`, `sidecart_stubs.S`,
+  `atari_md_s.S`); hooks are guarded by `ATARI_MD_RENDER` / `ATARI_MD_Active()`.
+- Any tilemap write needs `MD_TILE_TOUCH(x, y)` so the MD's world mirror follows.
+- Wire protocol: `sidecart/include/rott_md_protocol.h` (both sides; never hard-code offsets).
+- Firmware: `make -C sidecart build` (needs `PICO_TOOLCHAIN_PATH`); tests:
+  `make -C sidecart tests` (PINGTEST/UPTEST), `make -C sidecart emu`,
+  `make -C sidecart hatari`, `sidecart/tests/emu/run-hatari.sh`.
+- Test builds: `ATARI_MD_AUTOTEST=8` starts a game, turns a fixed step per
+  frame and saves `SHOTnnn.PI1` + `MDDEBUG.TXT`, so MD and ST runs compare.
 
 Change Discipline
 

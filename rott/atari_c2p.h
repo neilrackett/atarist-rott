@@ -12,5 +12,8 @@ void atari_c2p_set_fast_mode(int enable);
 void atari_c2p_screen(unsigned char *out, const unsigned char *in, int zoom, int center_x, int center_y,
                       int view_x, int view_y, int view_w, int view_h,
                       int protect_top, int protect_bottom);
+/* Convert only what changed outside a view rect another renderer fills. */
+void atari_c2p_hud(unsigned char *out, const unsigned char *in,
+                   int view_x, int view_y, int view_w, int view_h);
 
 #endif

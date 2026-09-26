@@ -1,4 +1,8 @@
 /*
+ * Copyright (C) 2026 Neil Rackett
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+/*
 Copyright (C) 1994-1995 Apogee Software, Ltd.
 
 This program is free software; you can redistribute it and/or
@@ -82,6 +86,9 @@ static byte * skydata[MAXSKYDATA];
 static int      horizonheight;
 static int      centerskypost;
 static int      oldsky=-1;
+#if defined(__MINT__) && ATARI_MD_RENDER
+static int      md_skytop, md_skybottom, md_floornum, md_ceilingnum;
+#endif
 
 
 //bna fixit skyerror by 800x600 clouds not big enough
@@ -443,12 +450,19 @@ void SetPlaneViewSize (void)
 
    floor = W_CacheLumpNum(floornum,PU_LEVELSTRUCT, Cvt_patch_t, 1);
    floor +=8;
+#if defined(__MINT__) && ATARI_MD_RENDER
+   md_floornum = floornum;
+   md_ceilingnum = 0;
+#endif
 
    if (sky==0)  // Don't cache in if not used
       {
       ceilingnum = GetFloorCeilingLump ( ceilingnum );
       ceiling = W_CacheLumpNum(ceilingnum,PU_LEVELSTRUCT, Cvt_patch_t, 1);
       ceiling +=8;
+#if defined(__MINT__) && ATARI_MD_RENDER
+      md_ceilingnum = ceilingnum;
+#endif
       } else {
       	ceiling = NULL;
       }
@@ -482,6 +496,10 @@ void SetPlaneViewSize (void)
          skybottom=s+12;
          break;
       }
+#if defined(__MINT__) && ATARI_MD_RENDER
+      md_skytop = (sky != 0) ? skytop : 0;
+      md_skybottom = (sky != 0) ? skybottom : 0;
+#endif
       if (sky!=0)
          {
          skydata[0]=W_CacheLumpNum(skytop,PU_STATIC, CvtNull, 1);
@@ -503,6 +521,21 @@ void SetPlaneViewSize (void)
             } /* endfor */
          }
 }
+
+#if defined(__MINT__) && ATARI_MD_RENDER
+/* MD/ROTT: what SetPlaneViewSize chose, for the level snapshot. Returns
+ * non-zero when the level has a sky. */
+int ATARI_MD_SkyInfo(int *top, int *bottom, int *center, int *floorlump,
+                     int *ceilinglump)
+{
+   *top = md_skytop;
+   *bottom = md_skybottom;
+   *center = centerskypost;
+   *floorlump = md_floornum;
+   *ceilinglump = md_ceilingnum;
+   return sky != 0;
+}
+#endif
 
 /*
 ==========================

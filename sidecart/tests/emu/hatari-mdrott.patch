@@ -1,0 +1,138 @@
+MD/ROTT cartridge for Hatari: routes $FA0000-$FBFFFF to libmdemu.
+The CMake side (link libmdemu, define MDROTT_EMU for src/cpu) is added
+by build-hatari.sh, which is less fragile across Hatari versions.
+
+diff -u a/src/cpu/memory.c b/src/cpu/memory.c
+--- a/src/cpu/memory.c
++++ b/src/cpu/memory.c
+@@ -29,6 +29,10 @@
+ #include "video.h"
+ 
+ #include "newcpu.h"
++#ifdef MDROTT_EMU
++#include "cycles.h"
++#include "mdemu.h"
++#endif
+ 
+ 
+ /* Set illegal_mem to 1 for debug output: */
+@@ -1189,7 +1193,91 @@
+     TTmem_xlate, TTmem_check, NULL, "tt_mem" , "TT memory",
+     TTmem_lget, TTmem_wget, ABFLAG_RAM | ABFLAG_DIRECTACCESS	/* NP TODO : use ABFLAG_RAM_TT for non DMA RAM */
+ };
++
++#ifdef MDROTT_EMU
++/* MD/ROTT: the SidecarTridge Multi-device running the MD/ROTT firmware,
++ * emulated by libmdemu (atarist-rott/sidecart/tests/emu). ROM4 reads come
++ * from the firmware's 64 KB window, ROM3 reads feed its command decoder. */
++static void mdrott_clock(void)
++{
++	mdemu_set_time_us((uint32_t)(CyclesGlobalClockCounter / 8));
++}
++
++/* The first 1 KB (the Multi-device's cartridge header) stays Hatari's own
++ * cartridge code, which its GEMDOS drive emulation needs; the MD/ROTT
++ * protocol does not use that area. */
++#define MDROTT_HATARI_CART_END 0xfa0400
++
++static uae_u32 REGPARAM3 mdrott_wget(uaecptr addr)
++{
++	addr &= 0xffffff;
++	if (addr < MDROTT_HATARI_CART_END)
++		return ROMmem_wget(addr);
++	if (addr < 0xfb0000)
++		return mdemu_rom4_word(addr - 0xfa0000);
++	mdrott_clock();
++	mdemu_rom3_read(addr & 0xffff);
++	return 0;
++}
+ 
++static uae_u32 REGPARAM3 mdrott_lget(uaecptr addr)
++{
++	return (mdrott_wget(addr) << 16) | mdrott_wget(addr + 2);
++}
++
++static uae_u32 REGPARAM3 mdrott_bget(uaecptr addr)
++{
++	addr &= 0xffffff;
++	if (addr < MDROTT_HATARI_CART_END)
++		return ROMmem_bget(addr);
++	if (addr < 0xfb0000)
++	{
++		uae_u32 w = mdemu_rom4_word((addr & ~1) - 0xfa0000);
++		return (addr & 1) ? (w & 0xff) : (w >> 8);
++	}
++	mdrott_clock();
++	mdemu_rom3_read(addr & 0xffff);
++	return 0;
++}
++
++static void REGPARAM3 mdrott_lput(uaecptr addr, uae_u32 l)
++{
++	print_illegal_counted("Illegal MD/ROTT cartridge lput", addr);
++}
++
++static void REGPARAM3 mdrott_wput(uaecptr addr, uae_u32 w)
++{
++	print_illegal_counted("Illegal MD/ROTT cartridge wput", addr);
++}
++
++static void REGPARAM3 mdrott_bput(uaecptr addr, uae_u32 b)
++{
++	print_illegal_counted("Illegal MD/ROTT cartridge bput", addr);
++}
++
++/* Code only ever runs from Hatari's part (its cartridge program), and the
++ * CPU core fetches it through these. */
++static int REGPARAM3 mdrott_check(uaecptr addr, uae_u32 size)
++{
++	if (((addr & 0xffffff) + size) <= MDROTT_HATARI_CART_END)
++		return ROMmem_check(addr, size);
++	return 0;
++}
++
++static uae_u8 * REGPARAM3 mdrott_xlate(uaecptr addr)
++{
++	return ROMmem_xlate(addr);
++}
++
++static addrbank MDROTT_bank =
++{
++    mdrott_lget, mdrott_wget, mdrott_bget,
++    mdrott_lput, mdrott_wput, mdrott_bput,
++    mdrott_xlate, mdrott_check, NULL, "mdrott" , "MD/ROTT cartridge",
++    mdrott_lget, mdrott_wget, ABFLAG_ROM
++};
++#endif
++
+ static addrbank ROMmem_bank =
+ {
+     ROMmem_lget, ROMmem_wget, ROMmem_bget,
+@@ -1793,6 +1881,27 @@
+ 	ROMmem_bank.mask = ROMmem_mask;
+ 	ROMmem_bank.start = ROMmem_start;
+ 	init_bank ( &ROMmem_bank , ROMmem_size );
++#ifdef MDROTT_EMU
++	if (getenv("MDROTT_SD"))
++	{
++		static int mdrott_ready;
++		if (!mdrott_ready)
++		{
++			mdemu_init(getenv("MDROTT_SD"));
++			if (getenv("MDROTT_DUMP"))
++				mdemu_dump_frames(getenv("MDROTT_DUMP"),
++				                  getenv("MDROTT_DUMP_EVERY") ? atoi(getenv("MDROTT_DUMP_EVERY")) : 1);
++			mdrott_ready = 1;
++		}
++		/* Hatari writes its cartridge's variables (the old GEMDOS vector)
++		 * through baseaddr, so give it the real cartridge ROM. The CPU's
++		 * reads still come through the functions above. */
++		MDROTT_bank.baseaddr = ROMmemory;
++		MDROTT_bank.mask = ROMmem_mask;
++		MDROTT_bank.start = ROMmem_start;
++		map_banks_ce(&MDROTT_bank, 0xFA0000 >> 16, 0x2, 0, CE_MEMBANK_FAST16, CE_MEMBANK_NOT_CACHABLE);
++	}
++#endif
+ 
+ 	/* IO memory: */
+ 	map_banks_ce(&IOmem_bank, IOmem_start>>16, 0x1, 0, CE_MEMBANK_FAST16, CE_MEMBANK_NOT_CACHABLE);	/* [NP] tested on real STF, no bus wait for IO memory */

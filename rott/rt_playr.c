@@ -1,4 +1,8 @@
 /*
+ * Copyright (C) 2026 Neil Rackett
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+/*
 Copyright (C) 1994-1995 Apogee Software, Ltd.
 
 This program is free software; you can redistribute it and/or
@@ -67,6 +71,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define FLYINGZMOM  350000
 
 
+#include "atari_md.h"
 #if (DEVELOPMENT == 1)
 #include "rt_str.h"
 #endif
@@ -1670,7 +1675,7 @@ void Cmd_Use (objtype*ob)
 
    if (doorn == (elevatorstart + 1))
       {
-      tilemap[checkx][checky]++;              // flip switch
+      tilemap[checkx][checky]++, MD_TILE_TOUCH(checkx, checky);              // flip switch
       if (MAPSPOT(ob->tilex,ob->tiley,1) == ALTELEVATORTILE);
          // playstate = ex_secretlevel;
       else if (ob==player)
@@ -1811,7 +1816,7 @@ void Cmd_Use (objtype*ob)
          index = touchindices[checkx][checky]-1;
          if (!(tempwall->flags & FL_ON))
             {
-            tilemap[checkx][checky]++;
+            tilemap[checkx][checky]++, MD_TILE_TOUCH(checkx, checky);
             tempwall->flags |= FL_ON;
             TRIGGER[index] = 1;
             SD_PlaySoundRTP(SD_TOUCHPLATESND,ob->x,ob->y);
@@ -1820,7 +1825,7 @@ void Cmd_Use (objtype*ob)
             }
          else if (tempwall->flags & FL_REVERSIBLE)
             {
-            tilemap[checkx][checky]--;
+            tilemap[checkx][checky]--, MD_TILE_TOUCH(checkx, checky);
             tempwall->flags &= ~FL_ON;
             TRIGGER[index] = 1;
             SD_PlaySoundRTP(SD_TOUCHPLATESND,ob->x,ob->y);

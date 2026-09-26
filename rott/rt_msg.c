@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 #include "rt_def.h"
+#include "atari_md.h"
 #include "rt_view.h"
 #include "z_zone.h"
 #include "w_wad.h"
@@ -635,6 +636,22 @@ void DrawMessages(
       UpdateMessages();
       return;
    }
+#if ATARI_MD_RENDER
+   // MD/ROTT: the messages sit over the view, which the Multi-device draws.
+   if (ATARI_MD_Active())
+   {
+      const char *lines[MAXMSGS];
+      int n = 0;
+      for (i = 0; i < TotalMessages; i++)
+      {
+         if (MessageOrder[i] >= 0)
+            lines[n++] = Messages[MessageOrder[i]].text;
+      }
+      ATARI_MD_Messages(lines, n);
+      UpdateMessages();
+      return;
+   }
+#endif
    if (TotalMessages > 0)
    {
       int msg;

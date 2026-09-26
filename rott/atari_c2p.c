@@ -225,15 +225,24 @@ static int c2p_try_fullscreen_dirty_1x(unsigned char *out, const unsigned char *
 static const Color *sort_colors = NULL;
 static int sort_channel = 0;
 
+/*
+ * Ties are broken by palette index, so the order -- and so the 16 colours --
+ * does not depend on the qsort implementation. The MD/ROTT firmware runs this
+ * same median cut (sidecart/rp/src/md_video.c) and must arrive at the same
+ * palette as the ST, because both halves of the screen share it.
+ */
 static int color_cmp(const void *a, const void *b)
 {
     unsigned char ia = *(const unsigned char *)a;
     unsigned char ib = *(const unsigned char *)b;
+    int d;
     if (sort_channel == 0)
-        return (int)sort_colors[ia].r - (int)sort_colors[ib].r;
-    if (sort_channel == 1)
-        return (int)sort_colors[ia].g - (int)sort_colors[ib].g;
-    return (int)sort_colors[ia].b - (int)sort_colors[ib].b;
+        d = (int)sort_colors[ia].r - (int)sort_colors[ib].r;
+    else if (sort_channel == 1)
+        d = (int)sort_colors[ia].g - (int)sort_colors[ib].g;
+    else
+        d = (int)sort_colors[ia].b - (int)sort_colors[ib].b;
+    return d ? d : (int)ia - (int)ib;
 }
 
 static void update_box(ColorBox *box, const Color *colors, const unsigned char *idx)
@@ -741,6 +750,73 @@ void atari_c2p_set_palette(const unsigned char *colors)
         }
     }
 }
+
+#if ATARI_C2P_DIRTY_TILES
+/*
+ * MD/ROTT: convert the screen outside a view rect that something else (the
+ * Multi-device) fills, 16x8 tiles at a time, only where the chunky screen
+ * changed. Tiles wholly inside the view are skipped; ones it only clips are
+ * converted, and the caller then copies the view over them.
+ */
+static int c2p_tile_changed(const unsigned char *in, const unsigned char *old)
+{
+    int row;
+    for (row = 0; row < 8; ++row)
+    {
+        const unsigned long *a = (const unsigned long *)(in + row * 320);
+        const unsigned long *b = (const unsigned long *)(old + row * 320);
+        if (a[0] != b[0] || a[1] != b[1] || a[2] != b[2] || a[3] != b[3])
+            return 1;
+    }
+    return 0;
+}
+
+void atari_c2p_hud(unsigned char *out, const unsigned char *in,
+                   int view_x, int view_y, int view_w, int view_h)
+{
+    const int all = !prev_chunky_valid;
+    int ty;
+
+    for (ty = 0; ty < 200 / 8; ++ty)
+    {
+        const int y = ty * 8;
+        const int rows_inside = (y >= view_y && y + 8 <= view_y + view_h);
+        int tx = 0;
+        while (tx < 320 / 16)
+        {
+            int run_start;
+            int x = tx * 16;
+            if ((rows_inside && x >= view_x && x + 16 <= view_x + view_w) ||
+                (!all && !c2p_tile_changed(in + y * 320 + x, prev_chunky + y * 320 + x)))
+            {
+                tx++;
+                continue;
+            }
+            run_start = tx;
+            do
+            {
+                tx++;
+                x = tx * 16;
+            } while (tx < 320 / 16 &&
+                     !(rows_inside && x >= view_x && x + 16 <= view_x + view_w) &&
+                     (all || c2p_tile_changed(in + y * 320 + x, prev_chunky + y * 320 + x)));
+            {
+                const int x0 = run_start * 16;
+                const int width = (tx - run_start) * 16;
+                int row;
+                for (row = 0; row < 8; ++row)
+                {
+                    const int line = y + row;
+                    c2p_1x_lorez(out + 160 * line + (x0 >> 1), in + 320 * line + x0,
+                                 (unsigned short)width, c2p_table[line & 3]);
+                    memcpy(prev_chunky + 320 * line + x0, in + 320 * line + x0, (size_t)width);
+                }
+            }
+        }
+    }
+    prev_chunky_valid = 1;
+}
+#endif
 
 void atari_c2p_screen(unsigned char *out, const unsigned char *in, int zoom, int center_x, int center_y,
                       int view_x, int view_y, int view_w, int view_h,

@@ -97,6 +97,7 @@ static void PreCacheLumpByName(const char *name, int level, int type)
 #include "isr.h"
 //MED
 #include "memcheck.h"
+#include "atari_md.h"
 
 
 
@@ -440,6 +441,9 @@ void RemoveRespawnStatic(respawn_t*stat)
 
 void TurnOffLight(int tilex,int tiley)
 {
+#if defined(__MINT__) && ATARI_MD_RENDER
+  ATARI_MD_LightsChanged(tilex,tiley);
+#endif
   DoLights(tilex,tiley);
   LightsInArea[MAPSPOT(tilex,tiley,0)-AREATILE]--;
 
@@ -471,6 +475,9 @@ void DeactivateLight(long light)
 
 void TurnOnLight(int i,int j)
 {
+#if defined(__MINT__) && ATARI_MD_RENDER
+ ATARI_MD_LightsChanged(i,j);
+#endif
 
  LightsInArea[MAPSPOT(i,j,0)-AREATILE]++;
 
@@ -1693,7 +1700,7 @@ void LoadSwitches (byte * buffer, int size)
 	if (MAPSPOT(tilex,tiley,0) == 79) // On by default
       {
 	   if (!(switches[i].flags & FL_ON))
-         tilemap[tilex][tiley]--;
+         tilemap[tilex][tiley]--, MD_TILE_TOUCH(tilex, tiley);
       }
    else if (switches[i].flags & FL_W_INVERTED) // Hi masked wall
       {
@@ -1704,7 +1711,7 @@ void LoadSwitches (byte * buffer, int size)
          lastmaskobj->toptexture++;
       }
 	else if (switches[i].flags & FL_ON)
-	   tilemap[tilex][tiley]++;
+	   tilemap[tilex][tiley]++, MD_TILE_TOUCH(tilex, tiley);
 	buffer += sizeof(wall_t);
    touchindices[tilex][tiley] = lasttouch + 1;
 	lasttouch ++;

@@ -1,4 +1,8 @@
 /*
+ * Copyright (C) 2026 Neil Rackett
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+/*
 Copyright (C) 1994-1995 Apogee Software, Ltd.
 
 This program is free software; you can redistribute it and/or
@@ -58,6 +62,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "fx_man.h"
 //MED
 #include "memcheck.h"
+#include "atari_md.h"
 
 
 
@@ -2189,7 +2194,7 @@ void T_Count(objtype*ob)
       /*
       if (tswitch && (tswitch->which != ACTOR))
          {
-         tilemap[ob->temp1][ob->temp2]--;
+         tilemap[ob->temp1][ob->temp2]--, MD_TILE_TOUCH(ob->temp1, ob->temp2);
          tswitch->flags &= ~FL_ON;
          }
       */

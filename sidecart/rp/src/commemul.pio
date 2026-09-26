@@ -1,0 +1,76 @@
+; RP2040 PIO program to capture ROM3 bus accesses into a DMA ring
+; MD/ROTT: raises PIO IRQ 0 after every sample (see below)
+; Author: Diego Parrilla Santamaría
+; Date: March 2026
+;
+
+; !ROM3 signal
+.define public ROM3_GPIO 26
+
+; Inverted signal semantics
+.define public ACTIVE 0
+.define public INACTIVE 1
+
+; Inverted READ and WRITE pair of signals
+; READ is the LSB, WRITE is the MSB
+.define public READ_WRITE 0b00
+.define public NOT_READ_WRITE 0b01
+.define public READ_NOT_WRITE 0b10
+.define public NOT_READ_NOT_WRITE 0b11
+
+; Address bus width
+.define public BUS_PINS 16
+
+; Safe number of wait cycles before reading the address from the bus after
+; asserting READ
+.define public READ_ADDRESS_SAFE_WAIT_CYCLES 3
+
+.program commemul_read
+    .side_set 2 opt
+
+; Setup the initial gpio for input and side-set for output
+    nop                            side NOT_READ_NOT_WRITE
+    mov osr, null
+    out pindirs, BUS_PINS
+
+.wrap_target
+; Wait for ROM3 to be active and then strobe READ to enable the external
+; address buffer, matching the ROM4 state machine timing.
+    wait ACTIVE gpio ROM3_GPIO
+    nop                            side READ_NOT_WRITE [READ_ADDRESS_SAFE_WAIT_CYCLES]
+    nop                                             [READ_ADDRESS_SAFE_WAIT_CYCLES]
+    nop                                             [READ_ADDRESS_SAFE_WAIT_CYCLES]
+
+; Capture the full 16-bit ROM3 sample into the RX FIFO.
+    in pins BUS_PINS
+
+; Release READ once the ROM3 cycle is over, keeping WRITE inactive throughout.
+; MD/ROTT: the release also raises PIO IRQ flag 0 (was a plain nop, so the
+; timing is unchanged). By now the DMA has long since moved the sample into
+; the ring, so the CPU interrupt it triggers always finds it there -- see
+; md_proto.c, which decodes the command stream from that interrupt.
+    wait INACTIVE gpio ROM3_GPIO
+    irq nowait 0                   side NOT_READ_NOT_WRITE
+.wrap
+
+% c-sdk {
+
+static inline void commemul_read_program_init(PIO pio, uint sm, uint offset,
+                                              uint addr_pin_base,
+                                              uint addr_pin_count,
+                                              uint rw_pin_base, float div) {
+    pio_sm_config c = commemul_read_program_get_default_config(offset);
+
+    sm_config_set_in_pins(&c, addr_pin_base);
+    // Right-shift so the 16-bit sample lands in the upper halfword.
+    sm_config_set_in_shift(&c, true, true, addr_pin_count);
+    sm_config_set_out_pins(&c, addr_pin_base, addr_pin_count);
+    sm_config_set_sideset_pins(&c, rw_pin_base);
+
+    pio_sm_set_consecutive_pindirs(pio, sm, rw_pin_base, 2, true);
+    sm_config_set_clkdiv(&c, div);
+
+    pio_sm_init(pio, sm, offset, &c);
+}
+
+%}

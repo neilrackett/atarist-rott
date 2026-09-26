@@ -93,6 +93,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //MED
 #include "memcheck.h"
 #include "m_fixed.h"
+#include "atari_md.h"
 #if defined(__MINT__)
 #ifndef ATARI_MAX_CATCHUP_STEPS
 #define ATARI_MAX_CATCHUP_STEPS 2
@@ -404,6 +405,9 @@ int main (int argc, char *argv[])
       doublestep=0;
       SetupWads();
       BuildTables ();
+#if ATARI_MD_RENDER
+      ATARI_MD_Init();
+#endif
       ReadAtariSoundToggles();
       GetMenuInfo ();
 #else
@@ -999,6 +1003,10 @@ void CheckCommandLineParameters( void )
           break;
       }
    }
+#if defined(__MINT__) && defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
+   // Unattended test runs (Hatari): straight into a game, as with NOW.
+   turbo = true;
+#endif
 }
 
 void SetupWads( void )
@@ -2405,7 +2413,8 @@ fromloadedgame:
 
 #if defined(__MINT__)
    ResetMessageTime();
-   MessagesEnabled = false;
+   // MD/ROTT: messages cost the ST nothing when the Multi-device draws them.
+   MessagesEnabled = ATARI_MD_Active() ? true : false;
 #else
    ResetMessageTime();
    DeletePriorityMessage( MSG_SYSTEM );
@@ -2450,10 +2459,20 @@ fromloadedgame:
 #endif
 	         if (controlupdatestarted == 1)
 	            UpdateGameObjects();
+#if defined(__MINT__) && defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
+         // Unattended test runs: turn a fixed step per frame, so frame N
+         // shows the same view with or without the MD (ATARI_MD_AutotestShot).
+         static int autotest_frame;
+         if (player && controlupdatestarted == 1)
+            player->angle = (short)((++autotest_frame * ATARI_MD_AUTOTEST * 4) & (FINEANGLES - 1));
+#endif
 
          atime = GetFastTics();
 
          ThreeDRefresh();
+#if defined(__MINT__) && defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
+         ATARI_MD_AutotestShot(autotest_frame);
+#endif
          }
 
       SyncToServer();
@@ -3166,9 +3185,9 @@ void CheckDevelopmentKeys
               {if (IsWall(i,j))
                  {if (tilemap[i][j] ==
                       (W_GetNumForName("WALLSTOP")-W_GetNumForName("WALLSTRT")-1))
-                    tilemap[i][j] = 1;
+                    tilemap[i][j] = 1, MD_TILE_TOUCH(i, j);
                   else
-                    tilemap[i][j] ++;
+                    tilemap[i][j] ++, MD_TILE_TOUCH(i, j);
                  }
               }
           while(Keyboard[sc_W])
@@ -3185,9 +3204,9 @@ void CheckDevelopmentKeys
             for(j=0;j<128;j++)
               {if (IsWall(i,j))
                  {if (tilemap[i][j] == 1)
-                    tilemap[i][j] = 74;
+                    tilemap[i][j] = 74, MD_TILE_TOUCH(i, j);
                   else
-                    tilemap[i][j] --;
+                    tilemap[i][j] --, MD_TILE_TOUCH(i, j);
                  }
               }
           while(Keyboard[sc_Q])

@@ -75,6 +75,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_sc_a.h"
 #include "atari_perf.h"
 #include "atari_hotspots.h"
+#include "atari_md.h"
 //MED
 #include "memcheck.h"
 
@@ -1640,6 +1641,14 @@ void DrawPlayerWeapon (void)
 
      temp = weaponscale;
      delta = FixedMul((weaponbobx<<9),weaponscale);
+#if defined(__MINT__) && ATARI_MD_RENDER
+     if (ATARI_MD_Active())
+        {
+        ATARI_MD_Weapon(xdisp - weaponbobx,ydisp + weaponboby + locplayerstate->weaponheight,shapenum,1);
+        ATARI_MD_Weapon(weaponbobx - 80,ydisp + weaponboby + locplayerstate->weaponheight,altshape,0);
+        return;
+        }
+#endif
      weaponscale += delta;
      ScaleWeapon(xdisp - weaponbobx,ydisp + weaponboby + locplayerstate->weaponheight,shapenum);
      weaponscale -= delta;
@@ -1653,6 +1662,13 @@ void DrawPlayerWeapon (void)
 
      temp = weaponscale;
      delta = FixedMul((weaponbobx<<9),weaponscale);
+#if defined(__MINT__) && ATARI_MD_RENDER
+     if (ATARI_MD_Active())
+        {
+        ATARI_MD_Weapon(xdisp + weaponbobx,ydisp + weaponboby + locplayerstate->weaponheight,shapenum,-1);
+        return;
+        }
+#endif
      weaponscale -= delta;
      ScaleWeapon(xdisp + weaponbobx,ydisp + weaponboby + locplayerstate->weaponheight,shapenum);
      weaponscale = temp;
@@ -2642,6 +2658,14 @@ void WallRefresh (void)
 #if defined(__MINT__)
    ATARI_WALL_LOG("ROTT: WallRefresh Refresh\r\n");
 #endif
+#if defined(__MINT__) && ATARI_MD_RENDER
+   if (ATARI_MD_Active())
+      {
+      // MD/ROTT: the Multi-device casts and draws; the view is all it needs.
+      ATARI_MD_BeginFrame(yzangle, nonbobpheight, weaponbobx, weaponboby);
+      return;
+      }
+#endif
    Refresh ();
    UpdateClientControls();
 #if defined(__MINT__)
@@ -3119,9 +3143,12 @@ void      ThreeDRefresh (void)
 
 #if defined(__MINT__)
   bufferofs += screenofs;
-  memset(spotvis, 0, sizeof(spotvis));
-  if (atari_flat_world_runtime)
-     ATARI_DrawFlatWorldBackdrop();
+  if (!ATARI_MD_Active())
+     {
+     memset(spotvis, 0, sizeof(spotvis));
+     if (atari_flat_world_runtime)
+        ATARI_DrawFlatWorldBackdrop();
+     }
 #else
   RestoreMessageBackground();
   bufferofs += screenofs;
@@ -3144,7 +3171,7 @@ void      ThreeDRefresh (void)
 
    UpdateClientControls ();
 
-	if (fandc)
+	if (fandc && !ATARI_MD_Active())
       {
 #if defined(__MINT__)
       if (!atari_flat_world_runtime && ATARI_PerfTryUseEffectPass())
@@ -3162,7 +3189,8 @@ void      ThreeDRefresh (void)
 //
 // draw all the scaled images
 //
-    DrawScaleds();                                         // draw scaled stuff
+    if (!ATARI_MD_Active())
+       DrawScaleds();                                      // draw scaled stuff
 #if defined(__MINT__)
    ATARI_THREED_LOG("ROTT: 3D scaleds ok\r\n");
 #endif
@@ -3193,14 +3221,28 @@ void      ThreeDRefresh (void)
       ATARI_POST_LOG("ROTT: post eye\r\n");
 #endif
 		if (SCREENEYE)
+         {
+#if defined(__MINT__) && ATARI_MD_RENDER
+         if (ATARI_MD_Active())
+            ATARI_MD_Eye(SCREENEYE->targettilex,SCREENEYE->targettiley,SCREENEYE->state->condition + GIBEYE1 + shapestart);
+         else
+#endif
 		  DrawScreenSprite(SCREENEYE->targettilex,SCREENEYE->targettiley,SCREENEYE->state->condition + GIBEYE1 + shapestart);
+         }
       UpdateClientControls ();
 
 #if defined(__MINT__)
       ATARI_POST_LOG("ROTT: post gmask\r\n");
 #endif
 	   if (player->flags&FL_GASMASK)
+         {
+#if defined(__MINT__) && ATARI_MD_RENDER
+         if (ATARI_MD_Active())
+            ATARI_MD_GasMask(gmasklump);
+         else
+#endif
 		   DrawScreenSizedSprite(gmasklump);
+         }
 
 
 #if defined(__MINT__)
@@ -3236,7 +3278,14 @@ void      ThreeDRefresh (void)
 #endif
 #if defined(__MINT__)
    if ((GamePaused==true) && (!Keyboard[sc_LShift]))
+      {
+#if ATARI_MD_RENDER
+      if (ATARI_MD_Active())
+         ATARI_MD_Paused();
+      else
+#endif
       DrawPause ();
+      }
 #else
    if ( ((GamePaused==true) && (!Keyboard[sc_LShift])) ||
         (controlupdatestarted==0)

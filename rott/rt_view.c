@@ -50,6 +50,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_str.h"
 #include "watcom.h"
 #include "develop.h"
+#include "atari_md.h"
 //MED
 #include "memcheck.h"
 
@@ -334,6 +335,11 @@ void SetViewSize
    //if ((size<0) || (size>=MAXVIEWSIZES))
    //   Error("Illegal screen size = %ld\n",size);
 
+#if defined(__MINT__) && ATARI_MD_RENDER
+   // MD/ROTT: the Multi-device's frames stop at 320x168, between the bars.
+   if (ATARI_MD_Active() && size > 7)
+      size = 7;
+#endif
    viewwidth  = viewsizes[ size << 1 ];         // must be divisable by 16
    viewheight = viewsizes[ ( size << 1 ) + 1 ]; // must be even
 #if defined(__MINT__) && (ATARI_VIEW_SCALE_DIV > 1)
@@ -748,7 +754,8 @@ void UpdateLightLevel (int area)
 #ifndef ATARI_SKIP_LIGHTLEVEL
 #define ATARI_SKIP_LIGHTLEVEL 0
 #endif
-   if (ATARI_SKIP_LIGHTLEVEL)
+   // MD/ROTT: the Multi-device lights the view, so keep the levels moving.
+   if (ATARI_SKIP_LIGHTLEVEL && !ATARI_MD_Active())
       return;
 #endif
    int numlights;

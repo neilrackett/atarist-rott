@@ -17,6 +17,12 @@ ATARI_SHOW_FPS ?= 0 # Show FPS overlay
 ATARI_NOIR ?= 0 # Use grayscale palette
 ATARI_NOIR_DITHERING ?= 0 # Dither noir output
 
+# SidecarTridge Multi-device renderer (MD/ROTT, see sidecart/)
+
+ATARI_MD_RENDER ?= 1 # Use the MD/ROTT firmware when present
+ATARI_MD_PIPELINE ?= 1 # MD renders frame N while the ST runs N+1
+ATARI_MD_AUTOTEST ?= 0 # Test runs: start a game, turn N angles a tic
+
 # Rendering and performance settings
 
 ATARI_ACTOR_BUDGET ?= 0 # Max actor updates
@@ -82,10 +88,12 @@ ATARI_CFLAGS ?= -O3 -fomit-frame-pointer -s -std=gnu99 -m68000 \
 	-DATARI_HIDE_WEAPON=$(ATARI_HIDE_WEAPON) \
 	-DATARI_FLAT_WALL_LIGHT=$(ATARI_FLAT_WALL_LIGHT) \
 	-DATARI_USE_ASM_HOTSPOTS=$(ATARI_USE_ASM_HOTSPOTS) \
-	-DATARI_SKIP_LIGHTLEVEL=$(ATARI_SKIP_LIGHTLEVEL) -DATARI_SKIP_FIZZLE=$(ATARI_SKIP_FIZZLE)
+	-DATARI_SKIP_LIGHTLEVEL=$(ATARI_SKIP_LIGHTLEVEL) -DATARI_SKIP_FIZZLE=$(ATARI_SKIP_FIZZLE) \
+	-DATARI_MD_RENDER=$(ATARI_MD_RENDER) -DATARI_MD_PIPELINE=$(ATARI_MD_PIPELINE) \
+	-DATARI_MD_AUTOTEST=$(ATARI_MD_AUTOTEST)
 ATARI_LDFLAGS ?= -s -nostdlib -L/freemint/libcmini/lib /freemint/libcmini/lib/crt0.o -m68000
 ATARI_LIBS ?= -lcmini -lgcc
-ATARI_INCLUDES ?= -I$(SRCDIR) -I$(SRCDIR)/audiolib -I/freemint/libcmini/include
+ATARI_INCLUDES ?= -I$(SRCDIR) -I$(SRCDIR)/audiolib -Isidecart/include -I/freemint/libcmini/include
 ATARI_AUDIOLIB_SOURCES := \
 	$(SRCDIR)/audiolib/atari_stubs.c \
 	$(SRCDIR)/audiolib/atari_music.c \
@@ -102,7 +110,8 @@ ATARI_AUDIOLIB_SOURCES := \
 	$(SRCDIR)/audiolib/user.c \
 	$(SRCDIR)/audiolib/usrhooks.c
 ATARI_SOURCES := $(filter-out $(SRCDIR)/amiga_%.c $(SRCDIR)/dosutil.c $(SRCDIR)/dukemusc.c $(SRCDIR)/fx_man.c $(SRCDIR)/lookups.c $(SRCDIR)/vocdecode.c,$(wildcard $(SRCDIR)/*.c)) $(ATARI_AUDIOLIB_SOURCES)
-ATARI_OBJECTS := $(addprefix $(OBJDIR)/,$(ATARI_SOURCES:.c=.o))
+ATARI_ASM_SOURCES := $(SRCDIR)/sidecart_stubs.S $(SRCDIR)/atari_md_s.S
+ATARI_OBJECTS := $(addprefix $(OBJDIR)/,$(ATARI_SOURCES:.c=.o) $(ATARI_ASM_SOURCES:.S=.o))
 ATARI_OUTPUT ?= $(BUILDDIR)/ROTT_ST.TOS
 ATARI_RUNTIME_DATA_FILES := \
 	$(DATADIR)/HUNTBGIN.WAD \
@@ -209,3 +218,7 @@ $(ATARI_FLAGS_STAMP): FORCE | $(OBJDIR)
 $(OBJDIR)/%.o: %.c $(ATARI_FLAGS_STAMP)
 	mkdir -p $(dir $@)
 	$(ATARI_CC) $(ATARI_CFLAGS) $(ATARI_INCLUDES) -c $< -o $@
+
+$(OBJDIR)/%.o: %.S $(ATARI_FLAGS_STAMP)
+	mkdir -p $(dir $@)
+	$(ATARI_CC) -m68000 -c $< -o $@

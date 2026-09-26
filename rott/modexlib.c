@@ -37,6 +37,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "modexlib.h"
 #include "rt_view.h"
 #include "atari_c2p.h"
+#include "atari_md.h"
 #include "atari_megaste.h"
 #include "isr.h"
 #include "rt_playr.h"
@@ -394,6 +395,9 @@ void I_SetPalette(byte *palette)
    atari_overlay_text_color = best_idx;
    atari_overlay_bg_color = worst_idx;
    atari_c2p_set_palette((const unsigned char *)palette);
+#if ATARI_MD_RENDER
+   ATARI_MD_SetPalette((const unsigned char *)palette);
+#endif
 }
 
 void I_ShutdownGraphics(void)
@@ -420,6 +424,14 @@ void I_FinishUpdate(void)
       return;
 #if ATARI_SHOW_FPS
    atari_draw_fps_overlay();
+#endif
+#if ATARI_MD_RENDER
+   // MD/ROTT: the Multi-device's view plus the HUD around it.
+   if (ATARI_MD_FinishUpdate((unsigned char *)Physbase(), screenpixels))
+   {
+      ATARI_EndRenderFrame();
+      return;
+   }
 #endif
 #ifndef ATARI_C2P_VIEW_ZOOM
 #define ATARI_C2P_VIEW_ZOOM 1

@@ -31,6 +31,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #endif
 
 #include "rt_def.h"
+#include "atari_md.h"
 #include "rt_vid.h"
 #include "_rt_vid.h"
 #include "rt_menu.h"
@@ -1400,6 +1401,14 @@ void VL_DecompressLBM(lbm_t *lbminfo, boolean flip)
 
 void SetBorderColor(int color)
 {
+#if defined(__MINT__) && ATARI_MD_RENDER
+   // MD/ROTT: the border is inside the view, which the Multi-device draws.
+   if (ATARI_MD_Active())
+   {
+      ATARI_MD_Border(color);
+      return;
+   }
+#endif
    // bna section start
 
    byte *cnt, *Ycnt, *b;

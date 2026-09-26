@@ -1,0 +1,178 @@
+# ROTT Accelerator
+
+Microfirmware for the [SidecarTridge Multi-device](https://sidecartridge.com)
+that renders Rise of the Triad's 3D view for the Atari ST port in this
+repository (`ROTT_ST.TOS`). In the source it goes by MD/ROTT for short.
+
+The ST keeps running the game: logic, input, sound, HUD, menus. For each
+frame it sends the Multi-device what changed (doors, pushwalls, lights,
+the view, the objects in sight) over the cartridge port; the
+Multi-device's RP2040, at 400 MHz, ray-casts and draws the view with
+ROTT's own renderer (walls, floors, ceilings, sky, sprites, lighting,
+messages), dithers it to the ST's 16 colours and converts it to bitplanes
+in the cartridge ROM window, where the ST copies it to the screen.
+
+Without the Multi-device, or if anything goes wrong, `ROTT_ST.TOS` falls
+back to its own renderer, so one executable serves both.
+
+## Installation
+
+You need a SidecarTridge Multi-device with a microSD card, and the
+shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
+`REMOTE1.RTS` next to `ROTT_ST.TOS` on the ST, as usual).
+
+1. Build the firmware (`make -C sidecart build`, see below) or take the
+   `.uf2` and `.json` from `sidecart/dist/`.
+2. Copy both files into `/apps` on the Multi-device's microSD card.
+3. Copy `HUNTBGIN.WAD` into `/rott` on the same card. It must be the same
+   file the ST uses: the firmware checks its size and directory against
+   the ST's copy and refuses a different one.
+4. On the Booster screen, press ESC for the app list and select ROTT
+   Accelerator. The ST restarts and prints this during boot (with
+   `not responding` in place of `ready` if the firmware isn't up):
+
+   ```
+   ROTT Accelerator v0.1.0 ready
+   GPLv3 (c)2026 Neil Rackett
+
+   Download ROTT: neilrackett.com/atarist
+   ```
+
+5. Run `ROTT_ST.TOS` from disk as normal. At startup it prints
+   `ROTT Accelerator v0.1.0` when it will use the Multi-device, or the
+   reason it will not, e.g. `ROTT Accelerator: /rott/HUNTBGIN.WAD missing`
+   followed by `Using the ST renderer`.
+
+To go back to Booster, power on the ST while holding the SELECT button on
+the Multi-device.
+
+The first time you enter a level, the Multi-device copies that level's
+graphics from the WAD into its flash: ROTT's view shows
+`Preparing level N%` for a few seconds. Entering the same level again
+(dying, loading a game) reuses the pack. Graphics that do not fit are
+loaded from the SD card the first time they are drawn, so an object may
+appear a frame late the first time you meet it.
+
+## What to test on hardware
+
+In this order, so a problem shows up in the simplest place:
+
+1. **`PINGTEST.TOS`** (`make -C sidecart tests`, from `sidecart/tests/`):
+   detection, command round trips and a checksummed upload at several
+   sizes. Should end `PASS`. Writes `PINGTEST.TXT` next to itself.
+2. **`UPTEST.TOS`** (ST low resolution): the Multi-device draws a test
+   pattern (a frame, checks or a grey ramp, and a moving red bar) as full
+   frames, which the ST copies to the screen, at two sizes, with and
+   without pipelining. Should end `PASS` and report frames per second.
+   Writes `UPTEST.TXT`.
+3. **`ROTT_ST.TOS`**: start a game and check that the view appears, that
+   doors, lifts, pushwalls, pickups, enemies, the weapon and messages all
+   show and move, and that the automap, pausing and changing the view
+   size (up to the full width between the status bars) behave.
+
+On a Mega STE the cache is switched off around every cartridge access
+(the CPU stays at 16 MHz), as in STDOOM.
+
+If something goes wrong, the most useful things to send back are
+`PINGTEST.TXT`, `UPTEST.TXT` and a debug firmware's serial log:
+`make -C sidecart debug` builds one (it prints a status line every 64
+frames and every lump it could not load) and `make -C sidecart uart`
+opens the console.
+
+## Things to know
+
+- **Lighting.** The Multi-device lights the view as ROTT does: darker
+  areas, darker far walls with light diminishing on (Options menu), one
+  side of each wall shaded. The ST renderer flattens this to save time.
+  Dark areas therefore look much darker than on the ST renderer, and on
+  16 colours the darkest shades come out close to black. This is the
+  first thing to judge on a real screen.
+- **Largest view.** The Multi-device's frame buffers stop at 320 x 168,
+  the full width between the two status bars; bigger view sizes are
+  capped to that while it is in use.
+- **Frame rate** is set by the ST: game logic, the HUD and copying the
+  frame (about 16 ms for a full-width view on a 16 MHz Mega STE, in
+  Hatari) now take most of its time.
+
+## Building
+
+The firmware needs the Arm GNU toolchain and the submodules
+(`git submodule update --init --recursive` in the repository root; pico-sdk
+2.2.0, pico-extras and FatFs are pinned by `rp/build.sh`). The ST parts are
+built with `stcmd` (atarist-toolkit-docker) as the game is.
+
+```sh
+export PICO_TOOLCHAIN_PATH=/path/to/arm-none-eabi/bin
+make -C sidecart build     # release firmware -> sidecart/dist/*.uf2 + .json
+make -C sidecart debug     # debug firmware (serial console), bumps the patch version
+make -C sidecart tests     # PINGTEST.TOS, UPTEST.TOS in sidecart/tests/
+make -C sidecart census    # WAD sections vs the flash budget
+STCMD_NO_TTY=1 stcmd make  # the game: build/atarist/ROTT_ST.TOS
+```
+
+`ATARI_MD_RENDER=0` builds `ROTT_ST.TOS` without any of this;
+`ATARI_MD_PIPELINE=0` makes the ST wait for each frame instead of
+overlapping it with the next.
+
+## How it works
+
+| Where | What |
+| --- | --- |
+| `include/rott_md_protocol.h` | The wire protocol, shared by both sides: ROM4 layout, commands, records |
+| `../rott/atari_md.c` | The ST side: level snapshot, per-frame deltas and view, frame copy |
+| `../rott/sidecart_md.c`, `sidecart_stubs.S` | ROM3 command transport (from STDOOM) with retries and the Mega STE cache guard |
+| `rp/src/md_proto.c` | Decodes ROM3 commands in an interrupt into a queue |
+| `rp/src/md_main.c` | Runs the commands: level setup, world updates, frames |
+| `rp/src/rott/` | ROTT's renderer (engine, walls, planes, sprites, text) against a mirror of the ST's world |
+| `rp/src/md_video.c` | The ST's 16-colour palette choice and dither, identical on both sides, and chunky-to-planar |
+| `rp/src/md_pack.c` | Level packs in flash, and the demand-loading ring |
+| `target/atarist/` | The 1 KB cartridge header and boot message |
+
+**Level packs.** The flash window for graphics is 896 KB; one shareware
+level can ask for 1.6 MB, and the whole WAD holds 4.5 MB. When a level
+starts, the ST sends the list of lumps ROTT would precache; the firmware
+copies what fits from the WAD on the SD card into flash, most-read first
+(colour maps, flats and sky, walls and doors, then sprites, then weapon
+frames), keeping at least 192 KB free. That remainder is a ring: a lump
+the renderer asks for that is not in flash is read from the SD card into
+it (straight away if there is erased space, otherwise between frames,
+when erasing a 4 KB sector can drop older lumps without pulling one out
+from under the renderer).
+
+**Frames.** Two frame buffers live in the ROM4 window. With pipelining,
+the Multi-device draws frame N while the ST copies frame N-1 and runs the
+game for N+1. A frame that is late (more than 250 ms) is simply skipped;
+after repeated failures the ST switches to its own renderer and says so.
+
+## Testing without hardware
+
+`tests/emu` builds the firmware for the host (`libmdemu`) with the Pico
+SDK, flash and FatFs replaced, plus a patch that plugs it into Hatari's
+cartridge port.
+
+```sh
+make -C sidecart emu        # libmdemu + self-tests (WAD from tmp/ROTT)
+make -C sidecart hatari     # Hatari 2.6.1 with the emulated cartridge
+```
+
+`tests/emu/run-hatari.sh` runs a program unattended and records the
+screen. For ROTT, build it with `ATARI_MD_AUTOTEST=8` (it starts a game
+and turns a fixed step each frame) so runs with and without the
+Multi-device show the same views; it saves `SHOT008.PI1` ... `SHOT064.PI1`
+and `MDDEBUG.TXT` (both palettes and the firmware's status block) next
+to itself. `tests/emu/pi1topng.py` converts the shots. In the emulator the
+Multi-device is infinitely fast.
+
+```sh
+STCMD_NO_TTY=1 stcmd make ATARI_MD_AUTOTEST=8 ATARI_SHOW_FPS=1 \
+    BUILDDIR=build/autotest OBJDIR=obj/autotest
+mkdir -p /tmp/run/sd/rott && ln -s $PWD/tmp/ROTT/HUNTBGIN.WAD /tmp/run/sd/rott/
+sidecart/tests/emu/run-hatari.sh <hatari> <tos.img> build/autotest /tmp/run 8000 md
+```
+
+## Licence
+
+The firmware in `sidecart/` is GPL-3.0-or-later (see `LICENSE`); it
+includes code from md-doom, atarist-stdoom and the SidecarTridge
+microfirmware templates. The renderer in `rp/src/rott/`, `md_video.c` and
+the shared protocol header are GPL-2.0-or-later, like Rise of the Triad.

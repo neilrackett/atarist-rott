@@ -1,4 +1,8 @@
 /*
+ * Copyright (C) 2026 Neil Rackett
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+/*
 Copyright (C) 1994-1995 Apogee Software, Ltd.
 
 This program is free software; you can redistribute it and/or
@@ -44,6 +48,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <string.h>
 //MED
 #include "memcheck.h"
+#include "atari_md.h"
 
 /*=============================================================================
 
@@ -792,7 +797,7 @@ void TriggerStuff(void)
 
                      tilex = pwallobjlist[temp->whichobj]->tilex;
                      tiley = pwallobjlist[temp->whichobj]->tiley;
-                     tilemap[tilex][tiley] = 0;
+                     tilemap[tilex][tiley] = 0, MD_TILE_TOUCH(tilex, tiley);
 
                      }
                   if (gamestate.difficulty == gd_baby)
@@ -1318,7 +1323,7 @@ void SpawnDoor (int tilex, int tiley, int lock, int texture)
 // make the door tile a special tile, and mark the adjacent tiles
 // for door sides
 //
-   tilemap[tilex][tiley] = doornum | 0x8000;
+   tilemap[tilex][tiley] = doornum | 0x8000, MD_TILE_TOUCH(tilex, tiley);
 
    switch (texture)
       {
@@ -1380,22 +1385,22 @@ void SpawnDoor (int tilex, int tiley, int lock, int texture)
 	if (lastdoorobj->vertical==true)
 	{
       if (up==1)
-		   tilemap[tilex][tiley-1] |= 0x4000;
+		   tilemap[tilex][tiley-1] |= 0x4000, MD_TILE_TOUCH(tilex, tiley-1);
       else if (up==2)
          lastdoorobj->flags|=DF_MULTI;
       if (dn==1)
-		   tilemap[tilex][tiley+1] |= 0x4000;
+		   tilemap[tilex][tiley+1] |= 0x4000, MD_TILE_TOUCH(tilex, tiley+1);
       else if (dn==2)
          lastdoorobj->flags|=DF_MULTI;
 	}
 	else
 	{
       if (lt==1)
-		   tilemap[tilex-1][tiley] |= 0x4000;
+		   tilemap[tilex-1][tiley] |= 0x4000, MD_TILE_TOUCH(tilex-1, tiley);
       else if (lt==2)
          lastdoorobj->flags|=DF_MULTI;
       if (rt==1)
-		   tilemap[tilex+1][tiley] |= 0x4000;
+		   tilemap[tilex+1][tiley] |= 0x4000, MD_TILE_TOUCH(tilex+1, tiley);
       else if (rt==2)
          lastdoorobj->flags|=DF_MULTI;
 	}
@@ -2165,7 +2170,7 @@ void SpawnMaskedWall (int tilex, int tiley, int which, int flags)
 	else if (rt>0)
 		lastmaskobj->vertical = false;
 
-	tilemap[tilex][tiley] = maskednum | 0xc000;
+	tilemap[tilex][tiley] = maskednum | 0xc000, MD_TILE_TOUCH(tilex, tiley);
 	map = &MAPSPOT(tilex,tiley,0);
 
 	if (lastmaskobj->vertical==true)
@@ -2565,16 +2570,16 @@ void SpawnMaskedWall (int tilex, int tiley, int which, int flags)
       if (lastmaskobj->vertical==true)
          {
          if (up==1)
-            tilemap[tilex][tiley-1] |= 0x4000;
+            tilemap[tilex][tiley-1] |= 0x4000, MD_TILE_TOUCH(tilex, tiley-1);
          if (dn==1)
-            tilemap[tilex][tiley+1] |= 0x4000;
+            tilemap[tilex][tiley+1] |= 0x4000, MD_TILE_TOUCH(tilex, tiley+1);
          }
       else
          {
          if (lt==1)
-            tilemap[tilex-1][tiley] |= 0x4000;
+            tilemap[tilex-1][tiley] |= 0x4000, MD_TILE_TOUCH(tilex-1, tiley);
          if (rt==1)
-            tilemap[tilex+1][tiley] |= 0x4000;
+            tilemap[tilex+1][tiley] |= 0x4000, MD_TILE_TOUCH(tilex+1, tiley);
          }
       }
 
@@ -2975,7 +2980,7 @@ void Teleport(elevator_t*eptr,int destination)
 	 starty = eptr->sy;
 	 destx = eptr->dx;
 	 desty = eptr->dy;
-    tilemap[eptr->esx][eptr->esy] = (elevatorstart + 5) | 0x2000;
+    tilemap[eptr->esx][eptr->esy] = (elevatorstart + 5) | 0x2000, MD_TILE_TOUCH(eptr->esx, eptr->esy);
 
 	}
  else
@@ -2983,7 +2988,7 @@ void Teleport(elevator_t*eptr,int destination)
 	 starty = eptr->dy;
 	 destx = eptr->sx;
 	 desty = eptr->sy;
-	 tilemap[eptr->edx][eptr->edy] = (elevatorstart + 5) | 0x2000;
+	 tilemap[eptr->edx][eptr->edy] = (elevatorstart + 5) | 0x2000, MD_TILE_TOUCH(eptr->edx, eptr->edy);
 	}
 
  for(tstat=firstactivestat;tstat;tstat=tstat->nextactive)
@@ -3204,7 +3209,7 @@ void OperateElevatorSwitch(objtype*ob,int elevnum,int checkx,int checky)
 	 eptr->ticcount = 0;
 	}
 
- tilemap[checkx][checky] = (elevatorstart + 6) | 0x2000;
+ tilemap[checkx][checky] = (elevatorstart + 6) | 0x2000, MD_TILE_TOUCH(checkx, checky);
  SD_PlaySoundRTP(SD_TOUCHPLATESND,ob->x,ob->y);
 
 }
@@ -3375,12 +3380,12 @@ void SpawnPushWall (int tilex, int tiley, int lock, int texture, int dir, int ty
       }
    if (type>2)
       {
-      tilemap[tilex][tiley] = 0;
+      tilemap[tilex][tiley] = 0, MD_TILE_TOUCH(tilex, tiley);
 	   ActivateMoveWall(pwallnum);
       }
    else
       {
-      tilemap[tilex][tiley] = texture|0x800;
+      tilemap[tilex][tiley] = texture|0x800, MD_TILE_TOUCH(tilex, tiley);
       if ((loadedgame==false) && (type==0))
          gamestate.secrettotal++;
       }
@@ -3555,7 +3560,7 @@ void ConnectPushWall (int pwall)
 
 	checkx=pw->tilex;
 	checky=pw->tiley;
-	tilemap[checkx][checky] = 0;
+	tilemap[checkx][checky] = 0, MD_TILE_TOUCH(checkx, checky);
 	map = &MAPSPOT (checkx, checky, 0);
 
 	area1 =	*(map-mapwidth);
@@ -3732,7 +3737,7 @@ void FinishPushWall (pwallobj_t * pw)
 {
    pw->action = pw_pushed;
    actorat[pw->tilex][pw->tiley] = (wall_t*)&walls[GetWallIndex(pw->texture)];
-   tilemap[pw->tilex][pw->tiley] = pw->texture;
+   tilemap[pw->tilex][pw->tiley] = pw->texture, MD_TILE_TOUCH(pw->tilex, pw->tiley);
 }
 
 /*
@@ -3745,7 +3750,7 @@ void FinishPushWall (pwallobj_t * pw)
 void ResetPushWall (pwallobj_t * pw)
 {
    SetActorat(pw);
-   tilemap[pw->tilex][pw->tiley] = pw->texture|0x800;
+   tilemap[pw->tilex][pw->tiley] = pw->texture|0x800, MD_TILE_TOUCH(pw->tilex, pw->tiley);
 }
 
 /*
@@ -4077,7 +4082,7 @@ void LoadPushWalls(byte * bufptr, int sz)
      if ((new.tilex!=pw->tilex) || (new.tiley!=pw->tiley))
         {
         ClearActorat(pw);
-        tilemap[pw->tilex][pw->tiley] = 0;
+        tilemap[pw->tilex][pw->tiley] = 0, MD_TILE_TOUCH(pw->tilex, pw->tiley);
         if (pw->state!=pw_moving)
            {
 #if 0

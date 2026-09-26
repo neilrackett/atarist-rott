@@ -73,6 +73,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_net.h"
 //MED
 #include "memcheck.h"
+#include "atari_md.h"
 
 #if defined(__MINT__)
 #ifndef ATARI_SKIP_PRECACHE
@@ -1272,8 +1273,24 @@ void PreCache( void )
          {
          ATARI_LOAD_INIT();
          }
+#if ATARI_MD_RENDER
+      // MD/ROTT: the list is what the Multi-device packs for this level.
+      if (ATARI_MD_Active())
+         {
+         int i;
+
+         MiscPreCache();
+         ATARI_MD_BeginLumpList();
+         for (i = 0; i < cacheindex; i++)
+            ATARI_MD_AddLump(cachelist[i].lump);
+         }
+#endif
       ShutdownPreCache();
       }
+#if ATARI_MD_RENDER
+   // A level was set up or a game loaded: the MD needs a new snapshot.
+   ATARI_MD_LevelChanged();
+#endif
    return;
 #endif
 #endif
