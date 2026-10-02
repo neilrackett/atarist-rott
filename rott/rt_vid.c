@@ -32,6 +32,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "rt_def.h"
 #include "atari_md.h"
+#include "atari_c2p.h"
 #include "rt_vid.h"
 #include "_rt_vid.h"
 #include "rt_menu.h"
@@ -187,6 +188,7 @@ static byte VL_PlanarGetPixel(const byte *src, int widthbytes, int height, int x
 
 void VL_MemToScreen(byte *source, int width, int height, int x, int y)
 {
+   ATARI_HUD_TOUCH();
 #ifdef DOS
    byte *screen, *dest, mask;
    int plane;
@@ -241,6 +243,7 @@ void VL_MemToScreen(byte *source, int width, int height, int x, int y)
 void VL_MemToScreenClipped(byte *source, int width, int height, int x, int y);
 void VL_MemToScreenClipped(byte *source, int width, int height, int x, int y)
 {
+   ATARI_HUD_TOUCH();
 #if defined(__MINT__)
    VL_PlanarToChunky(bufferofs, source, width, height, x, y, 1);
 #else
@@ -271,6 +274,7 @@ void VL_MemToScreenClipped(byte *source, int width, int height, int x, int y)
 // copy picture to mem (bufferofs) in doublesize
 void VL_MemStrechedToScreen(byte *source, int width, int height, int x, int y)
 {
+   ATARI_HUD_TOUCH();
 #if defined(__MINT__)
    {
       int plane_size = width * height;
@@ -370,6 +374,7 @@ void DrawTiledRegion(
     pic_t *tile)
 
 {
+   ATARI_HUD_TOUCH();
    byte *source;
    byte *sourceoff;
    int sourcex;
@@ -567,6 +572,7 @@ void VWB_DrawPic(int x, int y, pic_t *pic)
 
 void VL_Bar(int x, int y, int width, int height, int color)
 {
+   ATARI_HUD_TOUCH();
 #ifdef DOS
    byte *dest;
    byte leftmask, rightmask;
@@ -641,6 +647,7 @@ void VWB_Bar(int x, int y, int width, int height, int color)
 
 void VL_TBar(int x, int y, int width, int height)
 {
+   ATARI_HUD_TOUCH();
 #ifdef DOS
    byte *dest;
    byte pixel;
@@ -730,6 +737,7 @@ void VWB_TBar(int x, int y, int width, int height)
 
 void VL_Hlin(unsigned x, unsigned y, unsigned width, unsigned color)
 {
+   ATARI_HUD_TOUCH();
 #ifdef DOS
    unsigned xbyte;
    byte *dest;
@@ -779,6 +787,7 @@ void VL_Hlin(unsigned x, unsigned y, unsigned width, unsigned color)
 
 void VL_Vlin(int x, int y, int height, int color)
 {
+   ATARI_HUD_TOUCH();
 #ifdef DOS
    byte *dest,
        mask;
@@ -1002,6 +1011,7 @@ void VWB_TVlin(int y1, int y2, int x, boolean up)
 
 int VW_MarkUpdateBlock(int x1, int y1, int x2, int y2)
 {
+   ATARI_HUD_TOUCH();
    int x,
        y,
        xt1,
@@ -1148,6 +1158,27 @@ void VL_FadeToColor(int time, int red, int green, int blue)
 #if defined(__MINT__)
    if (ATARI_SKIP_FADES)
    {
+#if ATARI_MD_RENDER
+      if (ATARI_MD_Active())
+      {
+         // With the Multi-device drawing the view, the scene can go on as
+         // the colour registers fade (no palette to reduce each step).
+         dmax = (maxshade << 16) / time;
+         dmin = (minshade << 16) / time;
+         CalcTics();
+         for (i = 0; i < time; i += tics)
+         {
+            atari_c2p_fade(red, green, blue, (16 * i) / time, 0);
+            maxshade = (dmax * (time - i)) >> 16;
+            minshade = (dmin * (time - i)) >> 16;
+            ThreeDRefresh();
+            CalcTics();
+         }
+         atari_c2p_fade(red, green, blue, 16, 0);
+         screenfaded = true;
+         return;
+      }
+#endif
       atari_fill_palette_rgb(red, green, blue);
       screenfaded = true;
       return;
@@ -1220,6 +1251,9 @@ void VL_FadeIn(int start, int end, byte *palette, int steps)
    {
       VL_SetPalette(palette);
       VW_UpdateScreen();
+      // Dark after a fade of the colour registers (Died): fade back in.
+      if (atari_c2p_fade_amount())
+         atari_c2p_fade(0, 0, 0, 0, ATARI_FADE_VBLS);
       screenfaded = false;
       return;
    }
@@ -1485,6 +1519,7 @@ void SetBorderColorInterrupt(int color)
 
 void VL_DrawPostPic(int lumpnum)
 {
+   ATARI_HUD_TOUCH();
    DrawPostPic(lumpnum);
    VW_MarkUpdateBlock(0, 0, 319, 199);
 }

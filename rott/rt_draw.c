@@ -76,6 +76,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "atari_perf.h"
 #include "atari_hotspots.h"
 #include "atari_md.h"
+#include "atari_check.h"
 //MED
 #include "memcheck.h"
 
@@ -1526,15 +1527,19 @@ void DrawPlayerWeapon (void)
            Error ("Weapon shapenum out of range\n");
 		  shapenum = gunsstart + weaponshape[index] + locplayerstate->weaponframe;
 
+        // Looked up once: each lookup scans the whole WAD directory by name.
+        static int firstweaponshape = -1, lastweaponshape;
+        if (firstweaponshape < 0)
+           {
 #if (SHAREWARE == 0)
-        if ((shapenum < W_GetNumForName("KNIFE1")) ||
-            (shapenum > W_GetNumForName("DOGPAW4"))
-           )
+           firstweaponshape = W_GetNumForName("KNIFE1");
+           lastweaponshape = W_GetNumForName("DOGPAW4");
 #else
-        if ((shapenum < W_GetNumForName("MPIST11")) ||
-            (shapenum > W_GetNumForName("GODHAND8"))
-           )
+           firstweaponshape = W_GetNumForName("MPIST11");
+           lastweaponshape = W_GetNumForName("GODHAND8");
 #endif
+           }
+        if ((shapenum < firstweaponshape) || (shapenum > lastweaponshape))
            Error("\n illegal weapon shapenum %d, index %d, weaponframe %d",
                   shapenum,index,locplayerstate->weaponframe);
 		 }
@@ -1744,6 +1749,9 @@ void CalcTics (void)
 // calculate tics since last refresh for adaptive timing
 //
 
+#if defined(__MINT__) && (ATARI_LOGIC_CHECK > 0)
+   ATARI_CheckAdvance();
+#endif
    tc=GetTicCount();
 #if defined(__MINT__)
    if (ATARI_DEBUG) Cconws("ROTT: CalcTics after GetTicCount\r\n");

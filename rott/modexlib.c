@@ -39,6 +39,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "atari_c2p.h"
 #include "atari_md.h"
 #include "atari_megaste.h"
+#include "i_timer.h"
 #include "isr.h"
 #include "rt_playr.h"
 #include "rt_actor.h"
@@ -134,6 +135,15 @@ void ATARI_ForceRender(void) {}
 #endif
 
 static void atari_super_set_vector(void **slot, void *handler);
+
+void atari_hud_touch_at(const unsigned char *dst, int w, int h)
+{
+   const long off = (long)(dst - screenpixels);
+   if (off < 0 || off >= 320L * 200L)
+      ATARI_HUD_TOUCH();
+   else
+      atari_hud_touch_rect((int)(off % 320), (int)(off / 320), w, h);
+}
 
 static void atari_set_fast_mode(void)
 {
@@ -296,6 +306,16 @@ static void atari_draw_fps_overlay(void)
    if (fps_value > 999)
       fps_value = 999;
    sprintf(buf, "FPS:%d", fps_value);
+   {
+      // Redrawn every frame, but only a new number changes the HUD.
+      static int drawn_value = -1;
+      if (fps_value != drawn_value)
+      {
+         drawn_value = fps_value;
+         ATARI_HUD_TOUCH_RECT(iGLOBAL_SCREENWIDTH - (int)strlen(buf) * 4 - 2,
+                              iGLOBAL_SCREENHEIGHT - 7, (int)strlen(buf) * 4 + 2, 7);
+      }
+   }
 
    text_w = (int)strlen(buf) * 4;
    x = iGLOBAL_SCREENWIDTH - text_w - 2;
@@ -341,12 +361,17 @@ void GraphicsMode(void)
    atari_c2p_set_fast_mode(0);
    atari_dbg("ATARI: GraphicsMode input_init\r\n");
    atari_input_init();
+   I_HookTimer(1);
    graphicsmode = true;
    atari_dbg("ATARI: GraphicsMode done\r\n");
 }
 
 void SetTextMode(void)
 {
+#if ATARI_MD_RENDER
+   ATARI_MD_BlitWait();
+#endif
+   I_HookTimer(0);
    atari_input_shutdown();
    atari_c2p_shutdown();
    if (atari_prev_rez >= 0 && atari_prev_rez != 0)
@@ -432,6 +457,7 @@ void I_FinishUpdate(void)
       ATARI_EndRenderFrame();
       return;
    }
+   ATARI_MD_BlitWait(); // the last MD frame may still be on its way
 #endif
 #ifndef ATARI_C2P_VIEW_ZOOM
 #define ATARI_C2P_VIEW_ZOOM 1
@@ -802,7 +828,9 @@ void doEvents(void)
       atari_enqueue_key(data);
    }
 
-   if (atari_input_buffer_empty())
+   // With our keyboard interrupt in place the BIOS never sees a key, so
+   // Cconis (a GEMDOS call, several a frame) could only say no.
+   if (atari_input_buffer_empty() && !atari_old_interrupt_handler)
    {
       if (atari_pending_keyup < 0 && Cconis())
       {

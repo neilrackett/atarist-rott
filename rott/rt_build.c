@@ -54,6 +54,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "rt_sound.h"
 #include "modexlib.h"
+#include "atari_c2p.h"
 #include "rt_str.h"
 //MED
 #include "memcheck.h"
@@ -605,6 +606,9 @@ void RefreshMenuBuf( int time )
          return;
       PositionMenuBuf(0, NORMALVIEW, true);
       atari_menu_dirty = false;
+      // A menu shown while dark (after a death, Died): fade it in.
+      if (atari_c2p_fade_amount())
+         atari_c2p_fade(0, 0, 0, 0, ATARI_FADE_VBLS);
       return;
       }
 #endif

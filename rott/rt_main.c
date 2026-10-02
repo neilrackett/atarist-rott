@@ -94,6 +94,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "memcheck.h"
 #include "m_fixed.h"
 #include "atari_md.h"
+#include "atari_check.h"
+#include "atari_c2p.h"
 #if defined(__MINT__)
 #ifndef ATARI_MAX_CATCHUP_STEPS
 #define ATARI_MAX_CATCHUP_STEPS 2
@@ -1003,7 +1005,7 @@ void CheckCommandLineParameters( void )
           break;
       }
    }
-#if defined(__MINT__) && defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
+#if defined(__MINT__) && ((ATARI_MD_AUTOTEST > 0) || (ATARI_LOGIC_CHECK > 0))
    // Unattended test runs (Hatari): straight into a game, as with NOW.
    turbo = true;
 #endif
@@ -2171,13 +2173,17 @@ void UpdateGameObjects ( void )
       const unsigned int actor_time_phase = (unsigned int)gamestate.TimeCount % actor_div;
 #endif
 #if defined(__MINT__)
+#if (ATARI_ACTOR_BUDGET > 0)
       unsigned int actor_budget = atari_actor_budget_runtime;
+#endif
       unsigned int actor_updates_this_tick = 0;
 #endif
 		for (ob = firstactive; ob;)
 			{
 			 temp = ob->nextactive;
-#if defined(__MINT__)
+#if defined(__MINT__) && (ATARI_ACTOR_BUDGET > 0)
+          // Only built with a budget: otherwise this was work for every
+          // actor every tic to no effect (a budget of 0 means none).
           int actor_high_priority = ((ob->obclass == playerobj) ||
                                      (ob->flags & FL_KEYACTOR) ||
                                      areabyplayer[ob->areanumber]);
@@ -2195,9 +2201,11 @@ void UpdateGameObjects ( void )
               ((ob->flags & FL_KEYACTOR) == 0) &&
               !areabyplayer[ob->areanumber])
           {
-             unsigned int phase = ((unsigned int)ob->tilex +
-                                   ((unsigned int)ob->tiley << 1) +
-                                   (unsigned int)ob->obclass) % actor_div;
+             // At most a few hundred: a 16-bit divide, not __umodsi3.
+             unsigned int phase = (unsigned short)((unsigned short)ob->tilex +
+                                   ((unsigned short)ob->tiley << 1) +
+                                   (unsigned short)ob->obclass) %
+                                  (unsigned short)actor_div;
              if (actor_time_phase == phase)
              {
                 DoActor(ob);
@@ -2390,6 +2398,9 @@ fromloadedgame:
       DoLoadGameSequence();
 		}
 
+#if defined(__MINT__) && (ATARI_LOGIC_CHECK > 0)
+   ATARI_CheckStart();
+#endif
    drawtime  = 0;
    actortime = 0;
 	tics      = 0;
@@ -2459,17 +2470,40 @@ fromloadedgame:
 #endif
 	         if (controlupdatestarted == 1)
 	            UpdateGameObjects();
+#if defined(__MINT__) && (ATARI_LOGIC_CHECK > 0)
+         ATARI_CheckFrame();
+#endif
 #if defined(__MINT__) && defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
          // Unattended test runs: turn a fixed step per frame, so frame N
          // shows the same view with or without the MD (ATARI_MD_AutotestShot).
          static int autotest_frame;
          if (player && controlupdatestarted == 1)
             player->angle = (short)((++autotest_frame * ATARI_MD_AUTOTEST * 4) & (FINEANGLES - 1));
+#if (ATARI_MD_AUTOTEST_DIE > 0)
+         // ...and with ATARI_MD_AUTOTEST_DIE, die at that frame, killed by
+         // the first guard about, to show the death sequence.
+         if (player && autotest_frame == ATARI_MD_AUTOTEST_DIE &&
+             !(player->flags & FL_DYING))
+            {
+            objtype *killer;
+            for (killer = firstactive; killer; killer = killer->nextactive)
+               if (killer->obclass >= lowguardobj && killer->obclass < roboguardobj)
+                  break;
+            player->target = killer;
+            DamageThing(player, locplayerstate->health + 1);
+            Collision(player, killer, 0, 0);
+            }
+#endif
 #endif
 
          atime = GetFastTics();
 
          ThreeDRefresh();
+#if defined(__MINT__)
+         // Never play on in the dark a death fade (Died) left behind.
+         if (atari_c2p_fade_amount())
+            atari_c2p_fade(0, 0, 0, 0, ATARI_FADE_VBLS);
+#endif
 #if defined(__MINT__) && defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
          ATARI_MD_AutotestShot(autotest_frame);
 #endif

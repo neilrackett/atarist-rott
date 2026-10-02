@@ -674,49 +674,16 @@ void StartupClientControls ( void )
 //
 //****************************************************************************
 
-static boolean InUCC=false;
-void UpdateClientControls ( void )
-{
-   int time;
-//   int delta;
-
-   if (controlupdatestarted==0)
-      return;
-
-if (InUCC)
-      return;
-   else
-      InUCC = true;
-
-   wami(6);
-
-#if 0
-
-   delta=GetTicCount()-lastcontrolupdatetime;
-   if (delta>largesttime)
-      {
-      if (delta>10)
-         largesttime=delta;
-      largesttime=delta;
-      }
-
+//
+// The commands for the tics up to `time`, out of line so the many calls
+// with none to make keep a small prologue (Atari: most of their cost).
+//
+#if defined(__MINT__)
+static void __attribute__((noinline)) UpdateClientCommands ( int time )
+#else
+static void UpdateClientCommands ( int time )
 #endif
-   lastcontrolupdatetime=GetTicCount();
-
-   if (standalone==false)
-      {
-      time=GetTicCount();
-
-      // if we are a fixing the current packet stop update of deltas
-      // in non-network games.
-      if (
-           (networkgame == false) &&
-           (ServerCommandStatus(oldpolltime)==cs_fixing)
-         )
-         {
-         time=controlupdatetime-controldivisor;
-         }
-
+{
       while (time>=controlupdatetime)
          {
          MoveType * Delta;
@@ -812,6 +779,53 @@ if (InUCC)
             controlbuf[0] = controlbuf[1] = controlbuf[2] = 0;
             }
          }
+}
+
+static boolean InUCC=false;
+void UpdateClientControls ( void )
+{
+   int time;
+//   int delta;
+
+   if (controlupdatestarted==0)
+      return;
+
+if (InUCC)
+      return;
+   else
+      InUCC = true;
+
+   wami(6);
+
+#if 0
+
+   delta=GetTicCount()-lastcontrolupdatetime;
+   if (delta>largesttime)
+      {
+      if (delta>10)
+         largesttime=delta;
+      largesttime=delta;
+      }
+
+#endif
+   lastcontrolupdatetime=GetTicCount();
+
+   if (standalone==false)
+      {
+      time=GetTicCount();
+
+      // if we are a fixing the current packet stop update of deltas
+      // in non-network games.
+      if (
+           (networkgame == false) &&
+           (ServerCommandStatus(oldpolltime)==cs_fixing)
+         )
+         {
+         time=controlupdatetime-controldivisor;
+         }
+
+      if (time>=controlupdatetime)
+         UpdateClientCommands(time);
       }
    if (modemgame==true)
       {

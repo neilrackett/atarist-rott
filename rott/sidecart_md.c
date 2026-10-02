@@ -44,12 +44,16 @@ unsigned short md_command_failures;
 
 /* ── Supervisor ──────────────────────────────────────────────────────── */
 /* Super(0L)/Super(ssp) is only right when called from user mode; ROTT is
- * in user mode but some callers may not be. SUP_INQUIRE (Super(1L)) is
- * non-zero when already supervisor. */
+ * in user mode but some callers may not be (ATARI_MD_FinishUpdate runs
+ * most of a frame in supervisor mode: sidecart_md_super_begin). Only the
+ * Mega STE needs supervisor here, and it is a 68000, where MOVE from SR is
+ * allowed in user mode: so no SUP_INQUIRE trap to find out. */
 #define MD_ALREADY_SUPER (-1L)
 
-static long md_super_enter(void) {
-  if ((long)Super((void *)1L) != 0L) return MD_ALREADY_SUPER;
+static long md_super_enter_mste(void) {
+  unsigned short sr;
+  __asm__ volatile("move.w %%sr,%0" : "=d"(sr));
+  if (sr & 0x2000) return MD_ALREADY_SUPER;
   return (long)Super(0L);
 }
 
@@ -75,7 +79,7 @@ static unsigned char md_bus_saved_ctrl;
 void sidecart_md_bus_begin(void) {
   long ssp;
   if (md_bus_depth++ || !md_is_megaste()) return;
-  ssp = md_super_enter();
+  ssp = md_super_enter_mste();
   md_bus_saved_ctrl = *MEGASTE_CTRL_ADDR;
   md_bus_cache_off = (md_bus_saved_ctrl & MEGASTE_CTRL_CACHE_BIT) != 0;
   if (md_bus_cache_off) {
@@ -89,10 +93,38 @@ void sidecart_md_bus_end(void) {
   long ssp;
   if (md_bus_depth <= 0 || --md_bus_depth) return;
   if (!md_bus_cache_off) return;
-  ssp = md_super_enter();
+  ssp = md_super_enter_mste();
   *MEGASTE_CTRL_ADDR = md_bus_saved_ctrl;
   md_super_exit(ssp);
   md_bus_cache_off = 0;
+}
+
+/* Back to user mode after sidecart_md_super_begin's Super(0L), on the
+ * current stack. GEMDOS Super(ssp) would resume with the stack pointer the
+ * Super(0L) left in USP, which is only right at the same stack depth (the
+ * usual pattern, both in one function); this frame is not that one's. */
+void md_user_mode(long ssp);
+__asm__(
+    "    .text\n"
+    "    .even\n"
+    "_md_user_mode:\n"
+    "    move.l  (sp)+,a0\n" /* return address */
+    "    move.l  (sp),d0\n"  /* ssp */
+    "    move.l  sp,a1\n"
+    "    move.l  a1,usp\n"
+    "    move.l  d0,sp\n"
+    "    andi.w  #0xdfff,sr\n"
+    "    jmp     (a0)\n");
+
+long sidecart_md_super_begin(void) {
+  if (!md_is_megaste()) return MD_ALREADY_SUPER;
+  return md_super_enter_mste();
+}
+
+long sidecart_md_super_force(void) { return md_super_enter_mste(); }
+
+void sidecart_md_super_end(long token) {
+  if (token != MD_ALREADY_SUPER) md_user_mode(token);
 }
 
 /* ── Interrupt mask ──────────────────────────────────────────────────── */

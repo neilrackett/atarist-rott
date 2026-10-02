@@ -300,6 +300,7 @@ void DoAnimatedMaskedWalls ( void )
          temp->ticcount+=AMW_TICCOUNT;
          temp->count--;
          maskobjlist[temp->num]->bottomtexture++;
+         MD_MASKED_TOUCH();
          if (temp->count==0)
             {
             done=true;
@@ -1053,12 +1054,14 @@ void ConnectAreas (void)
 	  {if (areabyplayer[maskobjlist[i]->areanumber])
 		  {if (!(maskobjlist[i]->flags & MW_ABP))
 			  {maskobjlist[i]->flags |= MW_ABP;
+				MD_MASKED_TOUCH();
 				MakeMaskedWallActive(maskobjlist[i]);
 			  }
 		  }
 		else if (maskobjlist[i]->flags & MW_ABP)
 		 {MakeMaskedWallInactive(maskobjlist[i]);
 		  maskobjlist[i]->flags &= ~MW_ABP;
+		  MD_MASKED_TOUCH();
 		 }
 	  }
 }
@@ -2695,6 +2698,7 @@ int CheckMaskedWall( maskedwallobj_t * mw )
 	result=0;
 	if (mw->flags & MW_SHOOTABLE)
 		{
+		MD_MASKED_TOUCH();
 		if (mw->flags & MW_BLOCKINGCHANGES)
          {
          mw->flags&=~MW_BLOCKINGCHANGES;
@@ -4220,7 +4224,7 @@ void LoadMaskedWalls(byte * bufptr, int sz)
      if ((flags&0xff)!=mw->flags)	// Preserves original behavior
         UpdateMaskedWall(i);
      if (mw->flags&MW_SWITCHON)
-        mw->toptexture--;
+        mw->toptexture--, MD_MASKED_TOUCH();
      }
 }
 

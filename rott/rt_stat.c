@@ -1708,7 +1708,7 @@ void LoadSwitches (byte * buffer, int size)
 
       lastmaskobj=maskobjlist[tilemap[tilex][tiley]&0x3ff];
     	if (switches[i].flags & FL_ON)
-         lastmaskobj->toptexture++;
+         lastmaskobj->toptexture++, MD_MASKED_TOUCH();
       }
 	else if (switches[i].flags & FL_ON)
 	   tilemap[tilex][tiley]++, MD_TILE_TOUCH(tilex, tiley);

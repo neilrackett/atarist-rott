@@ -46,6 +46,16 @@ void sidecart_md_result(char *buf, int size);
 void sidecart_md_bus_begin(void);
 void sidecart_md_bus_end(void);
 
+/* A stretch with several bus brackets and CPU work between them (the
+ * cache back on): on a Mega STE it runs in supervisor mode, so each bracket
+ * toggles the cache with no GEMDOS traps. Nothing in between may call
+ * Super(0L). Elsewhere these do nothing. */
+long sidecart_md_super_begin(void);
+void sidecart_md_super_end(long token);
+/* The same on any 68000 machine (the caller makes sure), for hardware
+ * registers; ends with sidecart_md_super_end. */
+long sidecart_md_super_force(void);
+
 /* Mask 68000 interrupts around each command (supervisor only; off by
  * default -- the firmware tolerates the delays an interrupt causes). */
 void sidecart_md_set_intr_mask(int enable);

@@ -7,3 +7,6 @@
 [submodule "sidecart/fatfs-sdk"]
 	path = sidecart/fatfs-sdk
 	url = https://github.com/carlk3/no-OS-FatFS-SD-SDIO-SPI-RPi-Pico.git
+[submodule "sidecart/emu/emumd"]
+	path = sidecart/emu/emumd
+	url = https://github.com/neilrackett/emumd.git

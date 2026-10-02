@@ -112,7 +112,7 @@ int iGLOBAL_SCREENHEIGHT;//bna val 600
 #define PEL_DATA                0x3c9
 #endif
 
-extern  boolean StretchScreen;//bná++
+extern  boolean StretchScreen;//bnï¿½++
 
 //extern  int      ylookup[MAXSCREENHEIGHT];      // Table of row offsets
 extern  int      ylookup[600];      // just set to max res
@@ -179,6 +179,24 @@ void  VGAWRITEMAP(int x);
 #define VGAMAPMASK(a)
 #define VGAREADMAP(a)
 #define VGAWRITEMAP(a)
+#endif
+
+#if defined(__MINT__)
+// MD/ROTT: 2D drawing that can touch the status bars says so, and the ST
+// only looks for HUD changes to convert when there may be some
+// (atari_c2p_hud).
+// _RECT says where (screen x, y, width, height); _AT the same for a
+// destination pointer into the chunky screen.
+extern int atari_hud_dirty;
+void atari_hud_touch_rect(int x, int y, int w, int h);
+void atari_hud_touch_at(const unsigned char *dst, int w, int h);
+#define ATARI_HUD_TOUCH() (atari_hud_dirty = 1)
+#define ATARI_HUD_TOUCH_RECT(x, y, w, h) atari_hud_touch_rect(x, y, w, h)
+#define ATARI_HUD_TOUCH_AT(dst, w, h) atari_hud_touch_at(dst, w, h)
+#else
+#define ATARI_HUD_TOUCH() ((void)0)
+#define ATARI_HUD_TOUCH_RECT(x, y, w, h) ((void)0)
+#define ATARI_HUD_TOUCH_AT(dst, w, h) ((void)0)
 #endif
 
 #endif

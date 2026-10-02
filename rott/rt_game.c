@@ -58,6 +58,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "version.h"
 #include "rt_crc.h"
 #include "modexlib.h"
+#include "atari_md.h"
+#include "atari_c2p.h"
 #include "engine.h"
 #include "gmove.h"
 #include "rt_com.h"
@@ -186,6 +188,7 @@ extern void    MoveScreenDownRight();
 
 void V_ReDrawBkgnd (int x, int y, int width, int height, boolean shade)
 {
+   ATARI_HUD_TOUCH();
    byte *src;
    byte *dest;
    byte *origdest;
@@ -413,6 +416,7 @@ void GameMemToScreen
    )
 
    {
+   ATARI_HUD_TOUCH();
    if ( bufferofsonly )
       {
       VL_MemToScreen( ( byte * )&source->data, source->width,
@@ -1595,24 +1599,31 @@ void DrawMPPic (int xpos, int ypos, int width, int height, int heightmod, byte *
    int write_page2 = (!bufferofsonly && base2 != base1);
    int write_page3 = (!bufferofsonly && base3 != base1 && base3 != base2);
 
-   for (y = 0; y < height; ++y)
+   ATARI_HUD_TOUCH_AT(base1 + ylookup[ypos] + xpos, pixwidth, height);
+   // A plane at a time (plane p holds every 4th pixel from p): no
+   // multiplies or plane selection per pixel.
    {
-      for (x = 0; x < pixwidth; ++x)
+      int p;
+      for (p = 0; p < 4; ++p)
       {
-         int plane = x & 3;
-         int idx = (y * width) + (x >> 2);
-         byte pixel = *(src + plane * plane_size + idx);
-         if (pixel == 255)
-            continue;
+         const byte *s = src + p * plane_size;
+         for (y = 0; y < height; ++y, s += width)
          {
-            int dx = xpos + x;
-            int dy = ypos + y;
-            int off = ylookup[dy] + dx;
-            base1[off] = pixel;
-            if (write_page2)
-               base2[off] = pixel;
-            if (write_page3)
-               base3[off] = pixel;
+            const int row = ylookup[ypos + y] + xpos + p;
+            for (x = 0; x < width; ++x)
+            {
+               const byte pixel = s[x];
+               if (pixel == 255)
+                  continue;
+               {
+                  const int off = row + (x << 2);
+                  base1[off] = pixel;
+                  if (write_page2)
+                     base2[off] = pixel;
+                  if (write_page3)
+                     base3[off] = pixel;
+               }
+            }
          }
       }
    }
@@ -1951,20 +1962,29 @@ void DrawPPic (int xpos, int ypos, int width, int height, byte *src, int num, bo
    int write_page2 = (!bufferofsonly && base2 != base1);
    int write_page3 = (!bufferofsonly && base3 != base1 && base3 != base2);
 
+   if (num > 0)
+   {
+      const int reach = step * (num - 1); /* the copies run left or right */
+      ATARI_HUD_TOUCH_AT(base1 + ylookup[ypos] + xpos + (reach < 0 ? reach : 0),
+                         pixwidth + (reach < 0 ? -reach : reach), height);
+   }
+   // Plane and row offsets kept as pointers: no multiplies per pixel.
+   const byte *planes[4];
+   planes[0] = src;
+   planes[1] = src + plane_size;
+   planes[2] = src + 2 * plane_size;
+   planes[3] = src + 3 * plane_size;
    for (y = 0; y < height; ++y)
    {
+      const int row = ylookup[ypos + y] + xpos;
       for (x = 0; x < pixwidth; ++x)
       {
-         int plane = x & 3;
-         int idx = (y * width) + (x >> 2);
-         byte pixel = *(src + plane * plane_size + idx);
+         byte pixel = planes[x & 3][x >> 2];
+         int off = row + x;
          if (pixel == 255)
             continue;
-         for (k = 0; k < num; ++k)
+         for (k = 0; k < num; ++k, off += step)
          {
-            int dx = xpos + x + (step * k);
-            int dy = ypos + y;
-            int off = ylookup[dy] + dx;
             base1[off] = pixel;
             if (write_page2)
                base2[off] = pixel;
@@ -1972,6 +1992,10 @@ void DrawPPic (int xpos, int ypos, int width, int height, byte *src, int num, bo
                base3[off] = pixel;
          }
       }
+      planes[0] += width;
+      planes[1] += width;
+      planes[2] += width;
+      planes[3] += width;
    }
    return;
 #else
@@ -2891,6 +2915,7 @@ void  DrawEpisodeLevel (int x, int y)
 
 void GM_MemToScreen (byte *source, int width, int height, int x, int y)
 {
+   ATARI_HUD_TOUCH();
    int dest;
    byte *dest1, *dest2, *dest3, mask;
    byte *screen1, *screen2, *screen3;
@@ -4498,8 +4523,16 @@ void Died (void)
    objtype * killerobj=(objtype *)player->target;
 #if defined(__MINT__)
    const boolean atari_skip_death_transition = (ATARI_SKIP_FIZZLE != 0);
+   // The death camera and the closing effects are too slow for the ST
+   // renderer, but cost the ST little when the Multi-device draws the view
+   // (the effects then start from its last frame: ATARI_MD_ViewToChunky).
+   const boolean atari_skip_death_camera =
+      atari_skip_death_transition && !ATARI_MD_Active();
+   const boolean atari_skip_death_effects = atari_skip_death_camera;
 #else
    const boolean atari_skip_death_transition = false;
+   const boolean atari_skip_death_camera = false;
+   const boolean atari_skip_death_effects = false;
 #endif
 player->yzangle=0;
 
@@ -4513,7 +4546,7 @@ player->yzangle=0;
 
    M_LINKSTATE (player, pstate);
 
-   if ( (!atari_skip_death_transition) && (ZoomDeathOkay()==true) && (pstate->falling==false))
+   if ( (!atari_skip_death_camera) && (ZoomDeathOkay()==true) && (pstate->falling==false))
       {
       int x,y,z,radius,heightoffset;
       int endangle,startangle,killangle;
@@ -4616,7 +4649,7 @@ player->yzangle=0;
             break;
          }
       }
-   else if ((!atari_skip_death_transition) && (pstate->falling==false))
+   else if ((!atari_skip_death_camera) && (pstate->falling==false))
       {
 
       //
@@ -4717,7 +4750,14 @@ player->yzangle=0;
 
       rng = RandomNumber ("Died",0);
 
-      if (atari_skip_death_transition)
+#if defined(__MINT__) && ATARI_MD_RENDER
+      // RotateBuffer turns the chunky screen: give it the view. (A fall
+      // has the sky there already, from DrawFullSky.)
+      if (!atari_skip_death_effects && ATARI_MD_Active() &&
+          (pstate->falling==false) && (rng < 192))
+         ATARI_MD_ViewToChunky ((byte *)bufferofs);
+#endif
+      if (atari_skip_death_effects)
          {
          if (pstate->falling==true)
             {
@@ -4745,7 +4785,13 @@ player->yzangle=0;
 
       screenfaded=false;
 
+#if defined(__MINT__)
+      // A real fade with the colour registers alone (no palettes to reduce).
+      atari_c2p_fade (0, 0, 0, 16, ATARI_FADE_VBLS);
+      screenfaded=true;
+#else
       VL_FadeOut (0, 255, 0,0,0,VBLCOUNTER>>1);
+#endif
       gamestate.episode = 1;
       player->flags &= ~FL_DONE;
 
@@ -4766,7 +4812,11 @@ player->yzangle=0;
 
       SD_Play (SD_GAMEOVERSND);
       rng=RandomNumber("Died",0);
-      if (!atari_skip_death_transition)
+#if defined(__MINT__) && ATARI_MD_RENDER
+      if (!atari_skip_death_effects && ATARI_MD_Active() && (rng < 64 || rng >= 128))
+         ATARI_MD_ViewToChunky ((byte *)bufferofs);
+#endif
+      if (!atari_skip_death_effects)
          {
          if (rng<64)
             RotateBuffer(0,(FINEANGLES>>1),(FINEANGLES),(FINEANGLES*64),(VBLCOUNTER*(3+slowrate)));
@@ -4780,7 +4830,13 @@ player->yzangle=0;
 
       screenfaded=false;
 
+#if defined(__MINT__)
+      // A real fade with the colour registers alone (no palettes to reduce).
+      atari_c2p_fade (0, 0, 0, 16, ATARI_FADE_VBLS);
+      screenfaded=true;
+#else
       VL_FadeOut (0, 255, 0,0,0,VBLCOUNTER>>1);
+#endif
 
       MU_StartSong(song_gameover);
 
@@ -4806,7 +4862,14 @@ player->yzangle=0;
    }
    ClearGraphicsScreen();
 
+#if defined(__MINT__)
+   // Stay dark until the next screen is drawn and fades itself in
+   // (VL_FadeIn, RefreshMenuBuf): nothing left over or half drawn shows.
+   atari_c2p_fade (0, 0, 0, 16, ATARI_FADE_VBLS);
+   VL_SetPalette (origpal);
+#else
    VL_FadeIn (0, 255, origpal, 15);
+#endif
 }
 
 

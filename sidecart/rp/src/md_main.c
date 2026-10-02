@@ -107,6 +107,32 @@ static void publish_frame(int buf, uint16_t seq, unsigned x, unsigned y,
 
 static inline int render_target(void) { return s_ready_buf == 0 ? 1 : 0; }
 
+/* SPOTVIS as published: each tile's bit ORed with its eight neighbours'.
+ * A column's 128 tiles are 8 consecutive words, bit y & 15 of word y >> 4,
+ * so a tile's vertical neighbours are the next bits up and down and its
+ * horizontal ones the same bit 8 words either side. The edge rows and
+ * columns pick up nothing from beyond the map, and the ST never asks about
+ * them. */
+static void publish_spotvis(const uint16_t *in, volatile uint16_t *out) {
+  static uint16_t col[MD_BITSET_WORDS];
+  for (unsigned x = 0; x < 128; x++) {
+    const uint16_t *c = in + x * 8;
+    uint16_t *o = col + x * 8;
+    for (unsigned k = 0; k < 8; k++) {
+      const uint16_t w = c[k];
+      const uint16_t below = (uint16_t)(w << 1) | (k > 0 ? (uint16_t)(c[k - 1] >> 15) : 0);
+      const uint16_t above = (uint16_t)(w >> 1) | (k < 7 ? (uint16_t)(c[k + 1] << 15) : 0);
+      o[k] = (uint16_t)(w | below | above);
+    }
+  }
+  for (unsigned i = 0; i < MD_BITSET_WORDS; i++) {
+    uint16_t w = col[i];
+    if (i >= 8) w |= col[i - 8];
+    if (i + 8 < MD_BITSET_WORDS) w |= col[i + 8];
+    out[i] = w;
+  }
+}
+
 /* The renderer's lump access: the level pack, read in place over XIP,
  * with lumps it lacks loaded from the SD card (md_pack.h). Debug builds
  * say once per level which lumps could not be had -- the first thing to
@@ -315,8 +341,8 @@ static void cmd_frame(const uint16_t *w, uint32_t n) {
   const int buf = render_target();
   md_video_c2p(s_chunky, R_PITCH, frame_buffer(buf), (unsigned)viewwidth,
                (unsigned)viewheight, r_view_screen_y);
-  memcpy((void *)(s_rom_base + MD_SPOTVIS_OFFSET), r_frame_bits,
-         MD_BITSET_BYTES);
+  publish_spotvis(r_frame_bits,
+                  (volatile uint16_t *)(s_rom_base + MD_SPOTVIS_OFFSET));
   const uint32_t t2 = time_us_32();
 
   publish_frame(buf, seq, r_view_screen_x, r_view_screen_y,

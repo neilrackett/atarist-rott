@@ -1114,6 +1114,7 @@ void DrawPositionedScaledSprite (int x, int y, int shapenum, int height, int typ
 extern int G_gmasklump;
 void DrawScreenSizedSprite (int lump)
 {
+   ATARI_HUD_TOUCH();
 	//draws gasmask among other things zxcv
    byte *shape,*src;
    int      frac;
@@ -1314,6 +1315,7 @@ void DrawNormalPost (byte * src, byte * buf)
 
 void DrawNormalSprite (int x, int y, int shapenum)
 {
+   ATARI_HUD_TOUCH();
    byte *buffer;
    int cnt;
    byte *shape;

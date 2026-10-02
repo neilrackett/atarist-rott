@@ -441,7 +441,7 @@ static unsigned short stcolor(unsigned char r, unsigned char g, unsigned char b)
     return entry;
 }
 
-static void install_st_palette(const unsigned short *palette)
+static void write_st_palette(const unsigned short *palette)
 {
     long old = Super(0);
     volatile unsigned short *reg = (unsigned short *)0xff8240;
@@ -449,6 +449,84 @@ static void install_st_palette(const unsigned short *palette)
     for (n = 0; n < 16; ++n)
         *reg++ = *palette++;
     Super(old);
+}
+
+/*
+ * Fades done with the 16 colour registers alone, so with no new palette to
+ * reduce on each step: the registers show each installed colour mixed
+ * towards fade_target by fade_amount sixteenths. A palette installed
+ * meanwhile keeps the mix, so a faded-out screen stays dark until faded
+ * back in (atari_c2p_fade).
+ */
+static unsigned short installed_palette[16], shown_palette[16];
+static unsigned short fade_target;
+static int fade_amount;
+
+/* A channel of an ST colour as 0..15 (the STE's extra bit is the lowest). */
+static int st_level(unsigned short colour, int shift)
+{
+    const int n = (colour >> shift) & 15;
+    return ((n & 7) << 1) | (n >> 3);
+}
+
+static unsigned short mix_st_colour(unsigned short a, unsigned short b, int amount)
+{
+    unsigned short out = 0;
+    int shift;
+    for (shift = 0; shift <= 8; shift += 4)
+    {
+        const int v = (st_level(a, shift) * (16 - amount) + st_level(b, shift) * amount + 8) >> 4;
+        out |= (unsigned short)((((v >> 1) & 7) | ((v & 1) << 3)) << shift);
+    }
+    return out;
+}
+
+static void install_st_palette(const unsigned short *palette)
+{
+    short n;
+    for (n = 0; n < 16; ++n)
+    {
+        installed_palette[n] = palette[n];
+        shown_palette[n] = fade_amount ? mix_st_colour(palette[n], fade_target, fade_amount)
+                                       : palette[n];
+    }
+    write_st_palette(shown_palette);
+}
+
+void atari_c2p_fade(int r, int g, int b, int amount, int vbls)
+{
+    unsigned short from[16], to[16];
+    int n, k;
+
+    if (amount < 0)
+        amount = 0;
+    if (amount > 16)
+        amount = 16;
+    fade_target = stcolor((unsigned char)r, (unsigned char)g, (unsigned char)b);
+    fade_amount = amount;
+    for (n = 0; n < 16; ++n)
+    {
+        from[n] = shown_palette[n];
+        to[n] = mix_st_colour(installed_palette[n], fade_target, amount);
+    }
+    /* From what is on screen now, whatever mix that was, to the new one. */
+    for (k = 1; k < vbls; ++k)
+    {
+        for (n = 0; n < 16; ++n)
+            shown_palette[n] = mix_st_colour(from[n], to[n], (16 * k) / vbls);
+        Vsync();
+        write_st_palette(shown_palette);
+    }
+    for (n = 0; n < 16; ++n)
+        shown_palette[n] = to[n];
+    if (vbls > 0)
+        Vsync();
+    write_st_palette(shown_palette);
+}
+
+int atari_c2p_fade_amount(void)
+{
+    return fade_amount;
 }
 
 static void save_st_palette(unsigned short *palette)
@@ -648,6 +726,7 @@ void atari_c2p_init(void)
 void atari_c2p_shutdown(void)
 {
     c2p_invalidate_dirty_cache();
+    fade_amount = 0;
     if (palette_saved)
     {
         install_st_palette(saved_palette);
@@ -657,6 +736,48 @@ void atari_c2p_shutdown(void)
 void atari_c2p_set_fast_mode(int enable)
 {
     c2p_fast_mode = enable ? 1 : 0;
+}
+
+/* The colours atari_c2p_set_palette was last given, 0..255 a channel. */
+static unsigned char last_colors[256 * 3];
+
+void atari_c2p_screen_to_chunky(const unsigned char *screen, unsigned char *chunky,
+                                int x, int y, int w, int h)
+{
+    unsigned char pen_colour[16];
+    int pen, i, row, col;
+
+    /* Each of the 16 shown colours as the nearest of the 256. */
+    for (pen = 0; pen < 16; ++pen)
+    {
+        long best = 0x7fffffffL;
+        for (i = 0; i < 256; ++i)
+        {
+            const long dr = (long)last_colors[i * 3] - palette16[pen].r;
+            const long dg = (long)last_colors[i * 3 + 1] - palette16[pen].g;
+            const long db = (long)last_colors[i * 3 + 2] - palette16[pen].b;
+            const long d = dr * dr + dg * dg + db * db;
+            if (d < best)
+            {
+                best = d;
+                pen_colour[pen] = (unsigned char)i;
+            }
+        }
+    }
+    for (row = y; row < y + h; ++row)
+    {
+        const unsigned short *line = (const unsigned short *)(screen + row * 160);
+        unsigned char *out = chunky + row * 320;
+        for (col = x; col < x + w; ++col)
+        {
+            const unsigned short *group = line + ((col >> 4) << 2);
+            const int bit = 15 - (col & 15);
+            const int p = ((group[0] >> bit) & 1) | (((group[1] >> bit) & 1) << 1) |
+                          (((group[2] >> bit) & 1) << 2) | (((group[3] >> bit) & 1) << 3);
+            out[col] = pen_colour[p];
+        }
+    }
+    c2p_invalidate_dirty_cache();
 }
 
 void atari_c2p_set_palette(const unsigned char *colors)
@@ -681,6 +802,7 @@ void atari_c2p_set_palette(const unsigned char *colors)
             scaled[i] = (unsigned char)(colors[i] << 2);
         colors = scaled;
     }
+    memcpy(last_colors, colors, sizeof(last_colors));
 
     for (i = 0; i < 256 * 3; ++i)
     {
@@ -751,6 +873,24 @@ void atari_c2p_set_palette(const unsigned char *colors)
     }
 }
 
+int atari_hud_dirty = 1;
+
+/* The union of the HUD rects drawn since the last conversion (screen
+ * pixels, exclusive ends); empty when x1 <= x0. */
+static int hud_x0 = 320, hud_y0 = 200, hud_x1, hud_y1;
+
+void atari_hud_touch_rect(int x, int y, int w, int h)
+{
+    if (x < hud_x0)
+        hud_x0 = x < 0 ? 0 : x;
+    if (y < hud_y0)
+        hud_y0 = y < 0 ? 0 : y;
+    if (x + w > hud_x1)
+        hud_x1 = x + w > 320 ? 320 : x + w;
+    if (y + h > hud_y1)
+        hud_y1 = y + h > 200 ? 200 : y + h;
+}
+
 #if ATARI_C2P_DIRTY_TILES
 /*
  * MD/ROTT: convert the screen outside a view rect that something else (the
@@ -771,47 +911,99 @@ static int c2p_tile_changed(const unsigned char *in, const unsigned char *old)
     return 0;
 }
 
+/* Tiles tx0..tx1-1 of the tile row at y: convert the runs that changed. */
+static void c2p_hud_span(unsigned char *out, const unsigned char *in, int y,
+                         int tx0, int tx1, int all)
+{
+    int tx = tx0;
+    while (tx < tx1)
+    {
+        int run_start;
+        if (!all && !c2p_tile_changed(in + y * 320 + tx * 16, prev_chunky + y * 320 + tx * 16))
+        {
+            tx++;
+            continue;
+        }
+        run_start = tx;
+        do
+        {
+            tx++;
+        } while (tx < tx1 &&
+                 (all || c2p_tile_changed(in + y * 320 + tx * 16, prev_chunky + y * 320 + tx * 16)));
+        {
+            const int x0 = run_start * 16;
+            const int width = (tx - run_start) * 16;
+            int row;
+            for (row = 0; row < 8; ++row)
+            {
+                const int line = y + row;
+                c2p_1x_lorez(out + 160 * line + (x0 >> 1), in + 320 * line + x0,
+                             (unsigned short)width, c2p_table[line & 3]);
+                memcpy(prev_chunky + 320 * line + x0, in + 320 * line + x0, (size_t)width);
+            }
+        }
+    }
+}
+
 void atari_c2p_hud(unsigned char *out, const unsigned char *in,
                    int view_x, int view_y, int view_w, int view_h)
 {
-    const int all = !prev_chunky_valid;
+    static int last_x = -1, last_y, last_w, last_h;
+    static unsigned char frames;
+    int all;
+    /* The tile columns wholly inside the view: rows it covers skip them in
+     * one step rather than visiting every tile (most of the screen). */
+    int vx0 = (view_x + 15) >> 4;
+    int vx1 = (view_x + view_w) >> 4;
+    int tx0 = 0, tx1 = 320 / 16, ty0 = 0, ty1 = 200 / 8;
     int ty;
 
-    for (ty = 0; ty < 200 / 8; ++ty)
+    /* A view that moved or shrank uncovers tiles the screen still has the
+     * old view in, whatever the chunky screen says: convert them all. */
+    if (view_x != last_x || view_y != last_y || view_w != last_w || view_h != last_h)
+    {
+        prev_chunky_valid = 0;
+        last_x = view_x;
+        last_y = view_y;
+        last_w = view_w;
+        last_h = view_h;
+    }
+    all = !prev_chunky_valid;
+    /* Comparing the whole HUD costs more than the rest of this put
+     * together, so: all of it when something drew without saying where
+     * (ATARI_HUD_TOUCH) and every 16th frame in case something drew without
+     * saying at all; else just where something drew (_RECT), if anything. */
+    if (!all && !atari_hud_dirty && (++frames & 15))
+    {
+        if (hud_x1 <= hud_x0 || hud_y1 <= hud_y0)
+            return;
+        tx0 = hud_x0 >> 4;
+        tx1 = (hud_x1 + 15) >> 4;
+        ty0 = hud_y0 >> 3;
+        ty1 = (hud_y1 + 7) >> 3;
+    }
+    atari_hud_dirty = 0;
+    hud_x0 = 320;
+    hud_y0 = 200;
+    hud_x1 = hud_y1 = 0;
+
+    if (vx0 < 0)
+        vx0 = 0;
+    if (vx1 > 320 / 16)
+        vx1 = 320 / 16;
+    if (vx1 < vx0)
+        vx1 = vx0;
+    for (ty = ty0; ty < ty1; ++ty)
     {
         const int y = ty * 8;
-        const int rows_inside = (y >= view_y && y + 8 <= view_y + view_h);
-        int tx = 0;
-        while (tx < 320 / 16)
+        if (y >= view_y && y + 8 <= view_y + view_h)
         {
-            int run_start;
-            int x = tx * 16;
-            if ((rows_inside && x >= view_x && x + 16 <= view_x + view_w) ||
-                (!all && !c2p_tile_changed(in + y * 320 + x, prev_chunky + y * 320 + x)))
-            {
-                tx++;
-                continue;
-            }
-            run_start = tx;
-            do
-            {
-                tx++;
-                x = tx * 16;
-            } while (tx < 320 / 16 &&
-                     !(rows_inside && x >= view_x && x + 16 <= view_x + view_w) &&
-                     (all || c2p_tile_changed(in + y * 320 + x, prev_chunky + y * 320 + x)));
-            {
-                const int x0 = run_start * 16;
-                const int width = (tx - run_start) * 16;
-                int row;
-                for (row = 0; row < 8; ++row)
-                {
-                    const int line = y + row;
-                    c2p_1x_lorez(out + 160 * line + (x0 >> 1), in + 320 * line + x0,
-                                 (unsigned short)width, c2p_table[line & 3]);
-                    memcpy(prev_chunky + 320 * line + x0, in + 320 * line + x0, (size_t)width);
-                }
-            }
+            c2p_hud_span(out, in, y, tx0, vx0 < tx1 ? vx0 : tx1, all);
+            c2p_hud_span(out, in, y, vx1 > tx0 ? vx1 : tx0, tx1, all);
+        }
+        else
+        {
+            c2p_hud_span(out, in, y, tx0, tx1, all);
         }
     }
     prev_chunky_valid = 1;

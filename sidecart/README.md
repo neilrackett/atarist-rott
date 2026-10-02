@@ -71,7 +71,8 @@ In this order, so a problem shows up in the simplest place:
    size (up to the full width between the status bars) behave.
 
 On a Mega STE the cache is switched off around every cartridge access
-(the CPU stays at 16 MHz), as in STDOOM.
+(the CPU stays at 16 MHz), as in STDOOM, and only then: building each
+frame and converting the HUD run with it on.
 
 If something goes wrong, the most useful things to send back are
 `PINGTEST.TXT`, `UPTEST.TXT` and a debug firmware's serial log:
@@ -90,9 +91,18 @@ opens the console.
 - **Largest view.** The Multi-device's frame buffers stop at 320 x 168,
   the full width between the two status bars; bigger view sizes are
   capped to that while it is in use.
-- **Frame rate** is set by the ST: game logic, the HUD and copying the
-  frame (about 16 ms for a full-width view on a 16 MHz Mega STE, in
-  Hatari) now take most of its time.
+- **Frame rate** is set by the ST, and mostly by ROTT's game logic, which
+  stays on the ST: about 70% of a 16 MHz Mega STE's time at the start of
+  E1L1 (36 lift disks, moving walls, patrols), against about 25% for
+  everything the Multi-device needs from it each frame. On an STE or Mega
+  STE the blitter copies each frame while the CPU goes on with the next
+  (`ATARI_MD_BLIT`, on unless a test copy at startup disagrees with the
+  CPU); the HUD is converted only where something drew; masked walls are
+  looked at only when one changed (`MD_MASKED_TOUCH`). In Hatari that
+  start runs at about 13 fps, up from about 3.
+- **Matching builds.** `ROTT_ST.TOS` and the firmware must come from the
+  same sources (`MD_PROTOCOL_VERSION`); with a mismatch the ST says so and
+  uses its own renderer.
 
 ## Building
 
@@ -145,6 +155,41 @@ game for N+1. A frame that is late (more than 250 ms) is simply skipped;
 after repeated failures the ST switches to its own renderer and says so.
 
 ## Testing without hardware
+
+The firmware also builds for [EmuMD](https://github.com/neilrackett/emumd),
+which runs Multi-device firmware in a patched Hatari. EmuMD is a submodule
+in `emu/emumd`; `mdfw.ini` says how to build the firmware for it, and the
+glue is in `emu/`.
+
+From the repository root, `make emu` builds the game (with stcmd) and the
+firmware and runs them; `EMU_ARGS` are passed to `mdfw run`. By hand:
+
+```sh
+cd sidecart
+emu/emumd/tools/mdfw hatari   # once: patched Hatari + EmuTOS in ~/.cache/emumd
+emu/emumd/tools/mdfw build    # build/rott-accelerator.mdfw
+emu/emumd/tools/mdfw run      # build/atarist's ROTT_ST.TOS, 16 MHz Mega STE
+```
+
+The emulated SD card is `tmp/sd`, so the WAD goes in
+`tmp/sd/rott/HUNTBGIN.WAD`. `--harddrive ../build/autotest` runs an
+`ATARI_MD_AUTOTEST` build instead; `--headless --frames N --screenshot
+out.png --log out.log` runs unattended, and `-O dump=DIR` writes the
+firmware's own view of each frame as `mdNNNNN.ppm`.
+
+Changes meant to speed up the game logic can be checked with
+`ATARI_LOGIC_CHECK=4` builds: they start a game on a virtual clock (4 tics
+a frame, however fast the build is), follow a fixed script of controls in
+god mode and write a hash of the game state after every frame to
+`LOGIC.TXT` next to the program. Two builds whose game logic behaves the
+same write the same file, on any machine or emulated speed.
+
+```sh
+STCMD_NO_TTY=1 stcmd make ATARI_LOGIC_CHECK=4 BUILDDIR=build/check OBJDIR=obj/check
+cd sidecart && emu/emumd/tools/mdfw run --headless --frames 13000 \
+    --no-user-config --harddrive ../build/check
+cmp ../build/check/LOGIC.TXT /path/to/reference/LOGIC.TXT
+```
 
 `tests/emu` builds the firmware for the host (`libmdemu`) with the Pico
 SDK, flash and FatFs replaced, plus a patch that plugs it into Hatari's

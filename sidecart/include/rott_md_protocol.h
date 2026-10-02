@@ -44,7 +44,7 @@
 
 #include <stdint.h>
 
-#define MD_PROTOCOL_VERSION 1
+#define MD_PROTOCOL_VERSION 2
 
 /* ------------------------------------------------------------------ */
 /* Bus windows                                                          */
@@ -75,9 +75,10 @@
 /* 128 x 128 tile bitsets, one bit per tile, as 1024 words: tile (x, y) is
  * word ((x << 7) | y) >> 4, bit (y & 15). Bit order within the word is
  * value order, so the ST tests (word >> (y & 15)) & 1.
- *   SPOTVIS: tiles the ray caster touched for the READY frame (floor tiles
- *            it crossed and the walls it hit), used by the ST to choose
- *            which objects to send.
+ *   SPOTVIS: tiles next to one the ray caster touched for the READY frame
+ *            (a floor tile it crossed or a wall it hit, or one of their
+ *            eight neighbours), used by the ST to choose which objects to
+ *            send: one bit per object rather than nine.
  *   MAPSEEN: everything seen since LEVEL_BEGIN, ORed into mapseen[] by the
  *            ST when the automap opens. */
 #define MD_SPOTVIS_OFFSET 0x0460

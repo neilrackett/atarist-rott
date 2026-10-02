@@ -72,6 +72,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 
 #include "atari_md.h"
+#include "atari_check.h"
 #if (DEVELOPMENT == 1)
 #include "rt_str.h"
 #endif
@@ -1791,6 +1792,7 @@ void Cmd_Use (objtype*ob)
          if (!(tempwall->flags & FL_ON))
             {
             maskobjlist[tilemap[checkx][checky]&0x3ff]->toptexture++;
+            MD_MASKED_TOUCH();
             tempwall->flags |= FL_ON;
             TRIGGER[index] = 1;
             SD_PlaySoundRTP(SD_TOUCHPLATESND,ob->x,ob->y);
@@ -1800,6 +1802,7 @@ void Cmd_Use (objtype*ob)
          else if (tempwall->flags & FL_REVERSIBLE)
             {
             maskobjlist[tilemap[checkx][checky]&0x3ff]->toptexture--;
+            MD_MASKED_TOUCH();
             tempwall->flags &= ~FL_ON;
             TRIGGER[index] = 1;
             SD_PlaySoundRTP(SD_TOUCHPLATESND,ob->x,ob->y);
@@ -2898,6 +2901,10 @@ void PollControls (void)
 
    if (gamestate.autorun==1)
 	   buttonpoll[bt_run] = true;
+
+#if defined(__MINT__) && (ATARI_LOGIC_CHECK > 0)
+   ATARI_CheckKeys();
+#endif
 
 
 //

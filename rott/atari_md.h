@@ -48,6 +48,11 @@ void ATARI_MD_TileChanged(int x, int y);
 #define MD_TILE_TOUCH(x, y) \
   ((void)(atari_md_active ? (ATARI_MD_TileChanged((x), (y)), 0) : 0))
 
+/* A masked wall changed (flags or textures): the next frame looks for
+ * changes, which it otherwise does only every 8th frame. */
+extern int atari_md_masked_dirty;
+#define MD_MASKED_TOUCH() ((void)(atari_md_masked_dirty = 1))
+
 /* Light sources around (x, y) changed (a lamp turned on or off). */
 void ATARI_MD_LightsChanged(int x, int y);
 
@@ -72,6 +77,14 @@ void ATARI_MD_Messages(const char *const *lines, int count);
  * in which case the caller skips its own C2P. */
 int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels);
 
+/* The frame copy may still be running on the blitter: anything else that
+ * draws to the screen calls this first. */
+void ATARI_MD_BlitWait(void);
+
+/* The MD's last frame, from the screen into the chunky screen, for the
+ * effects that work on that (RotateBuffer). */
+void ATARI_MD_ViewToChunky(unsigned char *chunky);
+
 /* The automap is opening: fold what the MD has seen into mapseen[][]. */
 void ATARI_MD_SyncMapSeen(void);
 
@@ -85,6 +98,7 @@ void ATARI_MD_AutotestShot(int frame);
 
 #define ATARI_MD_Active() 0
 #define MD_TILE_TOUCH(x, y) ((void)0)
+#define MD_MASKED_TOUCH() ((void)0)
 
 #endif
 

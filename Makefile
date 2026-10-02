@@ -21,7 +21,10 @@ ATARI_NOIR_DITHERING ?= 0 # Dither noir output
 
 ATARI_MD_RENDER ?= 1 # Use the MD/ROTT firmware when present
 ATARI_MD_PIPELINE ?= 1 # MD renders frame N while the ST runs N+1
+ATARI_MD_BLIT ?= 1 # The blitter copies MD frames while the CPU goes on
 ATARI_MD_AUTOTEST ?= 0 # Test runs: start a game, turn N angles a tic
+ATARI_MD_AUTOTEST_DIE ?= 0 # Test runs: the player is killed at frame N
+ATARI_LOGIC_CHECK ?= 0 # Test runs: N tics a frame, scripted, state hashes
 
 # Rendering and performance settings
 
@@ -90,7 +93,9 @@ ATARI_CFLAGS ?= -O3 -fomit-frame-pointer -s -std=gnu99 -m68000 \
 	-DATARI_USE_ASM_HOTSPOTS=$(ATARI_USE_ASM_HOTSPOTS) \
 	-DATARI_SKIP_LIGHTLEVEL=$(ATARI_SKIP_LIGHTLEVEL) -DATARI_SKIP_FIZZLE=$(ATARI_SKIP_FIZZLE) \
 	-DATARI_MD_RENDER=$(ATARI_MD_RENDER) -DATARI_MD_PIPELINE=$(ATARI_MD_PIPELINE) \
-	-DATARI_MD_AUTOTEST=$(ATARI_MD_AUTOTEST)
+	-DATARI_MD_BLIT=$(ATARI_MD_BLIT) \
+	-DATARI_MD_AUTOTEST=$(ATARI_MD_AUTOTEST) -DATARI_LOGIC_CHECK=$(ATARI_LOGIC_CHECK) \
+	-DATARI_MD_AUTOTEST_DIE=$(ATARI_MD_AUTOTEST_DIE)
 ATARI_LDFLAGS ?= -s -nostdlib -L/freemint/libcmini/lib /freemint/libcmini/lib/crt0.o -m68000
 ATARI_LIBS ?= -lcmini -lgcc
 ATARI_INCLUDES ?= -I$(SRCDIR) -I$(SRCDIR)/audiolib -Isidecart/include -I/freemint/libcmini/include
@@ -176,6 +181,26 @@ rott-rottsite: atari-stage-runtime-files $(ATARI_OUTPUT)
 
 clean:
 	$(RM) -r $(ATARI_OUTPUT) $(OBJDIR)
+
+# The game in EmuMD (sidecart/emu/emumd): Hatari with the ROTT Accelerator
+# emulated on the cartridge port. Run on the host, not in stcmd: builds the
+# game with stcmd (passing any ATARI_*, BUILDDIR or OBJDIR given here) and
+# the firmware for the host, then starts Hatari. EMU_ARGS go to mdfw run:
+#   make emu ATARI_SHOW_FPS=1
+#   make emu EMU_ARGS="--headless --frames 3000 --screenshot out.png"
+# The first time, build EmuMD's Hatari: sidecart/emu/emumd/tools/mdfw hatari
+EMU_SD ?= tmp/sd
+EMU_WAD ?= HUNTBGIN.WAD
+EMU_ARGS ?=
+
+.PHONY: emu
+emu:
+	@[ -x sidecart/emu/emumd/tools/mdfw ] || git submodule update --init sidecart/emu/emumd
+	STCMD_NO_TTY=1 STCMD_QUIET=1 stcmd make $(filter ATARI_% BUILDDIR=% OBJDIR=% DATADIR=%,$(MAKEOVERRIDES))
+	@mkdir -p $(EMU_SD)/rott
+	@[ -e $(EMU_SD)/rott/$(EMU_WAD) ] || cp $(DATADIR)/$(EMU_WAD) $(EMU_SD)/rott/
+	cd sidecart && emu/emumd/tools/mdfw run --harddrive $(abspath $(BUILDDIR)) \
+		--sd $(abspath $(EMU_SD)) $(EMU_ARGS)
 
 $(BUILDDIR)/%.TOS: $(ATARI_OBJECTS) | $(BUILDDIR)
 	$(ATARI_CC) $(ATARI_LDFLAGS) $(ATARI_OBJECTS) $(ATARI_LIBS) -o $@

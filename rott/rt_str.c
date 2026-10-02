@@ -86,6 +86,7 @@ static char strbuf[MaxString];
 
 void VW_DrawClippedString (int x, int y, const char *string)
 {
+   ATARI_HUD_TOUCH();
    int   width,height,ht;
    byte  *source;
    int   ch;
@@ -174,6 +175,7 @@ void US_ClippedPrint (int x, int y, const char *string)
 
 void VW_DrawPropString (const char *string)
 {
+   ATARI_HUD_TOUCH();
 #ifdef DOS
    byte  pix;
    int   width,step,height,ht;
@@ -287,6 +289,7 @@ void VWB_DrawPropString  (const char *string)
 
 void VW_DrawIPropString (const char *string)
 {
+   ATARI_HUD_TOUCH();
    byte  pix;
    int   width,step,height,ht;
    byte  *source, *dest, *origdest;
@@ -1502,6 +1505,7 @@ byte GetIntensityColor (byte pix)
 
 void DrawIntensityChar  ( char ch )
    {
+   ATARI_HUD_TOUCH();
 
    byte  pix;
    int   px1,py1;

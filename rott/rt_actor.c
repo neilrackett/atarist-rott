@@ -1074,7 +1074,12 @@ void DoActor (objtype *ob)
 #if (BNACRASHPREVENT == 1)//
 		if (ob->state == 0){return;}
 #endif
-    ApplyGravity(ob);
+    // ApplyGravity's own first tests, without the call for every actor.
+    if (((ob->momentumz) || (ob->z != nominalheight)) &&
+        (ob->obclass > playerobj) &&
+        ((ob->obclass <= roboguardobj) || (ob->obclass == collectorobj) ||
+         (ob->obclass == b_heinrichobj)))
+       ApplyGravity(ob);
 	 M_CheckDoor(ob);
 	 M_CheckBossSounds(ob);
     if ((ob->obclass >= b_darianobj) &&
@@ -1185,11 +1190,12 @@ void ApplyGravity(objtype *ob)
 
 void NewState (objtype *ob, statetype *newstate)
 {
-   if (DoPanicMapping() &&
-       ((newstate == &s_explosion1) ||
+   // The state tests first: DoPanicMapping() is a call, for every new state.
+   if (((newstate == &s_explosion1) ||
         (newstate == &s_grexplosion1) ||
         (newstate == &s_staticexplosion1)
-       )
+       ) &&
+       DoPanicMapping()
       )
       ob->state = &s_altexplosion1;
    else{
@@ -6393,6 +6399,11 @@ movement_status CheckOtherActors(objtype*ob,int tryx,int tryy,int tryz)
          if (listrover == ob)
             continue;
 
+         // Too far away whatever its class (the tests below only widen
+         // actrad by 0x3000, and only continue): most of the list.
+         dx = tryx - listrover->x;
+         if ((dx < -(oldrad + 0x3000)) || (dx > (oldrad + 0x3000)))
+            continue;
 
          tcl = listrover->obclass;
 
@@ -7213,6 +7224,11 @@ void PushWallMove(int num)
 
  for(temp=firstareaactor[areanumber];temp;temp=temp->nextinarea)
 	 {
+	 // Out of range first: most actors are, and these tests only continue.
+	 dx = abs(tryx - temp->x);
+	 if (dx > actrad)
+		 continue;
+
 	 tcl = temp->obclass;
 
 	 if (temp->flags & FL_HEAD)  //ignore NME's head and wheels
@@ -7223,11 +7239,6 @@ void PushWallMove(int num)
 
     if (tcl > b_darianobj)
        continue;
-
-
-    dx = abs(tryx - temp->x);
-	 if (dx > actrad)
-		 continue;
 
     dy = abs(tryy - temp->y);
 	 if (dy > actrad)

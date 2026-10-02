@@ -25,6 +25,7 @@
 
 #include "rt_def.h"
 
+#include <mint/cookie.h>
 #include <mint/osbind.h>
 #include <stdio.h>
 #include <string.h>
@@ -55,6 +56,9 @@
 #ifndef ATARI_MD_PIPELINE
 #define ATARI_MD_PIPELINE 1
 #endif
+#ifndef ATARI_MD_BLIT
+#define ATARI_MD_BLIT 1
+#endif
 #ifndef ATARI_NOIR
 #define ATARI_NOIR 0
 #endif
@@ -83,6 +87,7 @@ extern int CalcRotate(objtype *ob);
 #define FIXEDTRANSLEVEL (30) /* _rt_draw.h */
 
 int atari_md_active;
+int atari_md_masked_dirty = 1;
 
 #define MD_PKT_WORDS (MD_CMD_MAX_BYTES / 2)
 #define MD_MAX_LUMPS 4096
@@ -106,6 +111,8 @@ static int md_snapshot_needed;
 static int md_snapshot_tries;
 static unsigned short md_seq;
 static unsigned short md_copied_seq;
+static int md_blit_ok; /* frames are copied by the blitter */
+static void md_blit_init(void);
 static int md_frame_pending;
 static int md_failures;
 
@@ -368,7 +375,8 @@ void ATARI_MD_Init(void) {
     printf("%s\nUsing the ST renderer\n", result);
     return;
   }
-  printf("%s\n", result);
+  md_blit_init();
+  printf("%s%s\n", result, md_blit_ok ? " (blitter)" : "");
   atari_md_active = 1;
   md_snapshot_needed = 1;
 }
@@ -704,21 +712,20 @@ void ATARI_MD_Messages(const char *const *lines, int count) {
   md_nummsgs = count;
 }
 
-/* The MD's spotvis of its newest frame: is the tile at (x, y) or one of
- * its eight neighbours marked? */
+/* The MD's spotvis of its newest frame, copied out of ROM4 once a frame
+ * so the object loop reads RAM with the cache on. */
+static unsigned short md_spotvis[MD_BITSET_WORDS];
+
+static void read_spotvis(void) {
+  memcpy(md_spotvis, (const void *)(MD_ROM4_BASE + MD_SPOTVIS_OFFSET),
+         MD_BITSET_WORDS * 2);
+}
+
+/* Is the tile at (x, y) or one of its eight neighbours marked? The MD
+ * publishes each tile with its neighbours' bits already ORed in. */
 static int spotvis_near(int x, int y) {
-  volatile const unsigned short *bits =
-      (volatile const unsigned short *)(MD_ROM4_BASE + MD_SPOTVIS_OFFSET);
-  int dx, dy;
   if (x < 1 || y < 1 || x >= MAPSIZE - 1 || y >= MAPSIZE - 1) return 0;
-  for (dx = -1; dx <= 1; dx++) {
-    const int base = (x + dx) << 7;
-    for (dy = -1; dy <= 1; dy++) {
-      const int t = base + y + dy;
-      if ((bits[t >> 4] >> (t & 15)) & 1) return 1;
-    }
-  }
-  return 0;
+  return (md_spotvis[MD_BITSET_WORD(x, y)] >> MD_BITSET_BIT(y)) & 1;
 }
 
 static int near_player(int tx, int ty) {
@@ -893,12 +900,17 @@ static void add_deltas(void) {
         (byte)d->action != s->action || d->flags != s->flags)
       put_door(world_item(MD_REC_DOOR, MD_DOOR_WORDS), i);
   }
-  for (i = 0; i < maskednum; i++) {
-    const maskedwallobj_t *m = maskobjlist[i];
-    const md_mwall_shadow_t *s = &md_mwalls[i];
-    if (m->flags != s->flags || m->toptexture != s->top ||
-        m->midtexture != s->mid || m->bottomtexture != s->bottom)
-      put_mwall(world_item(MD_REC_MWALL, MD_MWALL_WORDS), i);
+  /* Masked walls rarely change, and the changes in play say so
+   * (MD_MASKED_TOUCH): look for them then, and every 8th frame anyway. */
+  if (atari_md_masked_dirty || !(md_seq & 7)) {
+    atari_md_masked_dirty = 0;
+    for (i = 0; i < maskednum; i++) {
+      const maskedwallobj_t *m = maskobjlist[i];
+      const md_mwall_shadow_t *s = &md_mwalls[i];
+      if (m->flags != s->flags || m->toptexture != s->top ||
+          m->midtexture != s->mid || m->bottomtexture != s->bottom)
+        put_mwall(world_item(MD_REC_MWALL, MD_MWALL_WORDS), i);
+    }
   }
   for (i = 0; i < pwallnum; i++) {
     const pwallobj_t *w = pwallobjlist[i];
@@ -982,7 +994,7 @@ static void add_messages(void) {
   md_msgs_dirty = 0;
 }
 
-static int send_frame(void) {
+static void build_frame(void) {
   int i;
   unsigned short *p;
 
@@ -1006,8 +1018,10 @@ static int send_frame(void) {
   add_objects();
   pkt_close();
   md_pkt[md_pkt_len++] = MD_REC_END;
-
   md_seq++;
+}
+
+static int send_frame(void) {
   return sidecart_md_write(MD_CMD_FRAME, md_pkt, md_pkt_len * 2, (long)md_seq,
                            (long)md_copied_seq, (long)md_level_serial);
 }
@@ -1019,6 +1033,83 @@ static int wait_ready(int ahead) {
     if (I_GetTimeMS() - t0 > MD_WAIT_MS) return 0;
   }
   return 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* Frame copy by the blitter                                            */
+/* ------------------------------------------------------------------ */
+/* On an STE or Mega STE the blitter copies the MD's frame to the screen
+ * while the CPU goes on with the next frame, the two sharing the bus (blit
+ * mode: 64 bus cycles each, the CPU running from its cache where it can),
+ * rather than the CPU stopping for the ~13 ms copy. Whatever next touches
+ * the cartridge or the screen waits for it first (ATARI_MD_BlitWait). Only
+ * used if a test copy by the blitter reads ROM4 the same as the CPU does
+ * (md_blit_init). */
+
+#ifndef C__CPU
+#define C__CPU 0x5f435055L /* '_CPU' */
+#endif
+#define BLT_B(off) (*(volatile unsigned char *)(0xFFFF8A00UL + (off)))
+#define BLT_W(off) (*(volatile unsigned short *)(0xFFFF8A00UL + (off)))
+#define BLT_L(off) (*(volatile unsigned long *)(0xFFFF8A00UL + (off)))
+#define BLT_BUSY 0x80
+
+static int md_blit_pending;
+
+/* Where the last frame went on the screen (ATARI_MD_ViewToChunky). */
+static int md_shown_x, md_shown_y, md_shown_w, md_shown_h;
+
+/* `rows` rows of `bpr` bytes from src, to rows 160 bytes apart at dst. */
+static void md_blit_start(const void *src, void *dst, int rows, int bpr) {
+  const long token = sidecart_md_super_force();
+  BLT_W(0x20) = 2; /* source x and y increments: rows are contiguous */
+  BLT_W(0x22) = 2;
+  BLT_L(0x24) = (unsigned long)src;
+  BLT_W(0x28) = 0xFFFF; /* end masks: whole words */
+  BLT_W(0x2A) = 0xFFFF;
+  BLT_W(0x2C) = 0xFFFF;
+  BLT_W(0x2E) = 2;
+  BLT_W(0x30) = (unsigned short)(160 - bpr + 2);
+  BLT_L(0x32) = (unsigned long)dst;
+  BLT_W(0x36) = (unsigned short)(bpr >> 1);
+  BLT_W(0x38) = (unsigned short)rows;
+  BLT_B(0x3A) = 2; /* HOP: source */
+  BLT_B(0x3B) = 3; /* OP: source */
+  BLT_B(0x3D) = 0; /* no skew */
+  BLT_B(0x3C) = BLT_BUSY; /* go, in blit (bus sharing) mode */
+  md_blit_pending = 1;
+  sidecart_md_super_end(token);
+}
+
+void ATARI_MD_BlitWait(void) {
+  long token;
+  if (!md_blit_pending) return;
+  token = sidecart_md_super_force();
+  while (BLT_B(0x3C) & BLT_BUSY) {
+  }
+  sidecart_md_super_end(token);
+  md_blit_pending = 0;
+}
+
+static void md_blit_init(void) {
+  static unsigned short probe[32];
+  volatile const unsigned short *rom = (volatile const unsigned short *)MD_ROM4_BASE;
+  long cpu = 0;
+  int i, same = 1;
+
+  md_blit_ok = 0;
+  if (!ATARI_MD_BLIT) return;
+  if (!(Blitmode(-1) & 2)) return; /* no blitter */
+  /* The supervisor switches use MOVE from SR, a 68000-only freedom. */
+  if (Getcookie(C__CPU, &cpu) == C_FOUND && cpu >= 10) return;
+  memset(probe, 0, sizeof(probe));
+  sidecart_md_bus_begin();
+  md_blit_start((const void *)MD_ROM4_BASE, probe, 1, (int)sizeof(probe));
+  ATARI_MD_BlitWait();
+  for (i = 0; i < 32; i++)
+    if (probe[i] != rom[i]) same = 0;
+  sidecart_md_bus_end();
+  md_blit_ok = same;
 }
 
 static void copy_ready(unsigned char *screen) {
@@ -1035,10 +1126,26 @@ static void copy_ready(unsigned char *screen) {
   if (w <= 0 || h <= 0 || w > MD_VIEW_MAX_W || h > MD_VIEW_MAX_H || (x & 15) ||
       x + w > 320 || y + h > 200)
     return;
-  atari_md_copy((const void *)(MD_ROM4_BASE +
-                               (buf ? MD_FRAME_OFFSET_B : MD_FRAME_OFFSET_A)),
-                screen + y * 160 + (x >> 1), h, w >> 1);
+  if (md_blit_ok)
+    md_blit_start((const void *)(MD_ROM4_BASE +
+                                 (buf ? MD_FRAME_OFFSET_B : MD_FRAME_OFFSET_A)),
+                  screen + y * 160 + (x >> 1), h, w >> 1);
+  else
+    atari_md_copy((const void *)(MD_ROM4_BASE +
+                                 (buf ? MD_FRAME_OFFSET_B : MD_FRAME_OFFSET_A)),
+                  screen + y * 160 + (x >> 1), h, w >> 1);
   md_copied_seq = seq;
+  md_shown_x = x;
+  md_shown_y = y;
+  md_shown_w = w;
+  md_shown_h = h;
+}
+
+void ATARI_MD_ViewToChunky(unsigned char *chunky) {
+  if (!atari_md_active || md_shown_w <= 0) return;
+  ATARI_MD_BlitWait();
+  atari_c2p_screen_to_chunky((const unsigned char *)Physbase(), chunky, md_shown_x,
+                             md_shown_y, md_shown_w, md_shown_h);
 }
 
 static void give_up(const char *why) {
@@ -1090,6 +1197,7 @@ void ATARI_MD_AutotestShot(int frame) {
   int i;
 
   if (frame <= 0 || frame > 64 || (frame & 7)) return;
+  ATARI_MD_BlitWait();
   ssp = Super(0L);
   head[0] = 0;
   for (i = 0; i < 16; i++) head[1 + i] = ((volatile unsigned short *)0xFF8240L)[i];
@@ -1104,9 +1212,16 @@ void ATARI_MD_AutotestShot(int frame) {
 #endif
 
 int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
+  long ssp;
+
   if (!atari_md_active || !md_frame_pending) return 0;
   md_frame_pending = 0;
 
+  /* The frame runs in supervisor mode on a Mega STE, so the cache can be
+   * off just while the cartridge is in use (not while building the frame
+   * or converting the HUD) without each switch costing traps. */
+  ssp = sidecart_md_super_begin();
+  ATARI_MD_BlitWait(); /* the last frame may still be on its way */
   sidecart_md_bus_begin();
 
   /* The MD lost the level (it was reset, or a command went missing)? */
@@ -1116,19 +1231,31 @@ int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
     md_snapshot_needed = 1;
   }
   if (md_snapshot_needed) {
+    /* Resending it can show progress through the plain C2P path, which
+     * calls Super(): out of supervisor mode for that. */
+    sidecart_md_bus_end();
+    sidecart_md_super_end(ssp);
+    sidecart_md_bus_begin();
     if (!send_snapshot()) {
       sidecart_md_bus_end();
       if (++md_snapshot_tries >= 3) give_up("ROTT Accelerator failed: ST renderer");
       return 0;
     }
     md_snapshot_tries = 0;
+    sidecart_md_bus_end();
+    ssp = sidecart_md_super_begin();
+    sidecart_md_bus_begin();
   }
 
   /* Pipelined: keep at most one frame in flight before sending another. */
   if (ATARI_MD_PIPELINE) wait_ready(1);
+  read_spotvis();
+  sidecart_md_bus_end();
+
+  build_frame();
   if (send_frame()) {
     if (++md_failures >= 8) {
-      sidecart_md_bus_end();
+      sidecart_md_super_end(ssp);
       give_up("ROTT Accelerator lost: ST renderer");
       return 0;
     }
@@ -1138,13 +1265,16 @@ int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
 
   /* The HUD the ST drew, around the view; then the view. */
   atari_c2p_hud(screen, pixels, md_view_x, md_view_y, md_view_w, md_view_h);
+  sidecart_md_bus_begin();
   if (!ATARI_MD_PIPELINE) wait_ready(0);
   copy_ready(screen);
-#if defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
-  autotest_report();
-#endif
-
   sidecart_md_bus_end();
+  sidecart_md_super_end(ssp);
+#if defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
+  sidecart_md_bus_begin();
+  autotest_report();
+  sidecart_md_bus_end();
+#endif
   return 1;
 }
 
