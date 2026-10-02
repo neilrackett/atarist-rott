@@ -98,7 +98,7 @@ ATARI_CFLAGS ?= -O3 -fomit-frame-pointer -s -std=gnu99 -m68000 \
 	-DATARI_MD_AUTOTEST_DIE=$(ATARI_MD_AUTOTEST_DIE)
 ATARI_LDFLAGS ?= -s -nostdlib -L/freemint/libcmini/lib /freemint/libcmini/lib/crt0.o -m68000
 ATARI_LIBS ?= -lcmini -lgcc
-ATARI_INCLUDES ?= -I$(SRCDIR) -I$(SRCDIR)/audiolib -Isidecart/include -I/freemint/libcmini/include
+ATARI_INCLUDES ?= -I$(SRCDIR) -I$(SRCDIR)/audiolib -Isidecart/include -Ilib/xpad/src -I/freemint/libcmini/include
 ATARI_AUDIOLIB_SOURCES := \
 	$(SRCDIR)/audiolib/atari_stubs.c \
 	$(SRCDIR)/audiolib/atari_music.c \
@@ -114,7 +114,8 @@ ATARI_AUDIOLIB_SOURCES := \
 	$(SRCDIR)/audiolib/pitch.c \
 	$(SRCDIR)/audiolib/user.c \
 	$(SRCDIR)/audiolib/usrhooks.c
-ATARI_SOURCES := $(filter-out $(SRCDIR)/amiga_%.c $(SRCDIR)/dosutil.c $(SRCDIR)/dukemusc.c $(SRCDIR)/fx_man.c $(SRCDIR)/lookups.c $(SRCDIR)/vocdecode.c,$(wildcard $(SRCDIR)/*.c)) $(ATARI_AUDIOLIB_SOURCES)
+ATARI_SOURCES := $(filter-out $(SRCDIR)/amiga_%.c $(SRCDIR)/dosutil.c $(SRCDIR)/dukemusc.c $(SRCDIR)/fx_man.c $(SRCDIR)/lookups.c $(SRCDIR)/vocdecode.c,$(wildcard $(SRCDIR)/*.c)) $(ATARI_AUDIOLIB_SOURCES) \
+	lib/xpad/src/xpad.c
 ATARI_ASM_SOURCES := $(SRCDIR)/sidecart_stubs.S $(SRCDIR)/atari_md_s.S
 ATARI_OBJECTS := $(addprefix $(OBJDIR)/,$(ATARI_SOURCES:.c=.o) $(ATARI_ASM_SOURCES:.S=.o))
 ATARI_OUTPUT ?= $(BUILDDIR)/ROTT_ST.TOS
@@ -209,6 +210,7 @@ $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
 
 atari-stage-runtime-files: | $(BUILDDIR)
+	@cp -f lib/xpad/LICENSE $(BUILDDIR)/XPAD.TXT
 	@for src in $(ATARI_RUNTIME_CONFIG_FILES); do \
 		dst="$(BUILDDIR)/$$(basename "$$src")"; \
 		if [ -e "$$src" ]; then \

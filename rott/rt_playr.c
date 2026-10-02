@@ -73,6 +73,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "atari_md.h"
 #include "atari_check.h"
+#include "atari_xpad.h"
 #if (DEVELOPMENT == 1)
 #include "rt_str.h"
 #endif
@@ -2911,6 +2912,9 @@ void PollControls (void)
 // get button states
 //
    PollKeyboardButtons ();
+#if defined(__MINT__)
+   ATARI_XpadButtons ();
+#endif
 
    if (mouseenabled && !cybermanenabled)
       PollMouseButtons ();
@@ -2936,6 +2940,9 @@ void PollControls (void)
    if (vrenabled)
       PollVirtualReality ();
 
+#if defined(__MINT__)
+   ATARI_XpadMove ();
+#endif
    PollMove ();
 
    if (spaceballenabled)

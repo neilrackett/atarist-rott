@@ -10,3 +10,6 @@
 [submodule "sidecart/emu/emumd"]
 	path = sidecart/emu/emumd
 	url = https://github.com/neilrackett/emumd.git
+[submodule "lib/xpad"]
+	path = lib/xpad
+	url = https://github.com/neilrackett/atarist-xpad

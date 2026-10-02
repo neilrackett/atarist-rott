@@ -49,6 +49,10 @@ Input + Timing Notes (Critical)
 - Avoid reintroducing aggressive catch-up limits under load.
   - Keep `ATARI_MAX_CATCHUP_STEPS=0` unless specifically profiling alternatives.
 - If gameplay appears frozen but rendering updates, suspect timing/input path first.
+- Gamepads: Xpad (submodule `lib/xpad`, consumer half only), `rott/atari_xpad.c`.
+  In play it sets `buttonpoll[]` and `JX`/`JY` from `PollControls`; outside play
+  (menus, key waits) it injects keys from `doEvents`. Only providers that read
+  hardware work: the IKBD example drivers hook TOS, which our ACIA handler bypasses.
 
 Performance Notes
 

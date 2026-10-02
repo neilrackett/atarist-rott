@@ -74,6 +74,9 @@ static int titleyoffset=0;
 static char titlestring[40]="\0";
 static int readytoflip;
 static boolean MenuBufStarted=false;
+#if defined(__MINT__)
+int ATARI_MenuActive(void) { return MenuBufStarted; }
+#endif
 static int mindist=0x2700;
 static boolean BackgroundDrawn=false;
 #if defined(__MINT__)

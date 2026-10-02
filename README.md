@@ -8,10 +8,10 @@ What better way to celebrate the 30th-ish anniversary of ROTT than to port it to
 
 This repository contains 2 versions of ROTT:
 
-| Branch    | Description                                                                                     | Target                        |
-| --------- | ----------------------------------------------------------------------------------------------- | ----------------------------- |
-| `atarist` | Aggressively optimised native Atari ST port                                                     | ST, STE, Mega STE             |
-| `sdl`     | SDL based port aiming to be as close to original ROTT as possible on all ST-compatible hardware | ST, STE, Mega STE, TT, Falcon |
+| Branch    | Description                                                                                            | Target                        |
+| --------- | ------------------------------------------------------------------------------------------------------ | ----------------------------- |
+| `atarist` | Aggressively optimised native Atari ST port & optional ROTT Accelerator for SidecarTridge Multi-device | ST, STE, Mega STE             |
+| `sdl`     | SDL based port aiming to be as close to original ROTT as possible on all ST-compatible hardware        | ST, STE, Mega STE, TT, Falcon |
 
 The `atarist` version can also hand its 3D view over to a [SidecarTridge Multi-device](https://sidecartridge.com), if you have one: see [ROTT Accelerator](#rise-of-the-triad-sidecartridge-multi-device) below.
 
@@ -19,7 +19,8 @@ All builds:
 
 - Require 4MB RAM
 - Need you to install or download the DOS version of [ROTT shareware ("The Hunt Begins")](https://archive.org/details/rott_shareware)
-- Support keyboard and mouse input
+- Support keyboard, mouse and [Xpad](https://downloads.neilrackett.com/atarist-rott) controls
+- ROTT Accelerator requires [SidecarTridge Multi-device](https://store.sidecartridge.com/products/sidecartridge-multi-device) (optional)
 
 Stable builds are avilable on the [releases page](https://github.com/neilrackett/atarist-rott/releases).
 
@@ -68,6 +69,25 @@ As well as taking the load off the ST, that brings back some of what the ST vers
 
 See the [ROTT Accelerator readme](sidecart/README.md) for installation, testing and build instructions.
 
+## Gamepads (Xpad)
+
+The `atarist` version also plays with a gamepad through [Xpad](https://github.com/neilrackett/atarist-xpad), with analogue turning and movement on the left stick. It needs an Xpad driver that reads the pad's hardware directly, such as the STE enhanced port driver or a cartridge-port adapter: the Xpad joystick and keyboard drivers cannot work here, because this version reads the keyboard itself.
+
+| Pad               | In the game              | In menus |
+| ----------------- | ------------------------ | -------- |
+| Left stick, D-pad | Turn and move            | Move     |
+| A                 | Fire                     | Select   |
+| B                 | Use (open, press)        | Back     |
+| X                 | Strafe                   |          |
+| Y                 | Run                      |          |
+| LB, RB            | Previous, next weapon    |          |
+| LT, RT            | Strafe left, right       |          |
+| Right stick       | Look up and down, strafe |          |
+| Left stick click  | Turn around              |          |
+| Start             | Menu                     | Back     |
+| Select            | Map                      |          |
+| Guide             | Pause                    |          |
+
 ## Installation
 
 - Install the shareware version of ROTT for DOS using DOSbox, or [download the files from Internet.org](https://archive.org/details/rott_shareware)
@@ -79,7 +99,7 @@ See the [ROTT Accelerator readme](sidecart/README.md) for installation, testing 
 
 ## Build
 
-The quickest way to build ROTT for yourself is to install [atarist-toolkit-docker](https://github.com/sidecartridge/atarist-toolkit-docker) then run:
+The quickest way to build ROTT for yourself is to install [atarist-toolkit-docker](https://github.com/sidecartridge/atarist-toolkit-docker), fetch the submodules (`git submodule update --init`), then run:
 
 ```bash
 stcmd make
@@ -115,5 +135,7 @@ stcmd make rott-rottsite
 This software is distributed in source code format and is licensed under the
 terms of the GNU General Public License. A copy of this license is included
 with the software in the file COPYING.
+
+Controller input via Xpad, Copyright (c) 2026 Neil Rackett, BSD-2-Clause. See XPAD.TXT.
 
 This is a completely unofficial port and is not supported by 3D Realms, Apogee, or the porters.

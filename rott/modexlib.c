@@ -40,6 +40,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "atari_md.h"
 #include "atari_megaste.h"
 #include "i_timer.h"
+#include "atari_xpad.h"
 #include "isr.h"
 #include "rt_playr.h"
 #include "rt_actor.h"
@@ -699,6 +700,11 @@ static void atari_enqueue_key(unsigned char data)
    Keytail = next_tail;
 }
 
+void ATARI_InjectKey(int scancode, int down)
+{
+   atari_enqueue_key((unsigned char)(down ? scancode : (scancode | 0x80)));
+}
+
 static void atari_input_init(void)
 {
    atari_dbg("ATARI: input_init start\r\n");
@@ -854,6 +860,7 @@ void doEvents(void)
          }
       }
    }
+   ATARI_XpadPump();
 }
 
 #else
