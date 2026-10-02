@@ -48,7 +48,7 @@ static int sndindex = 0;
 
 int GetRandomSeed ( void )
 {
-#if defined(__MINT__) && (ATARI_LOGIC_CHECK > 0)
+#if defined(ATARI_NATIVE) && (ATARI_LOGIC_CHECK > 0)
    return 0; // ATARI_LOGIC_CHECK: the same game every run
 #else
    return ( time (NULL) % (SIZE_OF_RANDOM_TABLE) );

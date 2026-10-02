@@ -22,7 +22,7 @@ shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
 `REMOTE1.RTS` next to `ROTT_ST.TOS` on the ST, as usual).
 
 1. Build the firmware (`make -C sidecart build`, see below) or take the
-   `.uf2` and `.json` from `sidecart/dist/`.
+   `.uf2` and `.json` from `dist/`.
 2. Copy both files into `/apps` on the Multi-device's microSD card.
 3. Copy `HUNTBGIN.WAD` into `/rott` on the same card. It must be the same
    file the ST uses: the firmware checks its size and directory against
@@ -113,11 +113,11 @@ built with `stcmd` (atarist-toolkit-docker) as the game is.
 
 ```sh
 export PICO_TOOLCHAIN_PATH=/path/to/arm-none-eabi/bin
-make -C sidecart build     # release firmware -> sidecart/dist/*.uf2 + .json
+make -C sidecart build     # release firmware -> dist/<uuid>.uf2 + .json
 make -C sidecart debug     # debug firmware (serial console), bumps the patch version
 make -C sidecart tests     # PINGTEST.TOS, UPTEST.TOS in sidecart/tests/
 make -C sidecart census    # WAD sections vs the flash budget
-STCMD_NO_TTY=1 stcmd make  # the game: build/atarist/ROTT_ST.TOS
+STCMD_NO_TTY=1 stcmd make  # the game: dist/ROTT_ST.TOS
 ```
 
 `ATARI_MD_RENDER=0` builds `ROTT_ST.TOS` without any of this;
@@ -168,7 +168,7 @@ firmware and runs them; `EMU_ARGS` are passed to `mdfw run`. By hand:
 cd sidecart
 emu/emumd/tools/mdfw hatari   # once: patched Hatari + EmuTOS in ~/.cache/emumd
 emu/emumd/tools/mdfw build    # build/rott-accelerator.mdfw
-emu/emumd/tools/mdfw run      # build/atarist's ROTT_ST.TOS, 16 MHz Mega STE
+emu/emumd/tools/mdfw run      # dist/ROTT_ST.TOS, 16 MHz Mega STE
 ```
 
 The emulated SD card is `tmp/sd`, so the WAD goes in

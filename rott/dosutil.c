@@ -173,7 +173,7 @@ void DisplayTextSplash(byte *text, int l)
 	printf ("\033[m");
 }
 
-#if !defined(__CYGWIN__) && !defined(__MINGW32__) && !defined(AMIGA)
+#if !defined(__CYGWIN__) && !defined(__MINGW32__) && !defined(AMIGA) && !defined(__MINT__)
 #include <execinfo.h>
 
 void print_stack (int level)

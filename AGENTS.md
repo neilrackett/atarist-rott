@@ -4,6 +4,8 @@ Purpose
 
 - Keep this branch focused on the native Atari renderers: the direct C2P
   renderer, and the ROTT Accelerator (SidecarTridge Multi-device) path.
+  The SDL builds (from the old `sdl` branch) share the source but aim to
+  stay close to the original game: see "SDL builds" below.
 - Prioritize playability and responsiveness on 16 MHz Mega STE.
 - Keep non-Atari behavior unchanged unless intentionally doing cross-platform work.
 
@@ -11,14 +13,16 @@ Build + Artifacts
 
 - Primary build command: `stcmd make`
 - Parallel build: `stcmd make -j4`
-- Output executable: `build/atarist/ROTT_ST.TOS`
+- SDL builds: `stcmd make sdl` (`ROTT_SDL.TOS`), `stcmd make sdl-030` (`ROTT_030.TOS`)
+- Output: everything in `dist/` (`ROTT_ST.TOS`, the SDL builds, config files,
+  the data from `tmp/ROTT`, and the firmware's `<uuid>.uf2`/`.json`)
 - Run it in EmuMD (from the host, not stcmd): `make emu` (builds with stcmd
   first; `EMU_ARGS` go to `mdfw run`, e.g. `--headless --frames N --screenshot out.png`)
-- Object files: `obj/...`
-- CI (`.github/workflows`): pull requests to `atarist` build the game and the
-  firmware; anything landing on `atarist` also moves the `latest` tag and
-  replaces `ROTT_ST.TOS`, `<uuid>.uf2` and `<uuid>.json` on the `latest`
-  release (needs the `APP_UUID_KEY` secret). The firmware ships
+- Object files: `obj/atarist`, `obj/sdl`, `obj/sdl-030`
+- CI (`.github/workflows`): pull requests to `atarist` build the three games
+  and the firmware; anything landing on `atarist` also moves the `latest` tag
+  and replaces the `.TOS` files, `<uuid>.uf2` and `<uuid>.json` on the
+  `latest` release (needs the `APP_UUID_KEY` secret). The firmware ships
   `sidecart/version.txt` as it is, so bump it by hand before a release.
 
 Current Makefile Defaults
@@ -126,3 +130,18 @@ Change Discipline
 - Put Atari-specific logic under `#if PLATFORM_ATARI` where practical.
 - Avoid broad refactors while chasing perf/input regressions.
 - Keep behavior changes documented in commit messages with observed impact.
+
+SDL builds (`ROTT_SDL.TOS`, `ROTT_030.TOS`)
+
+- ROTT's own renderer through SDL 1.2 and MiNTLib (both in the stcmd image),
+  as close to the original game as the hardware allows. SDL-only files:
+  `rott/modexlib_sdl.c`, `atari_sdl.c`, `audio_stubs.c`; sources are listed in
+  `SDL_SOURCES`, settings are `SDL_*` in the Makefile.
+- Both kinds of build are MiNT, so `__MINT__` means "any Atari build". In
+  shared code, the native builds' hardware and speed code goes under
+  `ATARI_NATIVE` (defined by the native build only) and SDL-only code under
+  `ATARI_SDL`. Anything else is in both.
+- The native `ROTT_ST.TOS` must not change when SDL work is done: build it
+  clean before and after and `cmp` (only `STUB_FUNCTION` line numbers may move).
+- SDL builds keep settings in `sdlconf.rot`/`sdlsound.rot` (`rott/sdlconf.rot`,
+  `rott/sdlsound.rot`), so they can share a folder with `ROTT_ST.TOS`.

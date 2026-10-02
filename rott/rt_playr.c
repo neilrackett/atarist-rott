@@ -2903,7 +2903,7 @@ void PollControls (void)
    if (gamestate.autorun==1)
 	   buttonpoll[bt_run] = true;
 
-#if defined(__MINT__) && (ATARI_LOGIC_CHECK > 0)
+#if defined(ATARI_NATIVE) && (ATARI_LOGIC_CHECK > 0)
    ATARI_CheckKeys();
 #endif
 
@@ -2912,7 +2912,7 @@ void PollControls (void)
 // get button states
 //
    PollKeyboardButtons ();
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    ATARI_XpadButtons ();
 #endif
 
@@ -2940,7 +2940,7 @@ void PollControls (void)
    if (vrenabled)
       PollVirtualReality ();
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    ATARI_XpadMove ();
 #endif
    PollMove ();

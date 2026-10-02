@@ -30,8 +30,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #include <mint/osbind.h>
+#endif
+#if ATARI_SDL
+#include <signal.h>
+#include "atari_megaste.h"
 #endif
  
  
@@ -96,7 +100,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "atari_md.h"
 #include "atari_check.h"
 #include "atari_c2p.h"
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #ifndef ATARI_MAX_CATCHUP_STEPS
 #define ATARI_MAX_CATCHUP_STEPS 2
 #endif
@@ -113,7 +117,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define ATARI_SKIP_FIZZLE 0
 #endif
 #endif
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 extern int __argc;
 extern char **__argv;
 #endif
@@ -177,7 +181,7 @@ static boolean turbo;
 static int NoWait;
 static int startlevel=0;
 static int demonumber=-1;
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 static boolean atari_first_title_menu_after_logo = true;
 #endif
 
@@ -240,9 +244,13 @@ int main (int argc, char *argv[])
     
     _argc = argc;
     _argv = argv;
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
     __argc = argc;
     __argv = argv;
+#endif
+#if ATARI_SDL
+    if (is_megaste())
+        megaste_enable_16mhz_cache();
 #endif
          
 #if !defined(__MINT__)
@@ -366,7 +374,7 @@ int main (int argc, char *argv[])
     }
 #endif
 
-#if !defined(__MINT__) && !defined(DOS)
+#if !defined(ATARI_NATIVE) && !defined(DOS)
    signal (11, crash_print);
 
    if (setup_homedir() == -1) return 1;
@@ -403,7 +411,7 @@ int main (int argc, char *argv[])
    InitializeGameCommands();
    if (standalone==false)
       {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
       doublestep=0;
       SetupWads();
       BuildTables ();
@@ -553,7 +561,11 @@ int main (int argc, char *argv[])
 //   VL_SetVGAPlaneMode();
 //   VL_SetPalette(origpal);
 //   SetBorderColor(155);
+#if ATARI_SDL
+   SetViewSize(8);
+#else
    SetViewSize(viewsize);
+#endif
 
 #ifdef DOS
    if ( SOUNDSETUP )
@@ -597,7 +609,7 @@ int main (int argc, char *argv[])
 #else
       if ( NoWait == false )
          {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
          if (W_CheckNumForName("svendor") != -1)
             {
             lbm_t * LBM;
@@ -1005,7 +1017,7 @@ void CheckCommandLineParameters( void )
           break;
       }
    }
-#if defined(__MINT__) && ((ATARI_MD_AUTOTEST > 0) || (ATARI_LOGIC_CHECK > 0))
+#if defined(ATARI_NATIVE) && ((ATARI_MD_AUTOTEST > 0) || (ATARI_LOGIC_CHECK > 0))
    // Unattended test runs (Hatari): straight into a game, as with NOW.
    turbo = true;
 #endif
@@ -1233,7 +1245,7 @@ void Init_Tables (void)
 
    if (pal_num == -1)
    {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
       int lbm_num = -1;
       lbm_num = W_CheckNumForName("ap_titl");
       if (lbm_num == -1)
@@ -1351,12 +1363,18 @@ void GameLoop (void)
 	   {
       if ( playstate == ex_battledone )
          {
+#if ATARI_SDL
+         bufferofs += screenofs; // the border is the view's
+#endif
          while( damagecount > 0 )
             {
             DoBorderShifts();
             }
          damagecount = 0;
          SetBorderColor (0);
+#if ATARI_SDL
+         bufferofs -= screenofs;
+#endif
 
          StopWind();
 
@@ -1417,7 +1435,7 @@ void GameLoop (void)
                   {
                   int i;
                   byte *tempbuf;
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
                   int shartit2 = W_CheckNumForName("shartit2");
                   int trilogo = W_CheckNumForName("trilogo");
                   int hold_end;
@@ -1521,7 +1539,7 @@ void GameLoop (void)
                   QuitGame();
                   }
                NoWait = false;
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
                /*
                Avoid showing the previous title/logo frame while menu setup runs.
                */
@@ -1651,11 +1669,17 @@ void GameLoop (void)
             Died ();
             StopWind();
 			 DisableScreenStretch();//bna++ shut off streech mode
+#if ATARI_SDL
+            bufferofs += screenofs;
+#endif
             while (damagecount>0)
                DoBorderShifts();
 
             damagecount = 0;
             SetBorderColor (0);
+#if ATARI_SDL
+            bufferofs -= screenofs;
+#endif
             if (demorecord)
                {
                FreeDemo ();
@@ -1921,7 +1945,7 @@ void ShutDown ( void )
 #endif
    )
       {
-#if !defined(__MINT__)
+#if !defined(ATARI_NATIVE)
       WriteConfig ();
 #endif
       }
@@ -2120,7 +2144,7 @@ void UpdateGameObjects ( void )
 	volatile int atime;
 	objtype * ob,*temp;
    battle_status BattleStatus;
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    int catchup_steps = 0;
 #endif
 
@@ -2145,7 +2169,7 @@ void UpdateGameObjects ( void )
 
    while (oldpolltime<oldtime)
 	   {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 	      if (ATARI_MAX_CATCHUP_STEPS > 0 && catchup_steps >= ATARI_MAX_CATCHUP_STEPS)
 	      {
 	         oldpolltime = oldtime;
@@ -2168,11 +2192,11 @@ void UpdateGameObjects ( void )
 			   ((gamestate.TimeCount == Clocks[j].time1) ||
 			   (gamestate.TimeCount == Clocks[j].time2)))
 				TRIGGER[Clocks[j].linkindex]=1;
-#if defined(__MINT__) && (ATARI_ACTOR_THROTTLE_DIV > 1)
+#if defined(ATARI_NATIVE) && (ATARI_ACTOR_THROTTLE_DIV > 1)
       const unsigned int actor_div = (unsigned int)ATARI_ACTOR_THROTTLE_DIV;
       const unsigned int actor_time_phase = (unsigned int)gamestate.TimeCount % actor_div;
 #endif
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #if (ATARI_ACTOR_BUDGET > 0)
       unsigned int actor_budget = atari_actor_budget_runtime;
 #endif
@@ -2181,7 +2205,7 @@ void UpdateGameObjects ( void )
 		for (ob = firstactive; ob;)
 			{
 			 temp = ob->nextactive;
-#if defined(__MINT__) && (ATARI_ACTOR_BUDGET > 0)
+#if defined(ATARI_NATIVE) && (ATARI_ACTOR_BUDGET > 0)
           // Only built with a budget: otherwise this was work for every
           // actor every tic to no effect (a budget of 0 means none).
           int actor_high_priority = ((ob->obclass == playerobj) ||
@@ -2195,7 +2219,7 @@ void UpdateGameObjects ( void )
              continue;
           }
 #endif
-#if defined(__MINT__) && (ATARI_ACTOR_THROTTLE_DIV > 1)
+#if defined(ATARI_NATIVE) && (ATARI_ACTOR_THROTTLE_DIV > 1)
           if ((actor_div > 1) &&
               (ob->obclass != playerobj) &&
               ((ob->flags & FL_KEYACTOR) == 0) &&
@@ -2221,7 +2245,7 @@ void UpdateGameObjects ( void )
           }
 #else
 			 DoActor (ob);
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
           actor_updates_this_tick++;
           atari_frame_actor_updates++;
 #endif
@@ -2275,7 +2299,7 @@ void UpdateGameObjects ( void )
       ResetCurrentCommand();
 
       oldpolltime++;
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
       catchup_steps++;
 #endif
       if (GamePaused==true)
@@ -2305,7 +2329,7 @@ void UpdateGameObjects ( void )
 void PauseLoop ( void )
 {
    StopWind();
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    int catchup_steps = 0;
 #endif
 
@@ -2313,7 +2337,7 @@ void PauseLoop ( void )
 
    while (oldpolltime<oldtime)
 	   {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
       if (ATARI_MAX_CATCHUP_STEPS > 0 && catchup_steps >= ATARI_MAX_CATCHUP_STEPS)
       {
          oldpolltime = oldtime;
@@ -2325,7 +2349,7 @@ void PauseLoop ( void )
       CheckForSyncCheck();
 #endif
       oldpolltime++;
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
       catchup_steps++;
 #endif
       if (GamePaused==false)
@@ -2367,7 +2391,7 @@ void PlayLoop
 
    {
    volatile int atime;
-#if defined(__MINT__) && (ATARI_WALL_ANIM_DIVISOR > 1)
+#if defined(ATARI_NATIVE) && (ATARI_WALL_ANIM_DIVISOR > 1)
    unsigned int atari_wall_anim_tick = 0;
 #endif
 
@@ -2398,7 +2422,7 @@ fromloadedgame:
       DoLoadGameSequence();
 		}
 
-#if defined(__MINT__) && (ATARI_LOGIC_CHECK > 0)
+#if defined(ATARI_NATIVE) && (ATARI_LOGIC_CHECK > 0)
    ATARI_CheckStart();
 #endif
    drawtime  = 0;
@@ -2407,7 +2431,7 @@ fromloadedgame:
 	SetFastTics(0);
 
    if ( (fizzlein == false)
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
         || (ATARI_SKIP_FIZZLE != 0)
 #endif
       )
@@ -2422,7 +2446,7 @@ fromloadedgame:
    // set detail level
    doublestep = 2 - DetailLevel;
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    ResetMessageTime();
    // MD/ROTT: messages cost the ST nothing when the Multi-device draws them.
    MessagesEnabled = ATARI_MD_Active() ? true : false;
@@ -2442,12 +2466,18 @@ fromloadedgame:
 
 	while( playstate == ex_stillplaying )
       {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
       IN_PumpEvents();
       ATARI_BeginRenderFrame();
+      const int render = 1;
+#elif ATARI_SDL
+      // Over the frame rate cap (ATARI_TARGET_FPS), skip the refresh.
+      const int render = ATARI_BeginRenderFrame();
+#else
+      const int render = 1;
 #endif
       UpdateClientControls();
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
       ATARI_PerfBeginFrame(tics);
 #endif
 
@@ -2458,22 +2488,25 @@ fromloadedgame:
          atime = GetFastTics();
 
          if ( RefreshPause )
-            ThreeDRefresh();
-         else
+            {
+            if (render)
+               ThreeDRefresh();
+            }
+         else if (render)
             UpdateScreenSaver();
          }
 	      else
 	         {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
          if (controlupdatestarted == 0)
             StartupClientControls();
 #endif
 	         if (controlupdatestarted == 1)
 	            UpdateGameObjects();
-#if defined(__MINT__) && (ATARI_LOGIC_CHECK > 0)
+#if defined(ATARI_NATIVE) && (ATARI_LOGIC_CHECK > 0)
          ATARI_CheckFrame();
 #endif
-#if defined(__MINT__) && defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
+#if defined(ATARI_NATIVE) && defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
          // Unattended test runs: turn a fixed step per frame, so frame N
          // shows the same view with or without the MD (ATARI_MD_AutotestShot).
          static int autotest_frame;
@@ -2498,13 +2531,14 @@ fromloadedgame:
 
          atime = GetFastTics();
 
-         ThreeDRefresh();
-#if defined(__MINT__)
+         if (render)
+            ThreeDRefresh();
+#if defined(ATARI_NATIVE)
          // Never play on in the dark a death fade (Died) left behind.
          if (atari_c2p_fade_amount())
             atari_c2p_fade(0, 0, 0, 0, ATARI_FADE_VBLS);
 #endif
-#if defined(__MINT__) && defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
+#if defined(ATARI_NATIVE) && defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
          ATARI_MD_AutotestShot(autotest_frame);
 #endif
          }
@@ -2520,7 +2554,7 @@ fromloadedgame:
 
       MISCVARS->madenoise = false;
 
-#if defined(__MINT__) && (ATARI_WALL_ANIM_DIVISOR > 1)
+#if defined(ATARI_NATIVE) && (ATARI_WALL_ANIM_DIVISOR > 1)
       atari_wall_anim_tick++;
       if ((atari_wall_anim_tick % ATARI_WALL_ANIM_DIVISOR) == 0)
          AnimateWalls();
@@ -2562,7 +2596,13 @@ fromloadedgame:
             }
          TurnShakeOff();
          StopWind();
+#if ATARI_SDL
+         bufferofs += screenofs;
+#endif
          SetBorderColor( 0 );
+#if ATARI_SDL
+         bufferofs -= screenofs;
+#endif
          ShutdownClientControls();
          if (demoplayback==true)
             {
@@ -2572,7 +2612,7 @@ fromloadedgame:
                {
                QuitGame();
                }
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
             ATARI_PerfEndFrame();
 #endif
             return;
@@ -2587,7 +2627,7 @@ fromloadedgame:
 
          if ( playstate == ex_titles )
             {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
             ATARI_PerfEndFrame();
 #endif
             return;
@@ -2600,7 +2640,7 @@ fromloadedgame:
 
          if ( loadedgame == true )
             {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
             ATARI_PerfEndFrame();
 #endif
             goto fromloadedgame;
@@ -2677,7 +2717,7 @@ fromloadedgame:
                }
             }
          }
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
       ATARI_PerfEndFrame();
 #endif
       }
@@ -2774,7 +2814,7 @@ void PollKeyboard
       {
       IN_UpdateKeyboard();
       }
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    else
       {
       IN_UpdateKeyboard();

@@ -50,7 +50,7 @@ void DrawFadeout ( void );
 void DrawBlankScreen ( void );
 void DrawClearBuffer ( void );
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #ifndef ATARI_SKIP_FADES
 #define ATARI_SKIP_FADES 0
 #endif
@@ -659,7 +659,7 @@ void DrawCinematicBackground ( backevent * back )
    if (height!=iGLOBAL_SCREENHEIGHT)
       DrawClearBuffer ();
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    if (height > 0)
       {
       atari_cin_cache_t *cache = atari_cin_find_cache(back, ATARI_CIN_KIND_BACKGROUND);
@@ -750,7 +750,7 @@ void DrawCinematicMultiBackground ( backevent * back )
    if (height!=iGLOBAL_SCREENHEIGHT)
       DrawClearBuffer ();
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    if (height > 0)
       {
       atari_cin_cache_t *cache = atari_cin_find_cache(back, ATARI_CIN_KIND_MULTI);
@@ -839,7 +839,7 @@ void DrawCinematicBackdrop ( backevent * back )
 
    toppost=-p->topoffset+back->yoffset;
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    {
    atari_cin_cache_t *cache = atari_cin_find_cache(back, ATARI_CIN_KIND_BACKDROP);
 
@@ -1059,7 +1059,7 @@ void DrawFadeout ( void )
    byte newpal[768];
    int      i,j;
 
-#if defined(__MINT__) && ATARI_SKIP_FADES
+#if defined(ATARI_NATIVE) && ATARI_SKIP_FADES
    VL_ClearVideo (0);
    GetCinematicTics ();
    GetCinematicTics ();
@@ -1349,7 +1349,7 @@ void DrawPostPic ( int lumpnum )
 
    height = pic->height;
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    if (atari_cin_cache_postpic(lumpnum, pic))
       {
       int draw_h = atari_postpic_height;

@@ -1,10 +1,18 @@
-# Makefile for building ROTT for Atari ST
+# Makefile for building ROTT for Atari ST, TT & Falcon
+#
+#   stcmd make           ROTT_ST.TOS: the native ST renderers (C2P, ROTT Accelerator)
+#   stcmd make sdl       ROTT_SDL.TOS: ROTT's own renderer through SDL, any ST-compatible
+#   stcmd make sdl-030   ROTT_030.TOS: the same for 68030 + 68882 (TT, Falcon)
+#
+# Everything lands in dist/, with the game's config files and, when DATADIR
+# holds them, the shareware data, so dist/ runs as it is. The firmware
+# (make -C sidecart build) puts its <uuid>.uf2 and <uuid>.json there too.
 
 # Build settings
 
 SRCDIR ?= rott
 DATADIR ?= tmp/ROTT
-BUILDDIR ?= build/atarist
+BUILDDIR ?= dist
 OBJDIR ?= obj/atarist
 
 # Debugging
@@ -62,7 +70,7 @@ ATARI_WALL_ANIM_DIVISOR ?= 2 # Wall animation divisor
 
 ATARI_CC ?= m68k-atari-mint-gcc
 ATARI_CFLAGS ?= -O3 -fomit-frame-pointer -s -std=gnu99 -m68000 \
-	-fno-strict-aliasing -DPLATFORM_TIMER_HZ=200 \
+	-fno-strict-aliasing -DPLATFORM_TIMER_HZ=200 -DATARI_NATIVE=1 \
 		-DSHAREWARE=$(ATARI_SHAREWARE) \
 	-DSUPERROTT=$(ATARI_SUPERROTT) -DSITELICENSE=$(ATARI_SITELICENSE) \
 	-DATARI_ENABLE_KBDINT=$(ATARI_ENABLE_KBDINT) \
@@ -99,6 +107,7 @@ ATARI_CFLAGS ?= -O3 -fomit-frame-pointer -s -std=gnu99 -m68000 \
 ATARI_LDFLAGS ?= -s -nostdlib -L/freemint/libcmini/lib /freemint/libcmini/lib/crt0.o -m68000
 ATARI_LIBS ?= -lcmini -lgcc
 ATARI_INCLUDES ?= -I$(SRCDIR) -I$(SRCDIR)/audiolib -Isidecart/include -Ilib/xpad/src -I/freemint/libcmini/include
+SDL_ONLY_SOURCES := $(SRCDIR)/atari_sdl.c $(SRCDIR)/audio_stubs.c $(SRCDIR)/modexlib_sdl.c
 ATARI_AUDIOLIB_SOURCES := \
 	$(SRCDIR)/audiolib/atari_stubs.c \
 	$(SRCDIR)/audiolib/atari_music.c \
@@ -114,12 +123,12 @@ ATARI_AUDIOLIB_SOURCES := \
 	$(SRCDIR)/audiolib/pitch.c \
 	$(SRCDIR)/audiolib/user.c \
 	$(SRCDIR)/audiolib/usrhooks.c
-ATARI_SOURCES := $(filter-out $(SRCDIR)/amiga_%.c $(SRCDIR)/dosutil.c $(SRCDIR)/dukemusc.c $(SRCDIR)/fx_man.c $(SRCDIR)/lookups.c $(SRCDIR)/vocdecode.c,$(wildcard $(SRCDIR)/*.c)) $(ATARI_AUDIOLIB_SOURCES) \
+ATARI_SOURCES := $(filter-out $(SRCDIR)/amiga_%.c $(SRCDIR)/dosutil.c $(SRCDIR)/dukemusc.c $(SRCDIR)/fx_man.c $(SRCDIR)/lookups.c $(SRCDIR)/vocdecode.c $(SDL_ONLY_SOURCES),$(wildcard $(SRCDIR)/*.c)) $(ATARI_AUDIOLIB_SOURCES) \
 	lib/xpad/src/xpad.c
 ATARI_ASM_SOURCES := $(SRCDIR)/sidecart_stubs.S $(SRCDIR)/atari_md_s.S
 ATARI_OBJECTS := $(addprefix $(OBJDIR)/,$(ATARI_SOURCES:.c=.o) $(ATARI_ASM_SOURCES:.S=.o))
 ATARI_OUTPUT ?= $(BUILDDIR)/ROTT_ST.TOS
-ATARI_RUNTIME_DATA_FILES := \
+RUNTIME_DATA_FILES := \
 	$(DATADIR)/HUNTBGIN.WAD \
 	$(DATADIR)/HUNTBGIN.RTL \
 	$(DATADIR)/HUNTBGIN.RTC \
@@ -180,8 +189,60 @@ rott-rottsite: ATARI_SUPERROTT = 0
 rott-rottsite: ATARI_SITELICENSE = 1
 rott-rottsite: atari-stage-runtime-files $(ATARI_OUTPUT)
 
+# SDL builds: ROTT's own renderer through SDL 1.2 and MiNTLib, as close to
+# the original game as the hardware allows (from the sdl branch). Shared code
+# tells the two kinds of build apart with ATARI_NATIVE (the native renderers'
+# hardware code) and ATARI_SDL. They keep their settings in sdlconf.rot and
+# sdlsound.rot, so they can sit beside ROTT_ST.TOS without upsetting it.
+
+SDL_OBJDIR ?= obj/sdl
+SDL_030_OBJDIR ?= obj/sdl-030
+
+SDL_SHOW_FPS ?= 0 # Show FPS overlay
+SDL_SKIP_FADES ?= 0 # Skip fade effects
+SDL_SKIP_FIZZLE ?= 0 # Skip fizzle transition
+SDL_SKIP_LIGHTLEVEL ?= 0 # Skip lightlevel setup
+SDL_TARGET_FPS ?= 12 # Frame rate cap
+SDL_TIC_WAIT_MS ?= 0 # Sleep while waiting for the next tic
+
+SDL_CC ?= m68k-atari-mint-gcc
+SDL_CFLAGS ?= -I/usr/m68k-atari-mint/include/SDL -D_GNU_SOURCE=1
+SDL_LIBS ?= -lSDL -lgem -lldg -lgem -lm
+SDL_GAME_CFLAGS := -O3 -fomit-frame-pointer -fno-strict-aliasing -ffast-math -std=gnu99 \
+	-DPLATFORM_UNIX=1 -DATARI_SDL=1 -DC_FIXED_MATH=1 -DUSE_SDL=0 \
+	-DSHAREWARE=$(ATARI_SHAREWARE) -DSUPERROTT=$(ATARI_SUPERROTT) \
+	-DSITELICENSE=$(ATARI_SITELICENSE) \
+	-DATARI_SHOW_FPS=$(SDL_SHOW_FPS) -DATARI_SKIP_FADES=$(SDL_SKIP_FADES) \
+	-DATARI_SKIP_FIZZLE=$(SDL_SKIP_FIZZLE) -DATARI_SKIP_LIGHTLEVEL=$(SDL_SKIP_LIGHTLEVEL) \
+	-DATARI_TARGET_FPS=$(SDL_TARGET_FPS) -DATARI_TIC_WAIT_MS=$(SDL_TIC_WAIT_MS) \
+	-I$(SRCDIR) -I$(SRCDIR)/audiolib -Isidecart/include $(SDL_CFLAGS)
+SDL_SOURCES := $(addprefix $(SRCDIR)/, \
+	atari_megaste.c atari_sdl.c audio_stubs.c byteordr.c cin_actr.c cin_efct.c \
+	cin_evnt.c cin_glob.c cin_main.c cin_util.c dosutil.c engine.c i_timer.c isr.c \
+	modexlib_sdl.c rt_actor.c rt_battl.c rt_build.c rt_cfg.c rt_com.c rt_crc.c \
+	rt_debug.c rt_dmand.c rt_door.c rt_draw.c rt_err.c rt_floor.c rt_game.c rt_in.c \
+	rt_main.c rt_map.c rt_menu.c rt_msg.c rt_net.c rt_playr.c rt_rand.c rt_scale.c \
+	rt_sound.c rt_spbal.c rt_sqrt.c rt_stat.c rt_state.c rt_str.c rt_swift.c \
+	rt_ted.c rt_util.c rt_vid.c rt_view.c scriplib.c w_wad.c watcom.c winrott.c \
+	z_zone.c)
+SDL_OBJECTS := $(addprefix $(SDL_OBJDIR)/,$(SDL_SOURCES:.c=.o))
+SDL_030_OBJECTS := $(addprefix $(SDL_030_OBJDIR)/,$(SDL_SOURCES:.c=.o))
+SDL_OUTPUT ?= $(BUILDDIR)/ROTT_SDL.TOS
+SDL_030_OUTPUT ?= $(BUILDDIR)/ROTT_030.TOS
+SDL_RUNTIME_CONFIG_FILES := \
+	$(SRCDIR)/sdlconf.rot \
+	$(SRCDIR)/sdlsound.rot \
+	$(SRCDIR)/battle.rot \
+	$(SRCDIR)/scores.rot
+
+.PHONY: sdl sdl-030 sdl-stage-runtime-files
+.SECONDARY: $(SDL_OBJECTS) $(SDL_030_OBJECTS)
+
+sdl: sdl-stage-runtime-files $(SDL_OUTPUT)
+sdl-030: sdl-stage-runtime-files $(SDL_030_OUTPUT)
+
 clean:
-	$(RM) -r $(ATARI_OUTPUT) $(OBJDIR)
+	$(RM) -r $(ATARI_OUTPUT) $(SDL_OUTPUT) $(SDL_030_OUTPUT) $(OBJDIR) $(SDL_OBJDIR) $(SDL_030_OBJDIR)
 
 # The game in EmuMD (sidecart/emu/emumd): Hatari with the ROTT Accelerator
 # emulated on the cartridge port. Run on the host, not in stcmd: builds the
@@ -203,28 +264,33 @@ emu:
 	cd sidecart && emu/emumd/tools/mdfw run --harddrive $(abspath $(BUILDDIR)) \
 		--sd $(abspath $(EMU_SD)) $(EMU_ARGS)
 
-$(BUILDDIR)/%.TOS: $(ATARI_OBJECTS) | $(BUILDDIR)
+$(ATARI_OUTPUT): $(ATARI_OBJECTS) | $(BUILDDIR)
 	$(ATARI_CC) $(ATARI_LDFLAGS) $(ATARI_OBJECTS) $(ATARI_LIBS) -o $@
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
 
-atari-stage-runtime-files: | $(BUILDDIR)
-	@cp -f lib/xpad/LICENSE $(BUILDDIR)/XPAD.TXT
-	@for src in $(ATARI_RUNTIME_CONFIG_FILES); do \
+# The config files given, then the game data when DATADIR has it.
+define STAGE_RUNTIME_FILES
+	@for src in $(1); do \
 		dst="$(BUILDDIR)/$$(basename "$$src")"; \
 		if [ -e "$$src" ]; then \
 			cp -f "$$src" "$$dst"; \
 		fi; \
 	done
 	@if [ -d "$(DATADIR)" ]; then \
-		for src in $(ATARI_RUNTIME_DATA_FILES); do \
+		for src in $(RUNTIME_DATA_FILES); do \
 			dst="$(BUILDDIR)/$$(basename "$$src")"; \
 			if [ -e "$$src" ] && [ ! -e "$$dst" ]; then \
 				cp "$$src" "$$dst"; \
 			fi; \
 		done; \
 	fi
+endef
+
+atari-stage-runtime-files: | $(BUILDDIR)
+	@cp -f lib/xpad/LICENSE $(BUILDDIR)/XPAD.TXT
+	$(call STAGE_RUNTIME_FILES,$(ATARI_RUNTIME_CONFIG_FILES))
 
 $(OBJDIR):
 	mkdir -p $(OBJDIR)
@@ -249,3 +315,30 @@ $(OBJDIR)/%.o: %.c $(ATARI_FLAGS_STAMP)
 $(OBJDIR)/%.o: %.S $(ATARI_FLAGS_STAMP)
 	mkdir -p $(dir $@)
 	$(ATARI_CC) -m68000 -c $< -o $@
+
+sdl-stage-runtime-files: | $(BUILDDIR)
+	$(call STAGE_RUNTIME_FILES,$(SDL_RUNTIME_CONFIG_FILES))
+
+$(SDL_OUTPUT): $(SDL_OBJECTS) | $(BUILDDIR)
+	$(SDL_CC) -s -m68000 $(SDL_OBJECTS) $(SDL_LIBS) -o $@
+
+$(SDL_030_OUTPUT): $(SDL_030_OBJECTS) | $(BUILDDIR)
+	$(SDL_CC) -s -m68030 -m68882 $(SDL_030_OBJECTS) $(SDL_LIBS) -o $@
+
+# As ATARI_FLAGS_STAMP: objects rebuild when the flags change.
+$(SDL_OBJDIR)/.sdl_flags: SDL_STAMP = $(SDL_CC) -m68000 $(SDL_GAME_CFLAGS)
+$(SDL_030_OBJDIR)/.sdl_flags: SDL_STAMP = $(SDL_CC) -m68030 $(SDL_GAME_CFLAGS)
+$(SDL_OBJDIR)/.sdl_flags $(SDL_030_OBJDIR)/.sdl_flags: FORCE
+	@mkdir -p $(@D)
+	@echo "$(SDL_STAMP)" > "$@.tmp"; \
+	if [ -f "$@" ] && cmp -s "$@.tmp" "$@"; then rm -f "$@.tmp"; else mv "$@.tmp" "$@"; fi
+
+$(SDL_OBJDIR)/%.o: %.c $(SDL_OBJDIR)/.sdl_flags
+	@mkdir -p $(dir $@)
+	$(SDL_CC) -m68000 $(SDL_GAME_CFLAGS) -MMD -MP -c $< -o $@
+
+$(SDL_030_OBJDIR)/%.o: %.c $(SDL_030_OBJDIR)/.sdl_flags
+	@mkdir -p $(dir $@)
+	$(SDL_CC) -m68030 $(SDL_GAME_CFLAGS) -MMD -MP -c $< -o $@
+
+-include $(SDL_OBJECTS:.o=.d) $(SDL_030_OBJECTS:.o=.d)

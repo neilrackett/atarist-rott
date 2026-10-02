@@ -31,7 +31,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <unistd.h>
 #include <alloca.h>
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #include <mint/osbind.h>
 #include "atari_tables.h"
 #endif
@@ -50,7 +50,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "isr.h"
 #include "develop.h"
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 static void wad_dbg(const char *msg) { Cconws(msg); }
 #endif
 
@@ -75,7 +75,7 @@ static int wad_name_eq(const char *lumpname, const char *name8)
 }
 #endif
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 static void wad_dbg_num(const char *label, long v)
 {
     char buf[64];
@@ -127,7 +127,7 @@ static byte *lumpcheck;
 
 void W_AddFile (char *_filename)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
     wad_dbg("W_AddFile: ");
     wad_dbg(_filename);
     wad_dbg("\r\n");
@@ -147,7 +147,7 @@ void W_AddFile (char *_filename)
         FixFilePath(filename);
 
 		//bna section start
-#if !defined(__MINT__)
+#if !defined(ATARI_NATIVE)
 		if (access (filename, 0) != 0) {
 			strcpy (buf,"Error, Could not find User file '");
 			strcat (buf,filename);
@@ -161,7 +161,7 @@ void W_AddFile (char *_filename)
 // read the entire file in
 //      FIXME: shared opens
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
     wad_dbg("W_AddFile: open\r\n");
 #endif
 #ifdef PLATFORM_DOS
@@ -170,7 +170,7 @@ void W_AddFile (char *_filename)
         if ( (handle = open (filename,O_RDONLY | O_BINARY)) == -1)
 #endif
         {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
             char cwd[64];
             if (getcwd(cwd, sizeof(cwd)) == NULL)
                 strcpy(cwd, "?");
@@ -182,7 +182,7 @@ void W_AddFile (char *_filename)
 #endif
             return;
         }
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
         wad_dbg("W_AddFile: open ok\r\n");
 #endif
 
@@ -207,7 +207,7 @@ void W_AddFile (char *_filename)
                 if (!quiet)
                    printf("    Adding %s.\n",filename);
                 read (handle, &header, sizeof(header));
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
                 wad_dbg("W_AddFile: header ok\r\n");
 #endif
                 if (strncmp(header.identification,"IWAD",4))
@@ -317,10 +317,10 @@ void W_CheckWADIntegrity ( void )
 
 void W_InitMultipleFiles (char **filenames)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
     wad_dbg("W_InitMultipleFiles\r\n");
 #endif
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
     wad_dbg("W_InitMultipleFiles: begin\r\n");
 #endif
 //
@@ -331,7 +331,7 @@ void W_InitMultipleFiles (char **filenames)
 
         for ( ; *filenames ; filenames++)
         {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
             wad_dbg("W_InitMultipleFiles: file ");
             wad_dbg(*filenames);
             wad_dbg("\r\n");
@@ -341,7 +341,7 @@ void W_InitMultipleFiles (char **filenames)
 
         if (!numlumps)
         {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
             wad_dbg("W_InitFiles: no files found\r\n");
 #endif
             Error ("W_InitFiles: no files found");
@@ -364,7 +364,7 @@ void W_InitMultipleFiles (char **filenames)
         if (!SOUNDSETUP)
 #endif
            W_CheckWADIntegrity ();
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
     wad_dbg("W_InitMultipleFiles: done\r\n");
 #endif
 }
@@ -424,7 +424,7 @@ int     W_CheckNumForName (char *name)
         lumpinfo_t      *lump_p;
         lumpinfo_t      *endlump;
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
         if (!strcmp(name, "tables") || !strcmp(name, "TABLES"))
         {
                 char buf[64];
@@ -457,7 +457,7 @@ int     W_CheckNumForName (char *name)
            lump_p++;
            }
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
         if (!strcmp(name8, "TABLES"))
         {
                 int k;
@@ -508,7 +508,7 @@ int     W_GetNumForName (char *name)
                         return fb;
         }
 #endif
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
         {
                 char buf[80];
                 sprintf(buf, "W_GetNumForName missing: %s\r\n", name);
@@ -698,7 +698,7 @@ void    *W_CacheLumpNum (int lump, int tag, converter_t converter, int numrec)
 
 void    *W_CacheLumpName (char *name, int tag, converter_t converter, int numrec)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
         if (!strcmpi(name, "tables"))
         {
                 static unsigned char *tables_blob = NULL;

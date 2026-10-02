@@ -181,7 +181,7 @@ void  VGAWRITEMAP(int x);
 #define VGAWRITEMAP(a)
 #endif
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 // MD/ROTT: 2D drawing that can touch the status bars says so, and the ST
 // only looks for HUD changes to convert when there may be some
 // (atari_c2p_hud).

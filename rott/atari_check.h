@@ -16,7 +16,7 @@
 #define ATARI_LOGIC_CHECK 0
 #endif
 
-#if defined(__MINT__) && (ATARI_LOGIC_CHECK > 0)
+#if defined(ATARI_NATIVE) && (ATARI_LOGIC_CHECK > 0)
 extern int atari_check_clock_on;
 extern int atari_check_clock;
 void ATARI_CheckStart(void);   /* PlayLoop, before the controls start */

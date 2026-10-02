@@ -39,7 +39,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <mem.h>
 #include <conio.h>
 #endif
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #include <mint/osbind.h>
 #endif
 
@@ -49,6 +49,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "_isr.h"
 #include "rt_in.h"
 #include "rt_util.h"
+#include "i_timer.h"
 #include "profile.h"
 #include "develop.h"
 #include "rt_main.h"
@@ -763,7 +764,7 @@ static int ticbase;      /* game-supplied base */
 
 int GetTicCount (void)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #ifndef ATARI_DEBUG
 #define ATARI_DEBUG 0
 #endif
@@ -774,7 +775,12 @@ int GetTicCount (void)
 		dbg_count++;
 	}
 #endif
+#if ATARI_SDL
+	/* As the sdl branch had it: ISR_SetTime counts. */
+	return (I_GetTime() - ticoffset) + ticbase;
+#else
 	return (I_GetTime());
+#endif
 }
 
 /*
@@ -836,6 +842,10 @@ void I_Delay ( int delay )
 void I_StartupTimer (void)
 {
     I_InitTimer();
+#if ATARI_SDL
+    ticoffset = I_GetTime();
+    ticbase = 0;
+#endif
 }
 
 void I_ShutdownTimer (void)

@@ -13,11 +13,11 @@
  */
 
 /*
- * On __MINT__ builds the body is the inlined atari_fixed_mul16() from
+ * On ATARI_NATIVE builds the body is the inlined atari_fixed_mul16() from
  * watcom.h, which uses hardware mulu.w instead of software __mulsi3. Other
  * targets keep the 64-bit version.
  */
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 fixed FixedMul(fixed a, fixed b)
 {
 	return atari_fixed_mul16(a, b);
@@ -32,7 +32,7 @@ fixed FixedMul(fixed a, fixed b)
 
 fixed FixedMulShift(fixed a, fixed b, fixed shift)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 	if (shift == 16)
 		return atari_fixed_mul16(a, b);
 #endif

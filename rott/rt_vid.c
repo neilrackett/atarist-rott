@@ -54,7 +54,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // MED
 #include "memcheck.h"
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #ifndef ATARI_SKIP_FADES
 #define ATARI_SKIP_FADES 1
 #endif
@@ -121,7 +121,7 @@ static byte pixmasks[4] = {1, 2, 4, 8};
 static byte leftmasks[4] = {15, 14, 12, 8};
 static byte rightmasks[4] = {1, 3, 7, 15};
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 static void VL_PlanarToChunky(byte *destbase, const byte *src, int widthbytes, int height,
                               int dstx, int dsty, int transparent)
 {
@@ -213,7 +213,7 @@ void VL_MemToScreen(byte *source, int width, int height, int x, int y)
          dest++;
       }
    }
-#elif defined(__MINT__)
+#elif defined(ATARI_NATIVE)
    VL_PlanarToChunky(bufferofs, source, width, height, x, y, 0);
 #else
    /* TODO please optimize me */
@@ -244,7 +244,7 @@ void VL_MemToScreenClipped(byte *source, int width, int height, int x, int y);
 void VL_MemToScreenClipped(byte *source, int width, int height, int x, int y)
 {
    ATARI_HUD_TOUCH();
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    VL_PlanarToChunky(bufferofs, source, width, height, x, y, 1);
 #else
    byte *ptr, *destline;
@@ -275,7 +275,7 @@ void VL_MemToScreenClipped(byte *source, int width, int height, int x, int y)
 void VL_MemStrechedToScreen(byte *source, int width, int height, int x, int y)
 {
    ATARI_HUD_TOUCH();
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    {
       int plane_size = width * height;
       const byte *p0 = source;
@@ -390,8 +390,14 @@ void DrawTiledRegion(
    int startoffset;
    int HeightIndex;
    int WidthIndex;
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    int pixwidth;
+#elif defined(__MINT__)
+   int tilewidth;
+   int row;
+   int col;
+   int sx;
+   int sy;
 #endif
 
 #ifdef DOS
@@ -469,7 +475,41 @@ void DrawTiledRegion(
 
       plane--;
    }
-#elif defined(__MINT__)
+#elif defined(__MINT__) && !defined(ATARI_NATIVE)
+   // The SDL builds: the sdl branch's version, which also takes offsets
+   // below zero.
+   if ((width <= 0) || (height <= 0) || (sourcewidth <= 0) || (sourceheight <= 0))
+      return;
+
+   tilewidth = sourcewidth << 2;
+   planesize = sourcewidth * sourceheight;
+
+   if (offx < 0)
+      offx = (tilewidth - ((-offx) % tilewidth)) % tilewidth;
+   else if (offx >= tilewidth)
+      offx %= tilewidth;
+
+   if (offy < 0)
+      offy = (sourceheight - ((-offy) % sourceheight)) % sourceheight;
+   else if (offy >= sourceheight)
+      offy %= sourceheight;
+
+   for (HeightIndex = 0; HeightIndex < height; ++HeightIndex)
+      {
+      byte *rowdest = (byte *)(bufferofs + ylookup[y + HeightIndex] + x);
+
+      sy = (offy + HeightIndex) % sourceheight;
+      row = sy * sourcewidth;
+
+      for (WidthIndex = 0; WidthIndex < width; ++WidthIndex)
+         {
+         sx = (offx + WidthIndex) % tilewidth;
+         col = sx >> 2;
+
+         rowdest[WidthIndex] = source[(sx & 3) * planesize + row + col];
+         }
+      }
+#elif defined(ATARI_NATIVE)
    {
       int tilewidth = sourcewidth << 2;
       if (offx >= tilewidth)
@@ -1089,7 +1129,7 @@ void VL_FadeOut(int start, int end, int red, int green, int blue, int steps)
    int i, j, orig, delta;
    byte *origptr, *newptr;
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    if (ATARI_SKIP_FADES)
    {
       atari_fill_palette_rgb(red, green, blue);
@@ -1097,6 +1137,10 @@ void VL_FadeOut(int start, int end, int red, int green, int blue, int steps)
       return;
    }
    steps = atari_fade_steps(steps);
+#elif ATARI_SDL && ATARI_SKIP_FADES
+   VL_FillPalette(red, green, blue);
+   screenfaded = true;
+   return;
 #endif
 
    if (screenfaded)
@@ -1155,7 +1199,7 @@ void VL_FadeToColor(int time, int red, int green, int blue)
    byte *origptr, *newptr;
    int dmax, dmin;
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    if (ATARI_SKIP_FADES)
    {
 #if ATARI_MD_RENDER
@@ -1186,6 +1230,10 @@ void VL_FadeToColor(int time, int red, int green, int blue)
    time = atari_fade_steps(time);
    if (time < 1)
       time = 1;
+#elif ATARI_SDL && ATARI_SKIP_FADES
+   VL_FillPalette(red >> 2, green >> 2, blue >> 2);
+   screenfaded = true;
+   return;
 #endif
 
    if (screenfaded)
@@ -1246,7 +1294,7 @@ void VL_FadeIn(int start, int end, byte *palette, int steps)
 {
    int i, j, delta;
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    if (ATARI_SKIP_FADES)
    {
       VL_SetPalette(palette);
@@ -1258,6 +1306,11 @@ void VL_FadeIn(int start, int end, byte *palette, int steps)
       return;
    }
    steps = atari_fade_steps(steps);
+#elif ATARI_SDL && ATARI_SKIP_FADES
+   VL_SetPalette(palette);
+   VW_UpdateScreen();
+   screenfaded = false;
+   return;
 #endif
 
    WaitVBL();
@@ -1435,7 +1488,7 @@ void VL_DecompressLBM(lbm_t *lbminfo, boolean flip)
 
 void SetBorderColor(int color)
 {
-#if defined(__MINT__) && ATARI_MD_RENDER
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
    // MD/ROTT: the border is inside the view, which the Multi-device draws.
    if (ATARI_MD_Active())
    {

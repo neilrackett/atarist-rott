@@ -57,7 +57,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define LIGHTNINGLEVEL 4
 #define MINLIGHTNINGLEVEL   2
 #define MAXLIGHTNINGLEVEL   10
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #ifndef ATARI_VIEW_SCALE_DIV
 #define ATARI_VIEW_SCALE_DIV 1
 #endif
@@ -90,10 +90,16 @@ int    screenofs;
 int    centerx;
 int    centery;
 int    centeryfrac;
+#if ATARI_SDL
+int    fulllight;
+#else
 int    fulllight = 1;
+#endif
 int    weaponscale;
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 int    viewsize = 2;
+#elif ATARI_SDL
+int    viewsize;
 #else
 int    viewsize = 8;
 #endif
@@ -258,7 +264,7 @@ void CalcProjection ( void )
 
 //Hey, isn't this stuff already loaded in?
 //Why don't we make this a lump?
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    pangle = SafeMalloc(ATARI_PANGLE_LEN * sizeof(int));
    memcpy(pangle, atari_pangle, ATARI_PANGLE_LEN * sizeof(int));
    length = ATARI_PANGLE_LEN;
@@ -283,7 +289,7 @@ have_pangle:
       {
       // start 1/2 pixel over, so viewangle bisects two middle pixels
       intang=pangle[frac>>16];
-#if !defined(__MINT__)
+#if !defined(ATARI_NATIVE)
       SwapIntelLong(&intang);
 #endif
       pixelangle[centerx-1-i] =(short) intang;
@@ -335,14 +341,14 @@ void SetViewSize
    //if ((size<0) || (size>=MAXVIEWSIZES))
    //   Error("Illegal screen size = %ld\n",size);
 
-#if defined(__MINT__) && ATARI_MD_RENDER
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
    // MD/ROTT: the Multi-device's frames stop at 320x168, between the bars.
    if (ATARI_MD_Active() && size > 7)
       size = 7;
 #endif
    viewwidth  = viewsizes[ size << 1 ];         // must be divisable by 16
    viewheight = viewsizes[ ( size << 1 ) + 1 ]; // must be even
-#if defined(__MINT__) && (ATARI_VIEW_SCALE_DIV > 1)
+#if defined(ATARI_NATIVE) && (ATARI_VIEW_SCALE_DIV > 1)
    {
    int div = ATARI_VIEW_SCALE_DIV;
    viewwidth /= div;
@@ -404,7 +410,15 @@ void SetViewSize
 	 
    }
 
+#if ATARI_SDL
+   if ((G_weaponscale > 150) && (G_weaponscale < 600))
+   {
+      /* Keep weapon scaling tied to current view size instead of fixed size. */
+      height = (height * G_weaponscale + 84) / 168;
+   }
+#else
    if ((G_weaponscale > 150)&&(G_weaponscale <600)){height = G_weaponscale;}
+#endif
    weaponscale = ( height << 16 ) / 168;//( height << 16 ) = 170 * 65536
 
   
@@ -432,6 +446,16 @@ void SetViewSize
    screenofs = ( screenx >> 2 ) + ylookup[ screeny ];
 #else
    screenofs = screenx + ylookup[ screeny ];
+#endif
+
+#if ATARI_SDL
+   /*
+    * If viewheight was clamped to fit status bars, keep center/projection in sync.
+    */
+   centerx     = viewwidth >> 1;
+   centery     = viewheight >> 1;
+   centeryfrac = ( centery << 16 );
+   yzangleconverter = ( 0xaf85 * viewheight ) / iGLOBAL_SCREENHEIGHT;
 #endif
 
 //
@@ -750,12 +774,15 @@ int GetLightRateTile ( void )
 */
 void UpdateLightLevel (int area)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #ifndef ATARI_SKIP_LIGHTLEVEL
 #define ATARI_SKIP_LIGHTLEVEL 0
 #endif
    // MD/ROTT: the Multi-device lights the view, so keep the levels moving.
    if (ATARI_SKIP_LIGHTLEVEL && !ATARI_MD_Active())
+      return;
+#elif ATARI_SDL
+   if (ATARI_SKIP_LIGHTLEVEL)
       return;
 #endif
    int numlights;

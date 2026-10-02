@@ -341,7 +341,7 @@ word INL_GetJoyButtons (word joy)
 {
    word  result = 0;
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    if (joy == 0)
       result = (word)atari_joy_buttons;
 #endif
@@ -455,7 +455,7 @@ boolean INL_StartJoy (word joy)
 {
    word x,y;
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    if (joy > 0) return false;
    Joy_x = 32768;
    Joy_y = 32768;
@@ -539,7 +539,7 @@ void IN_Startup (void)
    if (IN_Started==true)
       return;
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    checkjoys = true;
    checkmouse = false;
 #endif
@@ -1069,7 +1069,7 @@ byte IN_JoyButtons (void)
 {
    unsigned joybits = 0;
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    joybits = atari_joy_buttons;
 #endif
 

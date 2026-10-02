@@ -23,7 +23,7 @@
 #define ATARI_MD_RENDER 0
 #endif
 
-#if defined(__MINT__) && ATARI_MD_RENDER
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
 
 /* Non-zero while the MD renders the view. */
 extern int atari_md_active;

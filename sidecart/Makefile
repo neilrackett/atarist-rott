@@ -5,7 +5,7 @@
 # Run from the host (not inside stcmd): the firmware needs
 # PICO_TOOLCHAIN_PATH; the m68k parts call stcmd themselves.
 #
-#   make build      release firmware (version.txt as-is)
+#   make build      release firmware (version.txt as-is), also in ../dist
 #   make debug      debug firmware (UART console) + test apps
 #   make tests      the ST test apps in tests/
 #   make emu        firmware emulator library + self-tests (host, needs WAD)
@@ -15,6 +15,7 @@
 
 VERSION := $(shell cat version.txt)
 ROOT_DIR := $(abspath ..)
+DIST_DIR ?= $(ROOT_DIR)/dist
 DEFAULT_APP_UUID_KEY := 44444444-4444-4444-8444-444444444444
 UUID_FROM_FILE := $(strip $(shell [ -f uuid.txt ] && tr -d '\r\n' < uuid.txt))
 APP_UUID_KEY_RESOLVED := $(if $(strip $(APP_UUID_KEY)),$(strip $(APP_UUID_KEY)),$(if $(UUID_FROM_FILE),$(UUID_FROM_FILE),$(DEFAULT_APP_UUID_KEY)))
@@ -33,6 +34,11 @@ ST_TEST_LIBS = rott/sidecart_md.c rott/sidecart_stubs.S
 build:
 	@echo "Using APP_UUID_KEY: $(APP_UUID_KEY_RESOLVED)"
 	SKIP_VERSION_BUMP=1 ./build.sh $(BOARD) release "$(APP_UUID_KEY_RESOLVED)"
+	@# Beside the game in the project's dist/, under the unversioned name
+	@# desc/app.json's binary URL uses (the version is in the .json).
+	mkdir -p $(DIST_DIR)
+	cp dist/$(APP_UUID_KEY_RESOLVED)-$(VERSION).uf2 $(DIST_DIR)/$(APP_UUID_KEY_RESOLVED).uf2
+	cp dist/$(APP_UUID_KEY_RESOLVED).json $(DIST_DIR)/
 
 .PHONY: debug
 debug: tests

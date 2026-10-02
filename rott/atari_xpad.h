@@ -9,7 +9,7 @@
 #ifndef ATARI_XPAD_H
 #define ATARI_XPAD_H
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 /* doEvents: outside play, the pad presses keys (menus, waits for a key). */
 void ATARI_XpadPump(void);
 /* PollControls: in play, the pad's buttons (after the keyboard's) and its

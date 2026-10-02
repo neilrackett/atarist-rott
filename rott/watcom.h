@@ -24,7 +24,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef _watcom_h_public
 #define _watcom_h_public
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 /*
  * 16.16 fixed-point multiply for the 68000 (which has hardware mulu.w/muls.w
  * but no 32x32 muls.l). Defined inline so the ~228 call sites avoid the

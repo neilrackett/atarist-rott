@@ -1,11 +1,11 @@
 name: Release
 
-# Rolling release: build the game and the ROTT Accelerator firmware, move
-# the lightweight "latest" tag onto this commit, and replace those files
-# on the "latest" release. The release's title and body are left exactly
-# as they are -- `gh release upload` touches assets only, so the SDL
-# builds sharing the release stay as they are too -- and the asset names
-# never change, so a download link handed to someone keeps working.
+# Rolling release: build the three games and the ROTT Accelerator
+# firmware, move the lightweight "latest" tag onto this commit, and replace
+# those files on the "latest" release. The release's title and body are
+# left exactly as they are -- `gh release upload` touches assets only --
+# and the asset names never change, so a download link handed to someone
+# keeps working.
 
 on:
   # Anything landing on atarist is a release: a merge, or a direct push.
@@ -65,26 +65,18 @@ jobs:
       - name: Install the Atari ST toolkit
         run: curl -sL https://github.com/sidecartridge/atarist-toolkit-docker/releases/latest/download/install_atarist_toolkit_docker.sh | bash
 
-      - name: Build the game
-        run: stcmd make
+      - name: Build the games
+        run: stcmd make -j4 all sdl sdl-030
 
       - name: Build the ROTT Accelerator firmware
         # make build releases sidecart/version.txt as it is, without the
-        # bump. The app UUID comes from the APP_UUID_KEY secret; uuid.txt
-        # is deliberately not committed.
+        # bump, and puts <uuid>.uf2 (unversioned: the name desc/app.json's
+        # binary URL uses) and <uuid>.json in dist/ beside the games. The
+        # app UUID comes from the APP_UUID_KEY secret; uuid.txt is
+        # deliberately not committed.
         env:
           APP_UUID_KEY: ${{ secrets.APP_UUID_KEY }}
         run: make -C sidecart build
-
-      - name: Drop the version from the firmware's file name
-        # build.sh names the image <uuid>-<version>.uf2. The release keeps
-        # one unversioned name, the one desc/app.json's binary URL uses, and
-        # the version travels inside <uuid>.json instead.
-        env:
-          UUID: ${{ secrets.APP_UUID_KEY }}
-        run: |
-          VERSION=$(tr -d '\r\n' < sidecart/version.txt)
-          mv "sidecart/dist/$UUID-$VERSION.uf2" "sidecart/dist/$UUID.uf2"
 
       - name: Move the latest tag onto this commit
         # The "latest" release is attached to this tag, so moving it keeps
@@ -103,14 +95,12 @@ jobs:
                  -f ref=refs/tags/latest -f sha="$GITHUB_SHA" --silent
 
       - name: Replace the files on the latest release
-        # The game, the firmware image and its Booster app descriptor.
-        # ROTT_SDL.TOS and ROTT_030.TOS come from the sdl branch and are
-        # left alone.
+        # The three games, the firmware image and its Booster app
+        # descriptor: dist/ also holds config files and, on a developer's
+        # machine, the game data, none of which belongs on the release.
         env:
           GH_TOKEN: ${{ github.token }}
-          UUID: ${{ secrets.APP_UUID_KEY }}
         run: |
           gh release view latest >/dev/null 2>&1 \
             || gh release create latest --title "Rise of the Triad for Atari ST, TT & Falcon" --notes "Rolling build of the Atari ST port."
-          gh release upload latest build/atarist/ROTT_ST.TOS \
-            "sidecart/dist/$UUID.uf2" "sidecart/dist/$UUID.json" --clobber
+          gh release upload latest dist/*.TOS dist/*.uf2 dist/*.json --clobber

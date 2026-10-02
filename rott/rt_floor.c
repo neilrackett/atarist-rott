@@ -86,7 +86,7 @@ static byte * skydata[MAXSKYDATA];
 static int      horizonheight;
 static int      centerskypost;
 static int      oldsky=-1;
-#if defined(__MINT__) && ATARI_MD_RENDER
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
 static int      md_skytop, md_skybottom, md_floornum, md_ceilingnum;
 #endif
 
@@ -450,7 +450,7 @@ void SetPlaneViewSize (void)
 
    floor = W_CacheLumpNum(floornum,PU_LEVELSTRUCT, Cvt_patch_t, 1);
    floor +=8;
-#if defined(__MINT__) && ATARI_MD_RENDER
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
    md_floornum = floornum;
    md_ceilingnum = 0;
 #endif
@@ -460,7 +460,7 @@ void SetPlaneViewSize (void)
       ceilingnum = GetFloorCeilingLump ( ceilingnum );
       ceiling = W_CacheLumpNum(ceilingnum,PU_LEVELSTRUCT, Cvt_patch_t, 1);
       ceiling +=8;
-#if defined(__MINT__) && ATARI_MD_RENDER
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
       md_ceilingnum = ceilingnum;
 #endif
       } else {
@@ -496,7 +496,7 @@ void SetPlaneViewSize (void)
          skybottom=s+12;
          break;
       }
-#if defined(__MINT__) && ATARI_MD_RENDER
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
       md_skytop = (sky != 0) ? skytop : 0;
       md_skybottom = (sky != 0) ? skybottom : 0;
 #endif
@@ -522,7 +522,7 @@ void SetPlaneViewSize (void)
          }
 }
 
-#if defined(__MINT__) && ATARI_MD_RENDER
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
 /* MD/ROTT: what SetPlaneViewSize chose, for the level snapshot. Returns
  * non-zero when the level has a sky. */
 int ATARI_MD_SkyInfo(int *top, int *bottom, int *center, int *floorlump,

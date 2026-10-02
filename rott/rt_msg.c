@@ -43,7 +43,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <mem.h>
 #endif
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #include <mint/osbind.h>
 static void atari_dbg(const char *msg) { Cconws(msg); }
 #endif
@@ -104,7 +104,7 @@ int StringLength(char *string)
 
 void ResetMessageTime(void)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    // Avoid timer read during early Atari init (was crashing on some setups).
    LastMessageTime = 0;
 #else
@@ -128,7 +128,7 @@ void InitializeMessages(
 
    start = false;
 
-   // #if defined(__MINT__)
+   // #if defined(ATARI_NATIVE)
    //    atari_dbg("RT_MSG: InitializeMessages start\r\n");
    // #endif
    if (MessageSystemStarted == 0)
@@ -158,7 +158,7 @@ void InitializeMessages(
    memset(EraseMessage, 0, sizeof(EraseMessage));
    memset(MessageOrder, -1, sizeof(MessageOrder));
 
-   // #if defined(__MINT__)
+   // #if defined(ATARI_NATIVE)
    //    atari_dbg("RT_MSG: InitializeMessages done\r\n");
    // #endif
    // Only print startup message if it's the first time in
@@ -437,7 +437,7 @@ void UpdateMessages(
    int messagetics;
    int i;
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    // Avoid timer reads on Atari; just tick by 1 each call.
    messagetics = 1;
 #else
@@ -630,7 +630,7 @@ void DrawMessages(
 
 {
    int i;
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    if (!MessagesEnabled)
    {
       UpdateMessages();

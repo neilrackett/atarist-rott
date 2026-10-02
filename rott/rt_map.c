@@ -917,7 +917,7 @@ void DoMap (int cx, int cy)
    int quitkey;
    ControlInfo control;
 
-#if defined(__MINT__) && ATARI_MD_RENDER
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
    // MD/ROTT: the walls the Multi-device saw belong on the map too.
    ATARI_MD_SyncMapSeen();
 #endif

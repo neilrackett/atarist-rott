@@ -24,7 +24,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "rt_def.h"
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #include <mint/osbind.h>
 #endif
 
@@ -47,7 +47,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_main.h"
 #include "w_wad.h"
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 static int atari_lumpnum(const char *name)
 {
    int n = W_CheckNumForName((char *)name);
@@ -63,7 +63,7 @@ static int atari_lumpnum(const char *name)
 
 static void PreCacheGroupByName(const char *startname, const char *endname, int type)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    int start = atari_lumpnum(startname);
    int stop = atari_lumpnum(endname);
    if (start == -1 || stop == -1)
@@ -78,7 +78,7 @@ static void PreCacheGroupByName(const char *startname, const char *endname, int 
 
 static void PreCacheLumpByName(const char *name, int level, int type)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    int lump = atari_lumpnum(name);
    if (lump == -1)
       return;
@@ -441,7 +441,7 @@ void RemoveRespawnStatic(respawn_t*stat)
 
 void TurnOffLight(int tilex,int tiley)
 {
-#if defined(__MINT__) && ATARI_MD_RENDER
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
   ATARI_MD_LightsChanged(tilex,tiley);
 #endif
   DoLights(tilex,tiley);
@@ -475,7 +475,7 @@ void DeactivateLight(long light)
 
 void TurnOnLight(int i,int j)
 {
-#if defined(__MINT__) && ATARI_MD_RENDER
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
  ATARI_MD_LightsChanged(i,j);
 #endif
 
@@ -675,7 +675,7 @@ void SetupAnimatedWall(int which)
    texture = W_CheckNumForName(animwallsinfo[which].firstlump);
    if (texture == -1)
       {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
       {
          char buf[80];
          sprintf(buf, "ROTT: animwall missing %s\r\n", animwallsinfo[which].firstlump);

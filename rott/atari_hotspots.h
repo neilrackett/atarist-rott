@@ -27,7 +27,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_def.h"
 #include "engine.h"
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 int ATARI_HotspotDrawWallPost(wallcast_t *post, byte *buf);
 #else
 #define ATARI_HotspotDrawWallPost(post, buf) (0)

@@ -132,16 +132,29 @@ int     MidiAddress      = 0x330;
 boolean cybermanenabled  = false;
 boolean assassinenabled  = false;
 boolean spaceballenabled = false;
+#if ATARI_SDL
+// The SDL builds' defaults, as the sdl branch had them.
+boolean AutoDetailOn     = true;
+int     DoubleClickSpeed = 20;
+boolean BobbinOn         = true;
+int     Menuflipspeed    = 5;
+int     DetailLevel      = 0;         // LOW DETAIL
+#else
 boolean AutoDetailOn     = false;
 int     DoubleClickSpeed = 20;
 boolean BobbinOn         = false;
 int     Menuflipspeed    = 15;
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 int     DetailLevel      = 0;         // LOW DETAIL
 #else
 int     DetailLevel      = 2;         // HI DETAIL
 #endif
+#endif
+#if ATARI_SDL
+int     fandc            = 0;
+#else
 int     fandc            = 1;
+#endif
 int     blanktime        = (2*60*VBLCOUNTER);
 boolean ConfigLoaded     = false;
 boolean stereoreversed   = false;
@@ -172,11 +185,21 @@ char *ApogeePath = NULL;
 //
 //******************************************************************************
 
+#if ATARI_SDL
+// The SDL builds keep their own settings: they share dist/ (and often a
+// player's ROTT folder) with ROTT_ST.TOS, whose are tuned for another renderer.
+static char SoundName[13]  = "sdlsound.rot";
+#else
 static char SoundName[13]  = "sound.rot";
+#endif
 
 #ifdef _ROTT_
 
+#if ATARI_SDL
+static char *ConfigName = "sdlconf.rot";
+#else
 static char *ConfigName = "config.rot";
+#endif
 static char *ScoresName = "scores.rot";
 static char *ROTT       = "rott.rot";
 static char *CONFIG     = "setup.rot";
@@ -957,8 +980,13 @@ void SetConfigDefaultValues (void)
    joystickenabled = false;
    joypadenabled   = false;
    joystickport    = 0;
+#if ATARI_SDL
+   viewsize        = 5;
+   DetailLevel     = 0; /* low detail default */
+#else
    viewsize        = 2;
    fulllight       = 1;
+#endif
    mouseadjustment = 5;
    gammaindex      = 0;
    gamestate.violence = 3;
@@ -1061,7 +1089,7 @@ void ReadConfig (void)
 
 void ReadAtariSoundToggles (void)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    char filename[128];
    struct stat st;
    void *buffer = NULL;

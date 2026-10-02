@@ -25,7 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "rt_def.h"
 #include "rt_sound.h"
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #include <mint/osbind.h>
 #endif
 #include <stdio.h>
@@ -75,7 +75,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "memcheck.h"
 #include "atari_md.h"
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #ifndef ATARI_SKIP_PRECACHE
 #define ATARI_SKIP_PRECACHE 0
 #endif
@@ -89,7 +89,7 @@ static void atari_ted_log(const char *msg)
 }
 #endif
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 static int atari_lumpnum(const char *name)
 {
    int n = W_CheckNumForName((char *)name);
@@ -105,7 +105,7 @@ static int atari_lumpnum(const char *name)
 
 static void PreCacheGroupByName(const char *startname, const char *endname, int type)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    int start = atari_lumpnum(startname);
    int stop = atari_lumpnum(endname);
    if (start == -1 || stop == -1)
@@ -281,7 +281,7 @@ void SetupPreCache( void )
    CachingStarted=true;
    cacheindex=0;
    cachelist=(cachetype *)SafeMalloc(MAXPRECACHE*(sizeof(cachetype)));
-#if !(defined(__MINT__) && ATARI_SKIP_PRECACHE)
+#if !(defined(ATARI_NATIVE) && ATARI_SKIP_PRECACHE)
    DrawPreCache();
 #endif
 }
@@ -1170,7 +1170,7 @@ void DrawPreCache( void )
       }
 }
 
-#if defined(__MINT__) && ATARI_SKIP_PRECACHE
+#if defined(ATARI_NATIVE) && ATARI_SKIP_PRECACHE
 #define ATARI_LOAD_STEPS 8
 static int atari_load_progress_active = 0;
 static int atari_load_progress_last = -1;
@@ -1264,7 +1264,7 @@ static void atari_load_progress_finish(void)
 */
 void PreCache( void )
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #if ATARI_SKIP_PRECACHE
    if (CachingStarted)
       {
@@ -3086,7 +3086,7 @@ void SetupPushWalls( void )
                   temp=tilemap[i][j]&0x1fff;
 			         tilemap[i][j] = pwallnum;
 			         if (MAPSPOT(i,j,2))
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
                      {
                         char buf[96];
                         sprintf(buf, "ROTT: pushwall missing direction at %d,%d\r\n", i, j);
@@ -3115,7 +3115,7 @@ void SetupPushWalls( void )
 			            SpawnPushWall(i,j,0,temp,(tile-256)<<1,4);
                   }
                else
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
                   {
                      char buf[96];
                      sprintf(buf, "ROTT: turbomovewall missing wall at %d,%d\r\n", i, j);
@@ -3140,7 +3140,7 @@ void SetupPushWalls( void )
   	                  SpawnPushWall(i,j,0,temp,(tile-300)/9,3);
                   }
                else
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
                   {
                      char buf[96];
                      sprintf(buf, "ROTT: movewall missing wall at %d,%d\r\n", i, j);
@@ -5882,14 +5882,14 @@ void SetupGameLevel (void)
 		GetEpisode (gamestate.mapon);
 		LoadROTTMap(gamestate.mapon);
 		}
-#if defined(__MINT__) && ATARI_SKIP_PRECACHE
+#if defined(ATARI_NATIVE) && ATARI_SKIP_PRECACHE
    if (loadedgame==false)
       {
       ATARI_LOAD_INIT();
       ATARI_LOAD_STEP(0);
       }
 #endif
-#if defined(__MINT__) && ATARI_SKIP_PRECACHE
+#if defined(ATARI_NATIVE) && ATARI_SKIP_PRECACHE
    ATARI_LOAD_STEP(1);
 #endif
    if (DoPanicMapping())
@@ -5904,7 +5904,7 @@ void SetupGameLevel (void)
       {
       DoRegisterConversion ();
       }
-#if defined(__MINT__) && ATARI_SKIP_PRECACHE
+#if defined(ATARI_NATIVE) && ATARI_SKIP_PRECACHE
    ATARI_LOAD_STEP(2);
 #endif
    if ( (NewGame) || (lastlevelloaded!=gamestate.mapon) )
@@ -5913,7 +5913,7 @@ void SetupGameLevel (void)
 		lastlevelloaded=gamestate.mapon;
       MU_StartSong(song_level);
 		}
-#if defined(__MINT__) && ATARI_SKIP_PRECACHE
+#if defined(ATARI_NATIVE) && ATARI_SKIP_PRECACHE
    ATARI_LOAD_STEP(3);
 #endif
    shapestart = W_GetNumForName("SHAPSTRT");
@@ -5967,7 +5967,7 @@ void SetupGameLevel (void)
 	PrintTileStats();
 
 	SetupLightLevels();
-#if defined(__MINT__) && ATARI_SKIP_PRECACHE
+#if defined(ATARI_NATIVE) && ATARI_SKIP_PRECACHE
    ATARI_LOAD_STEP(4);
 #endif
 
@@ -5999,7 +5999,7 @@ void SetupGameLevel (void)
 
 	SetupClocks();
 	SetupAnimatedWalls();
-#if defined(__MINT__) && ATARI_SKIP_PRECACHE
+#if defined(ATARI_NATIVE) && ATARI_SKIP_PRECACHE
    ATARI_LOAD_STEP(5);
 #endif
 
@@ -6028,7 +6028,7 @@ void SetupGameLevel (void)
    else {
       FixTiles();
    }
-#if defined(__MINT__) && ATARI_SKIP_PRECACHE
+#if defined(ATARI_NATIVE) && ATARI_SKIP_PRECACHE
    ATARI_LOAD_STEP(6);
 #endif
 
@@ -6053,7 +6053,7 @@ void SetupGameLevel (void)
 	LoftSprites();
 
 	SetPlaneViewSize();
-#if defined(__MINT__) && ATARI_SKIP_PRECACHE
+#if defined(ATARI_NATIVE) && ATARI_SKIP_PRECACHE
    ATARI_LOAD_STEP(7);
 #endif
 		
@@ -6075,19 +6075,19 @@ void SetupGameLevel (void)
 		SoftError("Done PreCaching\n");
 #endif
 #endif
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 		atari_ted_log("ROTT: SetupPlayScreen start\r\n");
 #endif
 		SetupPlayScreen();
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 		atari_ted_log("ROTT: SetupPlayScreen done\r\n");
 		atari_ted_log("ROTT: SetupScreen start\r\n");
 #endif
 		SetupScreen(false);
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 		atari_ted_log("ROTT: SetupScreen done\r\n");
 #endif
-#if defined(__MINT__) && ATARI_SKIP_PRECACHE
+#if defined(ATARI_NATIVE) && ATARI_SKIP_PRECACHE
       ATARI_LOAD_STEP(8);
       ATARI_LOAD_FINISH();
 #endif
@@ -6098,7 +6098,7 @@ void SetupGameLevel (void)
         }
 
         if (player != NULL) {
-#if defined(__MINT__) && ATARI_SKIP_LIGHTLEVEL
+#if defined(ATARI_NATIVE) && ATARI_SKIP_LIGHTLEVEL
             UpdateLightLevel(player->areanumber);
 #else
             for (i=0;i<100;i++) {
@@ -6872,7 +6872,7 @@ void SetupStatics(void)
 				case 49:
 
 					SD_PreCacheSound(SD_ATKMP40SND);
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 					{
 						int mp_start = W_CheckNumForName("MP401");
 						int mp_stop = W_CheckNumForName("MP403");

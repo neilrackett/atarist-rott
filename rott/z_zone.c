@@ -48,7 +48,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //MED
 #include "memcheck.h"
 
+#if ATARI_SDL
+int lowmemory=0;
+#else
 int lowmemory=1;
+#endif
 
 /*
 ==============================================================================
@@ -169,10 +173,26 @@ void Z_Init (int size, int min)
       UL_DisplayMemoryError (min-maxsize);
       }
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    {
       long reserve = 256L * 1024L;
       long cap = avail - reserve - levelzonesize;
+      if (cap < 0)
+         cap = 0;
+      if (maxsize > (int)cap)
+         maxsize = (int)cap;
+   }
+#elif ATARI_SDL
+   {
+      /*
+       * Keep headroom for SDL/GEM/system allocations that happen after
+       * zone setup (video mode creation, surfaces, driver internals).
+       */
+      long reserve = 1024L * 1024L;
+      long cap = avail - reserve - levelzonesize;
+
+      if (cap < (long)(min >> 1))
+         cap = (long)(min >> 1);
       if (cap < 0)
          cap = 0;
       if (maxsize > (int)cap)
@@ -202,6 +222,7 @@ void Z_Init (int size, int min)
       {
       lowmemory = 1;
 
+#if !ATARI_SDL
       printf("==============================================================================\n");
       printf("WARNING: You are running ROTT with very little memory.  ROTT runs best with\n");
       printf("8 Megabytes of memory and no TSR's loaded in memory.  If you can free up more\n");
@@ -211,6 +232,7 @@ void Z_Init (int size, int min)
       printf("                        Press any key to continue\n");
       printf("==============================================================================\n");
       getch();
+#endif
       }
 }
 
@@ -795,7 +817,16 @@ int Z_AvailHeap ( void )
    int386x( DPMI_INT, &zregs, &zregs, &zsregs );
 
    return ((int)MemInfo.LargestBlockAvail);
-#elif defined(__MINT__)
+#elif ATARI_SDL
+   long avail = Malloc(-1L);
+
+   if (avail <= 0)
+      return (1024 * 1024);
+   if (avail > MAXMEMORYSIZE)
+      avail = MAXMEMORYSIZE;
+
+   return (int)avail;
+#elif defined(ATARI_NATIVE)
    {
       long avail = Mxalloc(-1, 0);
       // TOS 1.0x has no Mxalloc (EINVFN): ask the old way, ST RAM anyway.

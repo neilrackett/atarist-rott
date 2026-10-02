@@ -511,7 +511,7 @@ void ShutdownClientControls ( void )
 void StartupClientControls ( void )
 {
    int i,j;
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    #ifndef ATARI_DEBUG
     #define ATARI_DEBUG 0
    #endif
@@ -530,7 +530,7 @@ void StartupClientControls ( void )
    controlschanged=true;
 
    INL_GetMouseDelta(&i,&i);
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    if (ATARI_DEBUG)
       Cconws("ROTT: StartupClientControls after mouse delta\r\n");
 #endif
@@ -544,7 +544,7 @@ void StartupClientControls ( void )
 
    CalcTics();
    CalcTics();
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    if (ATARI_DEBUG)
       Cconws("ROTT: StartupClientControls after CalcTics\r\n");
 #endif
@@ -571,7 +571,7 @@ void StartupClientControls ( void )
       controlupdatetime=GetTicCount();
 
    controlupdatetime-=(controlupdatetime%controldivisor);
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    if (ATARI_DEBUG)
       Cconws("ROTT: StartupClientControls after controlupdatetime\r\n");
 #endif
@@ -660,7 +660,7 @@ void StartupClientControls ( void )
 #endif
    if (standalone==true)
       printf("Packet Server started\n");
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    if (ATARI_DEBUG)
       Cconws("ROTT: StartupClientControls done\r\n");
 #endif
@@ -678,7 +678,7 @@ void StartupClientControls ( void )
 // The commands for the tics up to `time`, out of line so the many calls
 // with none to make keep a small prologue (Atari: most of their cost).
 //
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 static void __attribute__((noinline)) UpdateClientCommands ( int time )
 #else
 static void UpdateClientCommands ( int time )

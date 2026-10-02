@@ -45,7 +45,7 @@ void I_InitTimer(void);
 
 // Wait for vertical retrace or pause a bit.
 void I_WaitVBL(int count);
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 void I_HookTimer(int on);
 #endif
 

@@ -6,6 +6,14 @@
 #include <mint/osbind.h>
 #include <mint/cookie.h>
 
+#if ATARI_SDL
+/*
+ * SDL on Atari can use stack-heavy setup paths (alloca in video backend).
+ * Reserve a larger process stack so video mode setup succeeds reliably.
+ */
+long _stksize = 256L * 1024L;
+#endif
+
 #define MCH_MEGA_STE 0x00010010L
 static long megaste_enable_16mhz_cache_super(void)
 {

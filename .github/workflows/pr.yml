@@ -1,7 +1,7 @@
 name: PR
 
-# Does it build? That is the whole job. This runs the same two builds as
-# release.yml, the game and the ROTT Accelerator firmware, so a pull
+# Does it build? That is the whole job. This runs the same builds as
+# release.yml, the three games and the ROTT Accelerator firmware, so a pull
 # request that would break the release fails here instead, and it tags
 # nothing, publishes nothing and keeps no artifacts. There is no host test
 # suite in this port: verification is a build plus a run under Hatari or
@@ -55,12 +55,13 @@ jobs:
 
       - name: Install the Atari ST toolkit
         # Generates /usr/local/bin/stcmd, which runs the m68k builds in a
-        # container: the game, and the firmware's cartridge stub.
+        # container: the games, and the firmware's cartridge stub. The image
+        # carries SDL 1.2 and MiNTLib for the SDL builds as well.
         run: curl -sL https://github.com/sidecartridge/atarist-toolkit-docker/releases/latest/download/install_atarist_toolkit_docker.sh | bash
 
-      - name: Build the game
-        # The command the README documents: build/atarist/ROTT_ST.TOS.
-        run: stcmd make
+      - name: Build the games
+        # dist/ROTT_ST.TOS, dist/ROTT_SDL.TOS and dist/ROTT_030.TOS.
+        run: stcmd make -j4 all sdl sdl-030
 
       - name: Build the ROTT Accelerator firmware
         # No APP_UUID_KEY on purpose. The Makefile falls back to the sample

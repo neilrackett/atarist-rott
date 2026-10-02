@@ -43,7 +43,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <time.h>
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #include <mint/osbind.h>
 #endif
 #include "watcom.h"
@@ -325,7 +325,7 @@ void ClearBuffer( char * buf, int size )
 
 void Error (char *error, ...)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
     Cconws("ROTT: Error\r\n");
 #endif
    char msgbuf[300];
@@ -432,7 +432,7 @@ void Error (char *error, ...)
    		// which is freed by this function.
  
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    Cconws("Press any key...\r\n");
    Cconin();
 #endif
@@ -787,11 +787,11 @@ void	SaveFile (char *filename, void *buffer, long count)
 
 void FixFilePath(char *filename)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
     (void)filename;
     return;
 #endif
-#if PLATFORM_UNIX || defined(__MINT__)
+#if PLATFORM_UNIX || defined(ATARI_NATIVE)
     char *ptr;
     char *lastsep = filename;
 
@@ -901,7 +901,7 @@ int _dos_findnext(struct find_t *f)
     return(0);
 }
 
-#elif PLATFORM_UNIX || defined(__MINT__)
+#elif PLATFORM_UNIX || defined(ATARI_NATIVE)
 int _dos_findfirst(char *filename, int x, struct find_t *f)
 {
     char *ptr;
@@ -1495,6 +1495,8 @@ void VL_NormalizePalette (byte *palette)
 
 void VL_SetPalette (byte *palette)
 {
+#if !ATARI_SDL
+   // (Not for SDL, which can lose the palette to a new video mode.)
    static byte lastpal[768];
    static boolean has_last = false;
 
@@ -1503,6 +1505,7 @@ void VL_SetPalette (byte *palette)
 
    memcpy(lastpal, palette, 768);
    has_last = true;
+#endif
 
    I_SetPalette(palette);
 }

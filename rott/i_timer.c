@@ -28,7 +28,7 @@
 //
 //-----------------------------------------------------------------------------
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #include <stddef.h>
 #include <mint/osbind.h>
 #include "atari_check.h"
@@ -142,7 +142,7 @@ static int __attribute__((noinline)) get_time(unsigned long ticks)
 {
     static int dbg_count = 0;
     const unsigned long hz200 = ticks;
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #ifndef ATARI_DEBUG
 #define ATARI_DEBUG 0
 #endif
@@ -156,7 +156,7 @@ static int __attribute__((noinline)) get_time(unsigned long ticks)
         MUSIC_Service();
         music_service_hz200 += 4;
     }
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
     if (ATARI_DEBUG && dbg_count < 8)
         Cconws("ROTT: I_GetTime after hz200\r\n");
 #endif
@@ -169,7 +169,7 @@ static int __attribute__((noinline)) get_time(unsigned long ticks)
 #endif
     {
         int t = hz200_to_tics(ticks);
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
         if (ATARI_DEBUG && dbg_count < 8)
         {
             Cconws("ROTT: I_GetTime done\r\n");
@@ -229,6 +229,88 @@ void I_InitTimer(void)
     basetime = 0;
     music_service_hz200 = 0;
     last_hz200 = ~0UL;
+}
+
+void I_ExitTimer(void)
+{
+}
+
+#elif defined(ATARI_SDL)
+// The SDL builds: TOS's 200 Hz count, read through Super() as needed.
+
+#include <sys/time.h>
+#include <unistd.h>
+#include <mint/osbind.h>
+
+#include "i_timer.h"
+
+#define ATARI_TIMER_HZ 200UL
+#define TOS_HZ_200_ADDR 0x4BA
+
+static unsigned long basetime = 0;
+
+static unsigned long mint_hz200(void)
+{
+    long old = Super(0L);
+    volatile unsigned long *hz200 = (volatile unsigned long *)TOS_HZ_200_ADDR;
+    unsigned long ticks = *hz200;
+
+    if (old)
+        Super(old);
+
+    return ticks;
+}
+
+int I_GetTime(void)
+{
+    unsigned long ticks = mint_hz200();
+
+    if (basetime == 0)
+        basetime = ticks;
+
+    ticks -= basetime;
+    return (int)((ticks * TICRATE) / ATARI_TIMER_HZ);
+}
+
+int I_GetTimeMS(void)
+{
+    unsigned long ticks = mint_hz200();
+
+    if (basetime == 0)
+        basetime = ticks;
+
+    ticks -= basetime;
+    return (int)((ticks * 1000UL) / ATARI_TIMER_HZ);
+}
+
+void I_Sleep(int ms)
+{
+    unsigned long start;
+    unsigned long wait;
+
+    if (ms <= 0)
+        return;
+
+    wait = ((unsigned long)ms * ATARI_TIMER_HZ + 999UL) / 1000UL;
+    if (wait == 0)
+        wait = 1;
+
+    start = mint_hz200();
+    while ((mint_hz200() - start) < wait)
+    {
+        /* Yield without busy-spinning while waiting for the next tick. */
+        usleep(1000UL);
+    }
+}
+
+void I_WaitVBL(int count)
+{
+    I_Sleep((count * 1000) / 70);
+}
+
+void I_InitTimer(void)
+{
+    basetime = 0;
 }
 
 void I_ExitTimer(void)

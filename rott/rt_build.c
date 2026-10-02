@@ -74,7 +74,7 @@ static int titleyoffset=0;
 static char titlestring[40]="\0";
 static int readytoflip;
 static boolean MenuBufStarted=false;
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 int ATARI_MenuActive(void) { return MenuBufStarted; }
 #endif
 static int mindist=0x2700;
@@ -609,9 +609,11 @@ void RefreshMenuBuf( int time )
          return;
       PositionMenuBuf(0, NORMALVIEW, true);
       atari_menu_dirty = false;
+#if defined(ATARI_NATIVE)
       // A menu shown while dark (after a death, Died): fade it in.
       if (atari_c2p_fade_amount())
          atari_c2p_fade(0, 0, 0, 0, ATARI_FADE_VBLS);
+#endif
       return;
       }
 #endif
@@ -621,6 +623,9 @@ void RefreshMenuBuf( int time )
       //PositionMenuBuf (0,NORMALVIEW,false);
       PositionMenuBuf (0,NORMALVIEW,true);//bna++ in not true bg in menu is no redrawn
       }
+#if ATARI_SDL
+   atari_menu_dirty = false;
+#endif
 }
 
 //******************************************************************************
@@ -1599,6 +1604,9 @@ void FlipMenuBuf ( void )
       }
    titleyoffset=0;
    BackgroundDrawn=false;
+#if ATARI_SDL
+   ATARI_MenuMarkDirty();
+#endif
 }
 
 

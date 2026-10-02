@@ -26,7 +26,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "rt_def.h"
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 extern unsigned int atari_actor_budget_runtime;
 extern unsigned int atari_sprite_budget_runtime;
 extern unsigned int atari_effect_budget_runtime;

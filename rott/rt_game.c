@@ -72,7 +72,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //MED
 #include "memcheck.h"
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
 #ifndef ATARI_SKIP_FIZZLE
 #define ATARI_SKIP_FIZZLE 0
 #endif
@@ -1587,7 +1587,7 @@ void DrawTime
 
 void DrawMPPic (int xpos, int ypos, int width, int height, int heightmod, byte *src, boolean bufferofsonly)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    int pixwidth = width << 2;
    int fullheight = height + heightmod;
    int plane_size = width * fullheight;
@@ -1725,7 +1725,7 @@ void DrawMPPic (int xpos, int ypos, int width, int height, int heightmod, byte *
 
 void DrawColoredMPPic (int xpos, int ypos, int width, int height, int heightmod, byte *src, boolean bufferofsonly, int color)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    int pixwidth = width << 2;
    int fullheight = height + heightmod;
    int plane_size = width * fullheight;
@@ -1949,7 +1949,7 @@ void DrawTriads
 
 void DrawPPic (int xpos, int ypos, int width, int height, byte *src, int num, boolean up, boolean bufferofsonly)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    int pixwidth = width << 2;
    int step = up ? pixwidth : -pixwidth;
    int plane_size = width * height;
@@ -2228,7 +2228,7 @@ void DrawBarAmmo
 
 void SingleDrawPPic (int xpos, int ypos, int width, int height, byte *src, int num, boolean up)
 {
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    int pixwidth = width << 2;
    int step = up ? pixwidth : -pixwidth;
    int plane_size = width * height;
@@ -4521,7 +4521,7 @@ void Died (void)
    int   slowrate;
    playertype *pstate;
    objtype * killerobj=(objtype *)player->target;
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    const boolean atari_skip_death_transition = (ATARI_SKIP_FIZZLE != 0);
    // The death camera and the closing effects are too slow for the ST
    // renderer, but cost the ST little when the Multi-device draws the view
@@ -4702,7 +4702,13 @@ player->yzangle=0;
 
       do
          {
+#if ATARI_SDL
+         bufferofs += screenofs;
          DoBorderShifts ();
+         bufferofs -= screenofs;
+#else
+         DoBorderShifts ();
+#endif
          change = tics<<rate;
          if (clockwise==1)
             curangle+=change;
@@ -4724,9 +4730,15 @@ player->yzangle=0;
       FlipPage();
       }
 
+#if ATARI_SDL
+   bufferofs += screenofs; // the border is the view's
+#endif
    while (damagecount)
       DoBorderShifts ();
    DoBorderShifts ();
+#if ATARI_SDL
+   bufferofs -= screenofs;
+#endif
 
    locplayerstate->weapon = -1;        // take away weapon
 
@@ -4750,7 +4762,7 @@ player->yzangle=0;
 
       rng = RandomNumber ("Died",0);
 
-#if defined(__MINT__) && ATARI_MD_RENDER
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
       // RotateBuffer turns the chunky screen: give it the view. (A fall
       // has the sky there already, from DrawFullSky.)
       if (!atari_skip_death_effects && ATARI_MD_Active() &&
@@ -4785,7 +4797,7 @@ player->yzangle=0;
 
       screenfaded=false;
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
       // A real fade with the colour registers alone (no palettes to reduce).
       atari_c2p_fade (0, 0, 0, 16, ATARI_FADE_VBLS);
       screenfaded=true;
@@ -4812,7 +4824,7 @@ player->yzangle=0;
 
       SD_Play (SD_GAMEOVERSND);
       rng=RandomNumber("Died",0);
-#if defined(__MINT__) && ATARI_MD_RENDER
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
       if (!atari_skip_death_effects && ATARI_MD_Active() && (rng < 64 || rng >= 128))
          ATARI_MD_ViewToChunky ((byte *)bufferofs);
 #endif
@@ -4830,7 +4842,7 @@ player->yzangle=0;
 
       screenfaded=false;
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
       // A real fade with the colour registers alone (no palettes to reduce).
       atari_c2p_fade (0, 0, 0, 16, ATARI_FADE_VBLS);
       screenfaded=true;
@@ -4862,7 +4874,7 @@ player->yzangle=0;
    }
    ClearGraphicsScreen();
 
-#if defined(__MINT__)
+#if defined(ATARI_NATIVE)
    // Stay dark until the next screen is drawn and fades itself in
    // (VL_FadeIn, RefreshMenuBuf): nothing left over or half drawn shows.
    atari_c2p_fade (0, 0, 0, 16, ATARI_FADE_VBLS);
