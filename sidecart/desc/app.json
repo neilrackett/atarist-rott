@@ -1,11 +1,12 @@
 {
   "uuid": "<APP_UUID>",
   "name": "ROTT Accelerator",
-  "description": "Renders Rise of the Triad's 3D view for ROTT_ST.TOS on your Atari ST. Get ROTT from neilrackett.com/atarist and copy HUNTBGIN.WAD to /rott on the SD card.",
+  "description": "The ROTT Accelerator enables you to play Rise of the Triad at 15fps on your Atari ST. ROTT for Atari ST is available at <a href=\"https://neilrackett.com/atarist\">neilrackett.com/atarist</a>.",
   "image": "https://downloads.neilrackett.com/atarist-rott/image.webp",
   "tags": [
     "Game",
     "FPS",
+    "GPU",
     "Accelerator"
   ],
   "devices": [

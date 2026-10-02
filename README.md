@@ -19,8 +19,7 @@ All builds:
 
 - Require 4MB RAM
 - Need you to install or download the DOS version of [ROTT shareware ("The Hunt Begins")](https://archive.org/details/rott_shareware)
-- Support keyboard, mouse and [Xpad](https://downloads.neilrackett.com/atarist-rott) controls
-- ROTT Accelerator requires [SidecarTridge Multi-device](https://store.sidecartridge.com/products/sidecartridge-multi-device) (optional)
+- Support keyboard and mouse controls
 
 Stable builds are avilable on the [releases page](https://github.com/neilrackett/atarist-rott/releases).
 
@@ -55,13 +54,13 @@ So, in terms of raw FPS it's 2-3x faster than the SDL build, which is great to s
 
 FPS based on running ROTT with automatic detail selection enabled.
 
-## Rise of the Triad (SidecarTridge Multi-device)
+## ROTT Accelerator (SidecarTridge Multi-device)
 
-If you have a [SidecarTridge Multi-device](https://sidecartridge.com), the ROTT Accelerator lets it take over the heavy lifting: your ST keeps running the game, including the HUD, menus, sound and input, while the Multi-device's RP2040 renders the 3D view (walls, floors, ceilings, skies and sprites) using ROTT's own renderer and hands each finished frame back, ready to copy to the screen.
+If you have a [SidecarTridge Multi-device](https://store.sidecartridge.com/products/sidecartridge-multi-device), the ROTT Accelerator can take over the heavy lifting: your ST keeps running the game, including the HUD, menus, sound and input, while the Multi-device's RP2040 renders the 3D view (walls, floors, ceilings, skies and sprites) using ROTT's own renderer and hands each finished frame back to your ST.
 
-As well as taking the load off the ST, that brings back some of what the ST version has to cut:
+As well as taking the load off the ST, it brings back some of what the ST version had to cut:
 
-- Proper lighting, including darker areas and light diminishing
+- Full lighting, including darker areas and light diminishing
 - Full resolution at every view size, rather than a 2x or 4x zoom, up to the full width between the status bars
 - On-screen messages
 
@@ -71,7 +70,7 @@ See the [ROTT Accelerator readme](sidecart/README.md) for installation, testing 
 
 ## Gamepads (Xpad)
 
-The `atarist` version also plays with a gamepad through [Xpad](https://github.com/neilrackett/atarist-xpad), with analogue turning and movement on the left stick. It needs an Xpad driver that reads the pad's hardware directly, such as the STE enhanced port driver or a cartridge-port adapter: the Xpad joystick and keyboard drivers cannot work here, because this version reads the keyboard itself.
+The `atarist` version also plays with a gamepad through [Xpad](https://downloads.neilrackett.com/atarist-rott), with analogue turning and movement on the left stick. It needs an Xpad driver that reads the pad's hardware directly, such as the STE enhanced port driver or a cartridge-port adapter: the Xpad joystick and keyboard drivers cannot work here, because this version reads the keyboard itself.
 
 | Pad               | In the game              | In menus |
 | ----------------- | ------------------------ | -------- |
