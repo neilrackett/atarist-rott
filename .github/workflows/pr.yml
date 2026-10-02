@@ -1,0 +1,69 @@
+name: PR
+
+# Does it build? That is the whole job. This runs the same two builds as
+# release.yml, the game and the ROTT Accelerator firmware, so a pull
+# request that would break the release fails here instead, and it tags
+# nothing, publishes nothing and keeps no artifacts. There is no host test
+# suite in this port: verification is a build plus a run under Hatari or
+# EmuMD, and a runner cannot do the second half.
+
+on:
+  pull_request:
+    branches:
+      - atarist
+  workflow_dispatch:
+
+# Read-only: this workflow runs code from a contributor's branch, so it
+# gets nothing it does not need. release.yml holds the write token.
+permissions:
+  contents: read
+
+# A force-push mid-review should not leave two builds racing to report.
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # stcmd runs docker with -it unless this is set, and a runner has no
+  # terminal.
+  STCMD_NO_TTY: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v5
+
+      - name: Fetch the Xpad submodule
+        # The game compiles lib/xpad/src/xpad.c. Only Xpad, deliberately:
+        # checkout's own `submodules:` clones every submodule at depth 1,
+        # and a shallow pico-sdk has no tags for sidecart/rp/build.sh to
+        # pin to. That script fetches the SDKs itself, and EmuMD is not
+        # needed to build either binary.
+        run: git submodule update --init lib/xpad
+
+      - name: Install the Pico toolchain
+        # The runner image ships Google's Chrome apt source, which has
+        # served mismatched index files and failed `apt update` outright.
+        # Nothing here needs it. The SDK finds arm-none-eabi-gcc on PATH,
+        # so PICO_TOOLCHAIN_PATH is not needed here.
+        run: |
+          sudo grep -l dl.google.com /etc/apt/sources.list.d/* | xargs -r sudo rm -f
+          sudo DEBIAN_FRONTEND=noninteractive apt update || true
+          sudo DEBIAN_FRONTEND=noninteractive apt install -y cmake gcc-arm-none-eabi libnewlib-arm-none-eabi build-essential libstdc++-arm-none-eabi-newlib
+
+      - name: Install the Atari ST toolkit
+        # Generates /usr/local/bin/stcmd, which runs the m68k builds in a
+        # container: the game, and the firmware's cartridge stub.
+        run: curl -sL https://github.com/sidecartridge/atarist-toolkit-docker/releases/latest/download/install_atarist_toolkit_docker.sh | bash
+
+      - name: Build the game
+        # The command the README documents: build/atarist/ROTT_ST.TOS.
+        run: stcmd make
+
+      - name: Build the ROTT Accelerator firmware
+        # No APP_UUID_KEY on purpose. The Makefile falls back to the sample
+        # UUID, which is all a build check needs, and it keeps this working
+        # for pull requests from forks, where secrets are not available.
+        run: make -C sidecart build

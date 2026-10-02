@@ -1,0 +1,116 @@
+name: Release
+
+# Rolling release: build the game and the ROTT Accelerator firmware, move
+# the lightweight "latest" tag onto this commit, and replace those files
+# on the "latest" release. The release's title and body are left exactly
+# as they are -- `gh release upload` touches assets only, so the SDL
+# builds sharing the release stay as they are too -- and the asset names
+# never change, so a download link handed to someone keeps working.
+
+on:
+  # Anything landing on atarist is a release: a merge, or a direct push.
+  # Tag pushes do not match a branch filter, so the tag this workflow
+  # moves cannot trigger it again.
+  push:
+    branches:
+      - atarist
+    # A prose-only push cannot change either binary. GitHub still runs
+    # the job when a push touches anything else as well, and
+    # workflow_dispatch forces one by hand.
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Two merges in quick succession would otherwise race: both move the
+# latest tag and clobber the same assets, and the loser would decide
+# what the release ends up holding. Newest commit wins instead.
+concurrency:
+  group: release
+  cancel-in-progress: true
+
+env:
+  STCMD_NO_TTY: 1
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # The push trigger already filters to atarist; this is what stops a
+    # manual dispatch from some other branch releasing it.
+    if: github.ref == 'refs/heads/atarist'
+    steps:
+      - name: Check the APP_UUID_KEY secret is set
+        # Without it, make would quietly fall back to the sample UUID and
+        # release under the wrong name. Fail here, before the toolchains.
+        env:
+          APP_UUID_KEY: ${{ secrets.APP_UUID_KEY }}
+        run: test -n "$APP_UUID_KEY" || { echo "The APP_UUID_KEY secret is not set."; exit 1; }
+
+      - name: Check out the code
+        uses: actions/checkout@v5
+
+      - name: Fetch the Xpad submodule
+        # Only Xpad: sidecart/rp/build.sh fetches the SDKs itself, at full
+        # depth so it can pin their tags (see pr.yml).
+        run: git submodule update --init lib/xpad
+
+      - name: Install the Pico toolchain
+        run: |
+          sudo grep -l dl.google.com /etc/apt/sources.list.d/* | xargs -r sudo rm -f
+          sudo DEBIAN_FRONTEND=noninteractive apt update || true
+          sudo DEBIAN_FRONTEND=noninteractive apt install -y cmake gcc-arm-none-eabi libnewlib-arm-none-eabi build-essential libstdc++-arm-none-eabi-newlib
+
+      - name: Install the Atari ST toolkit
+        run: curl -sL https://github.com/sidecartridge/atarist-toolkit-docker/releases/latest/download/install_atarist_toolkit_docker.sh | bash
+
+      - name: Build the game
+        run: stcmd make
+
+      - name: Build the ROTT Accelerator firmware
+        # make build releases sidecart/version.txt as it is, without the
+        # bump. The app UUID comes from the APP_UUID_KEY secret; uuid.txt
+        # is deliberately not committed.
+        env:
+          APP_UUID_KEY: ${{ secrets.APP_UUID_KEY }}
+        run: make -C sidecart build
+
+      - name: Drop the version from the firmware's file name
+        # build.sh names the image <uuid>-<version>.uf2. The release keeps
+        # one unversioned name, the one desc/app.json's binary URL uses, and
+        # the version travels inside <uuid>.json instead.
+        env:
+          UUID: ${{ secrets.APP_UUID_KEY }}
+        run: |
+          VERSION=$(tr -d '\r\n' < sidecart/version.txt)
+          mv "sidecart/dist/$UUID-$VERSION.uf2" "sidecart/dist/$UUID.uf2"
+
+      - name: Move the latest tag onto this commit
+        # The "latest" release is attached to this tag, so moving it keeps
+        # the release's source link pointing at the commit the attached
+        # binaries were built from. Through the API rather than `git push`:
+        # pushing a tag is refused when the commit it points at touches
+        # .github/workflows and the token has no workflow scope, which is
+        # exactly the commit that adds these files. PATCH first because the
+        # tag already exists; POST covers a repository where it does not.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/latest" \
+            -f sha="$GITHUB_SHA" -F force=true --silent \
+            || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+                 -f ref=refs/tags/latest -f sha="$GITHUB_SHA" --silent
+
+      - name: Replace the files on the latest release
+        # The game, the firmware image and its Booster app descriptor.
+        # ROTT_SDL.TOS and ROTT_030.TOS come from the sdl branch and are
+        # left alone.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UUID: ${{ secrets.APP_UUID_KEY }}
+        run: |
+          gh release view latest >/dev/null 2>&1 \
+            || gh release create latest --title "Rise of the Triad for Atari ST, TT & Falcon" --notes "Rolling build of the Atari ST port."
+          gh release upload latest build/atarist/ROTT_ST.TOS \
+            "sidecart/dist/$UUID.uf2" "sidecart/dist/$UUID.json" --clobber

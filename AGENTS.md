@@ -15,6 +15,11 @@ Build + Artifacts
 - Run it in EmuMD (from the host, not stcmd): `make emu` (builds with stcmd
   first; `EMU_ARGS` go to `mdfw run`, e.g. `--headless --frames N --screenshot out.png`)
 - Object files: `obj/...`
+- CI (`.github/workflows`): pull requests to `atarist` build the game and the
+  firmware; anything landing on `atarist` also moves the `latest` tag and
+  replaces `ROTT_ST.TOS`, `<uuid>.uf2` and `<uuid>.json` on the `latest`
+  release (needs the `APP_UUID_KEY` secret). The firmware ships
+  `sidecart/version.txt` as it is, so bump it by hand before a release.
 
 Current Makefile Defaults
 
