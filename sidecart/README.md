@@ -53,28 +53,26 @@ graphics from the WAD into its flash: ROTT's view shows
 loaded from the SD card the first time they are drawn, so an object may
 appear a frame late the first time you meet it.
 
-## What to test on hardware
+## Troubleshooting
 
-In this order, so a problem shows up in the simplest place:
+If `ROTT_ST.TOS` doesn't use the Multi-device, or the view looks wrong,
+two test programs narrow it down (`make -C sidecart tests`, in
+`sidecart/tests/`). Run them in this order:
 
-1. **`PINGTEST.TOS`** (`make -C sidecart tests`, from `sidecart/tests/`):
-   detection, command round trips and a checksummed upload at several
-   sizes. Should end `PASS`. Writes `PINGTEST.TXT` next to itself.
+1. **`PINGTEST.TOS`**: detection, command round trips and a checksummed
+   upload at several sizes. Should end `PASS`. Writes `PINGTEST.TXT` next
+   to itself.
 2. **`UPTEST.TOS`** (ST low resolution): the Multi-device draws a test
    pattern (a frame, checks or a grey ramp, and a moving red bar) as full
    frames, which the ST copies to the screen, at two sizes, with and
    without pipelining. Should end `PASS` and report frames per second.
    Writes `UPTEST.TXT`.
-3. **`ROTT_ST.TOS`**: start a game and check that the view appears, that
-   doors, lifts, pushwalls, pickups, enemies, the weapon and messages all
-   show and move, and that the automap, pausing and changing the view
-   size (up to the full width between the status bars) behave.
 
 On a Mega STE the cache is switched off around every cartridge access
 (the CPU stays at 16 MHz), as in STDOOM, and only then: building each
 frame and converting the HUD run with it on.
 
-If something goes wrong, the most useful things to send back are
+When reporting a problem, the most useful things to send are
 `PINGTEST.TXT`, `UPTEST.TXT` and a debug firmware's serial log:
 `make -C sidecart debug` builds one (it prints a status line every 64
 frames and every lump it could not load) and `make -C sidecart uart`
@@ -86,8 +84,7 @@ opens the console.
   areas, darker far walls with light diminishing on (Options menu), one
   side of each wall shaded. The ST renderer flattens this to save time.
   Dark areas therefore look much darker than on the ST renderer, and on
-  16 colours the darkest shades come out close to black. This is the
-  first thing to judge on a real screen.
+  16 colours the darkest shades come out close to black.
 - **Largest view.** The Multi-device's frame buffers stop at 320 x 168,
   the full width between the two status bars; bigger view sizes are
   capped to that while it is in use.
@@ -98,8 +95,7 @@ opens the console.
   STE the blitter copies each frame while the CPU goes on with the next
   (`ATARI_MD_BLIT`, on unless a test copy at startup disagrees with the
   CPU); the HUD is converted only where something drew; masked walls are
-  looked at only when one changed (`MD_MASKED_TOUCH`). In Hatari that
-  start runs at about 13 fps, up from about 3.
+  looked at only when one changed (`MD_MASKED_TOUCH`).
 - **Matching builds.** `ROTT_ST.TOS` and the firmware must come from the
   same sources (`MD_PROTOCOL_VERSION`); with a mismatch the ST says so and
   uses its own renderer.
