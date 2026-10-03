@@ -11,19 +11,23 @@ Purpose
 
 Build + Artifacts
 
-- Primary build command: `stcmd make`
-- Parallel build: `stcmd make -j4`
-- SDL builds: `stcmd make sdl` (`ROTT_SDL.TOS`), `stcmd make sdl-030` (`ROTT_030.TOS`)
+- `make` (= `make games`) builds the three games; `make st` (`ROTT_ST.TOS`),
+  `make sdl` (`ROTT_SDL.TOS`), `make sdl-030` (`ROTT_030.TOS`). From the host
+  they go through stcmd (`JOBS=4` by default); inside stcmd they build directly.
+- `make sidecart` builds the firmware, on the host only (Pico toolchain)
 - Output: everything in `dist/` (`ROTT_ST.TOS`, the SDL builds, config files,
   the data from `tmp/ROTT`, and the firmware's `<uuid>.uf2`/`.json`)
 - Run it in EmuMD (from the host, not stcmd): `make emu` (builds with stcmd
   first; `EMU_ARGS` go to `mdfw run`, e.g. `--headless --frames N --screenshot out.png`)
 - Object files: `obj/atarist`, `obj/sdl`, `obj/sdl-030`
-- CI (`.github/workflows`): pull requests to `atarist` build the three games
-  and the firmware; anything landing on `atarist` also moves the `latest` tag
-  and replaces the `.TOS` files, `<uuid>.uf2` and `<uuid>.json` on the
-  `latest` release (needs the `APP_UUID_KEY` secret). The firmware ships
-  `sidecart/version.txt` as it is, so bump it by hand before a release.
+- CI (`.github/workflows`): pull requests to `main` build the three games
+  and the firmware; anything landing on `main` is also tagged with the next
+  `v1.4.0-atarist.N` (REminiscence style: ROTT 1.4, then a count; a tag put
+  on the commit by hand wins), moves the `latest` tag and replaces the
+  `.TOS` files, `<uuid>.uf2` and `<uuid>.json` on the `latest` release
+  (needs the `APP_UUID_KEY` secret). The firmware ships
+  `sidecart/version.txt` (v1.4.0) as it is, so bump it by hand when it
+  changes.
 
 Current Makefile Defaults
 
@@ -71,7 +75,7 @@ Performance Notes
 
 Testing Workflow (Hatari Mega STE)
 
-1. Build with `stcmd make`.
+1. Build with `make st`.
 2. Boot to menu and verify immediate key response.
 3. Start a level and verify timer advances and controls work immediately.
 4. Verify viewport scaling and HUD no-overlap behavior.

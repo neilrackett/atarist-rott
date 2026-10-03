@@ -14,7 +14,7 @@ This repository contains 3 versions of ROTT:
 | `ROTT_SDL.TOS` | SDL based port aiming to be as close to original ROTT as possible on all ST-compatible hardware        | ST, STE, Mega STE, TT, Falcon |
 | `ROTT_030.TOS` | The SDL port, optimised for a 68030 CPU with 68882 FPU                                                 | TT, Falcon                    |
 
-`ROTT_ST.TOS` can also hand its 3D view over to a [SidecarTridge Multi-device](https://sidecartridge.com), if you have one: see [ROTT Accelerator](#rise-of-the-triad-sidecartridge-multi-device) below.
+`ROTT_ST.TOS` can also hand its 3D view over to a [SidecarTridge Multi-device](https://sidecartridge.com), if you have one: see [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device) below.
 
 All builds:
 
@@ -120,18 +120,20 @@ See the [ROTT Accelerator readme](sidecart/README.md) for installation, testing 
 The quickest way to build ROTT for yourself is to install [atarist-toolkit-docker](https://github.com/sidecartridge/atarist-toolkit-docker), fetch the submodules (`git submodule update --init`), then run:
 
 ```bash
-stcmd make            # ROTT_ST.TOS
-stcmd make sdl        # ROTT_SDL.TOS
-stcmd make sdl-030    # ROTT_030.TOS
+make             # the three games
+make st          # ROTT_ST.TOS
+make sdl         # ROTT_SDL.TOS
+make sdl-030     # ROTT_030.TOS
+make sidecart    # the ROTT Accelerator firmware
 ```
 
-Everything goes to `dist/`, along with the config files and, if you put the shareware files in `tmp/ROTT`, the game data, so `dist/` is ready to run in an emulator or copy to your Atari.
+The games are built through `stcmd`, so you can run these from your own shell (or run `stcmd make st` and so on yourself). The firmware needs the Pico toolchain too: see the [ROTT Accelerator readme](sidecart/README.md). Everything goes to `dist/`, along with the config files and, if you put the shareware files in `tmp/ROTT`, the game data, so `dist/` is ready to run in an emulator or copy to your Atari.
 
 There's loads of build settings you can try too, just take a look at `Makefile`, including the ability to build ROTT Noir, a greyscale version that can be built with or without dithering:
 
 ```bash
-stcmd make ATARI_NOIR=1
-stcmd make ATARI_NOIR=1 ATARI_NOIR_DITHERING=1
+make st ATARI_NOIR=1
+make st ATARI_NOIR=1 ATARI_NOIR_DITHERING=1
 ```
 
 `ROTT_ST.TOS` is optimised for Atari ST computers, but will run on any Atari ST compatible hardware.
@@ -139,10 +141,8 @@ stcmd make ATARI_NOIR=1 ATARI_NOIR_DITHERING=1
 SidecarTridge Multi-device support is included by default. To build without it:
 
 ```bash
-stcmd make ATARI_MD_RENDER=0
+make st ATARI_MD_RENDER=0
 ```
-
-The ROTT Accelerator firmware itself is built separately, into `dist/` as well: see the [ROTT Accelerator readme](sidecart/README.md).
 
 You can compile the commercial versions of ROTT using:
 

@@ -1,19 +1,19 @@
 name: Release
 
 # Rolling release: build the three games and the ROTT Accelerator
-# firmware, move the lightweight "latest" tag onto this commit, and replace
-# those files on the "latest" release. The release's title and body are
-# left exactly as they are -- `gh release upload` touches assets only --
-# and the asset names never change, so a download link handed to someone
-# keeps working.
+# firmware, tag the commit with the next v<version>-atarist.N, move the
+# lightweight "latest" tag onto it, and replace those files on the "latest"
+# release. The release's title and body are left exactly as they are --
+# `gh release upload` touches assets only -- and the asset names never
+# change, so a download link handed to someone keeps working.
 
 on:
-  # Anything landing on atarist is a release: a merge, or a direct push.
-  # Tag pushes do not match a branch filter, so the tag this workflow
-  # moves cannot trigger it again.
+  # Anything landing on main is a release: a merge, or a direct push.
+  # Tag pushes do not match a branch filter, so the tags this workflow
+  # creates cannot trigger it again.
   push:
     branches:
-      - atarist
+      - main
     # A prose-only push cannot change either binary. GitHub still runs
     # the job when a push touches anything else as well, and
     # workflow_dispatch forces one by hand.
@@ -37,9 +37,9 @@ env:
 jobs:
   release:
     runs-on: ubuntu-latest
-    # The push trigger already filters to atarist; this is what stops a
-    # manual dispatch from some other branch releasing it.
-    if: github.ref == 'refs/heads/atarist'
+    # The push trigger already filters to main; this is what stops a
+    # manual dispatch from some other branch tagging and releasing it.
+    if: github.ref == 'refs/heads/main'
     steps:
       - name: Check the APP_UUID_KEY secret is set
         # Without it, make would quietly fall back to the sample UUID and
@@ -50,6 +50,43 @@ jobs:
 
       - name: Check out the code
         uses: actions/checkout@v5
+        with:
+          # The next version number is counted from the tags already in
+          # the repository, and checkout fetches none of them without a
+          # full clone.
+          fetch-depth: 0
+
+      - name: Work out the version
+        # v<ROTT version>-atarist.<N>, as REminiscence numbers its port:
+        # the ROTT release this is based on (1.4), then a count of this
+        # port's releases.
+        env:
+          FIRST_VERSION: v1.4.0-atarist.1
+        run: |
+          # A tag already sitting on this commit is the maintainer's own:
+          # a release worth writing notes for gets an annotated tag by hand
+          # before the merge (or a new base version, v1.5.0-atarist.1 say).
+          # Release what it names rather than adding a second number for
+          # the same commit.
+          VERSION=$(git tag --points-at HEAD --list 'v*-atarist.*' | sort -V | tail -1)
+
+          if [ -n "$VERSION" ]; then
+            echo "This commit is already tagged $VERSION; leaving it alone."
+          else
+            PREVIOUS=$(git tag --list 'v*-atarist.*' | sort -V | tail -1)
+            if [ -n "$PREVIOUS" ]; then
+              VERSION="${PREVIOUS%-atarist.*}-atarist.$(( ${PREVIOUS##*-atarist.} + 1 ))"
+            else
+              # Only ever true of the first release. Should the tags go
+              # missing later, restore them rather than let this count
+              # start again.
+              VERSION="$FIRST_VERSION"
+            fi
+            echo "TAG_NEEDED=1" >> "$GITHUB_ENV"
+          fi
+
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Releasing $VERSION."
 
       - name: Fetch the Xpad submodule
         # Only Xpad: sidecart/rp/build.sh fetches the SDKs itself, at full
@@ -66,7 +103,7 @@ jobs:
         run: curl -sL https://github.com/sidecartridge/atarist-toolkit-docker/releases/latest/download/install_atarist_toolkit_docker.sh | bash
 
       - name: Build the games
-        run: stcmd make -j4 all sdl sdl-030
+        run: stcmd make -j4 games
 
       - name: Build the ROTT Accelerator firmware
         # make build releases sidecart/version.txt as it is, without the
@@ -76,7 +113,20 @@ jobs:
         # deliberately not committed.
         env:
           APP_UUID_KEY: ${{ secrets.APP_UUID_KEY }}
-        run: make -C sidecart build
+        run: make sidecart
+
+      - name: Tag it
+        # Only once the builds have succeeded: a tag that names binaries
+        # that never got made would be a number to explain later.
+        if: env.TAG_NEEDED == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Through the API rather than `git push`, for the reason given
+          # below for the latest tag.
+          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$VERSION" -f sha="$GITHUB_SHA" --silent
+          echo "Tagged $VERSION."
 
       - name: Move the latest tag onto this commit
         # The "latest" release is attached to this tag, so moving it keeps
@@ -104,3 +154,4 @@ jobs:
           gh release view latest >/dev/null 2>&1 \
             || gh release create latest --title "Rise of the Triad for Atari ST, TT & Falcon" --notes "Rolling build of the Atari ST port."
           gh release upload latest dist/*.TOS dist/*.uf2 dist/*.json --clobber
+          echo "Published $VERSION to the latest release."

@@ -1,12 +1,18 @@
 # Makefile for building ROTT for Atari ST, TT & Falcon
 #
-#   stcmd make           ROTT_ST.TOS: the native ST renderers (C2P, ROTT Accelerator)
-#   stcmd make sdl       ROTT_SDL.TOS: ROTT's own renderer through SDL, any ST-compatible
-#   stcmd make sdl-030   ROTT_030.TOS: the same for 68030 + 68882 (TT, Falcon)
+#   make             the three games below
+#   make st          ROTT_ST.TOS: the native ST renderers (C2P, ROTT Accelerator)
+#   make sdl         ROTT_SDL.TOS: ROTT's own renderer through SDL, any ST-compatible
+#   make sdl-030     ROTT_030.TOS: the same for 68030 + 68882 (TT, Falcon)
+#   make sidecart    the ROTT Accelerator firmware (make -C sidecart build)
+#
+# Run on the host, the games build through stcmd (atarist-toolkit-docker);
+# inside stcmd (stcmd make st, ...) they build directly. The firmware builds
+# on the host only, with the Pico toolchain (see sidecart/README.md).
 #
 # Everything lands in dist/, with the game's config files and, when DATADIR
-# holds them, the shareware data, so dist/ runs as it is. The firmware
-# (make -C sidecart build) puts its <uuid>.uf2 and <uuid>.json there too.
+# holds them, the shareware data, so dist/ runs as it is. The firmware puts
+# its <uuid>.uf2 and <uuid>.json there too.
 
 # Build settings
 
@@ -133,17 +139,39 @@ RUNTIME_DATA_FILES := \
 	$(DATADIR)/HUNTBGIN.RTL \
 	$(DATADIR)/HUNTBGIN.RTC \
 	$(DATADIR)/REMOTE1.RTS
-ATARI_RUNTIME_CONFIG_FILES := \
-	$(SRCDIR)/config.rot \
-	$(SRCDIR)/sound.rot \
+RUNTIME_CONFIG_FILES := \
 	$(SRCDIR)/battle.rot \
 	$(SRCDIR)/scores.rot
+ATARI_RUNTIME_CONFIG_FILES := \
+	$(SRCDIR)/config.rot \
+	$(SRCDIR)/sound.rot
 ATARI_FLAGS_STAMP := $(OBJDIR)/.atari_flags
 
 # Build targets
 
-all: rott-huntbgin
-.PHONY: FORCE rott-huntbgin rott-darkwar rott-rottcd rott-rottsite rott-dev rott-68882 atari-stage-runtime-files
+# With the m68k toolchain at hand (inside stcmd), the games build directly.
+# Without it (on the host) they build through stcmd, passing on ATARI_*,
+# SDL_*, BUILDDIR, OBJDIR and DATADIR; JOBS is its -j.
+TOOLCHAIN := $(shell command -v $(ATARI_CC) 2>/dev/null)
+JOBS ?= 4
+STCMD_MAKE = STCMD_NO_TTY=1 STCMD_QUIET=1 stcmd make -j$(JOBS) \
+	$(filter ATARI_% SDL_% BUILDDIR=% OBJDIR=% DATADIR=%,$(MAKEOVERRIDES))
+
+ifneq ($(TOOLCHAIN),)
+games: st sdl sdl-030
+st: rott-huntbgin
+else
+games:
+	$(STCMD_MAKE) st sdl sdl-030
+st sdl sdl-030:
+	$(STCMD_MAKE) $@
+endif
+
+sidecart:
+	$(MAKE) -C sidecart build
+
+.PHONY: games st sdl sdl-030 sidecart
+.PHONY: FORCE rott-huntbgin rott-darkwar rott-rottcd rott-rottsite rott-dev rott-68882 stage-runtime-files atari-stage-runtime-files
 .SECONDARY: $(ATARI_OBJECTS)
 FORCE:
 
@@ -231,23 +259,24 @@ SDL_OUTPUT ?= $(BUILDDIR)/ROTT_SDL.TOS
 SDL_030_OUTPUT ?= $(BUILDDIR)/ROTT_030.TOS
 SDL_RUNTIME_CONFIG_FILES := \
 	$(SRCDIR)/sdlconf.rot \
-	$(SRCDIR)/sdlsound.rot \
-	$(SRCDIR)/battle.rot \
-	$(SRCDIR)/scores.rot
+	$(SRCDIR)/sdlsound.rot
 
-.PHONY: sdl sdl-030 sdl-stage-runtime-files
+.PHONY: sdl-stage-runtime-files
 .SECONDARY: $(SDL_OBJECTS) $(SDL_030_OBJECTS)
 
+ifneq ($(TOOLCHAIN),)
 sdl: sdl-stage-runtime-files $(SDL_OUTPUT)
 sdl-030: sdl-stage-runtime-files $(SDL_030_OUTPUT)
+endif
 
 clean:
 	$(RM) -r $(ATARI_OUTPUT) $(SDL_OUTPUT) $(SDL_030_OUTPUT) $(OBJDIR) $(SDL_OBJDIR) $(SDL_030_OBJDIR)
 
 # The game in EmuMD (sidecart/emu/emumd): Hatari with the ROTT Accelerator
-# emulated on the cartridge port. Run on the host, not in stcmd: builds the
-# game with stcmd (passing any ATARI_*, BUILDDIR or OBJDIR given here) and
-# the firmware for the host, then starts Hatari. EMU_ARGS go to mdfw run:
+# emulated on the cartridge port. Run on the host, not in stcmd: builds
+# ROTT_ST.TOS (make st, passing on any ATARI_*, BUILDDIR or OBJDIR given
+# here) and the firmware for the host, then starts Hatari. EMU_ARGS go to
+# mdfw run:
 #   make emu ATARI_SHOW_FPS=1
 #   make emu EMU_ARGS="--headless --frames 3000 --screenshot out.png"
 # The first time, build EmuMD's Hatari: sidecart/emu/emumd/tools/mdfw hatari
@@ -256,9 +285,8 @@ EMU_WAD ?= HUNTBGIN.WAD
 EMU_ARGS ?=
 
 .PHONY: emu
-emu:
+emu: st
 	@[ -x sidecart/emu/emumd/tools/mdfw ] || git submodule update --init sidecart/emu/emumd
-	STCMD_NO_TTY=1 STCMD_QUIET=1 stcmd make $(filter ATARI_% BUILDDIR=% OBJDIR=% DATADIR=%,$(MAKEOVERRIDES))
 	@mkdir -p $(EMU_SD)/rott
 	@[ -e $(EMU_SD)/rott/$(EMU_WAD) ] || cp $(DATADIR)/$(EMU_WAD) $(EMU_SD)/rott/
 	cd sidecart && emu/emumd/tools/mdfw run --harddrive $(abspath $(BUILDDIR)) \
@@ -270,14 +298,21 @@ $(ATARI_OUTPUT): $(ATARI_OBJECTS) | $(BUILDDIR)
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
 
-# The config files given, then the game data when DATADIR has it.
-define STAGE_RUNTIME_FILES
+# Copy the config files given into BUILDDIR.
+define STAGE_CONFIG_FILES
 	@for src in $(1); do \
 		dst="$(BUILDDIR)/$$(basename "$$src")"; \
 		if [ -e "$$src" ]; then \
 			cp -f "$$src" "$$dst"; \
 		fi; \
 	done
+endef
+
+# What every build needs beside it: the shared config files, then the game
+# data when DATADIR has it. Each file has one target copying it, so a
+# parallel build of several games never copies the same file twice at once.
+stage-runtime-files: | $(BUILDDIR)
+	$(call STAGE_CONFIG_FILES,$(RUNTIME_CONFIG_FILES))
 	@if [ -d "$(DATADIR)" ]; then \
 		for src in $(RUNTIME_DATA_FILES); do \
 			dst="$(BUILDDIR)/$$(basename "$$src")"; \
@@ -286,11 +321,10 @@ define STAGE_RUNTIME_FILES
 			fi; \
 		done; \
 	fi
-endef
 
-atari-stage-runtime-files: | $(BUILDDIR)
+atari-stage-runtime-files: stage-runtime-files
 	@cp -f lib/xpad/LICENSE $(BUILDDIR)/XPAD.TXT
-	$(call STAGE_RUNTIME_FILES,$(ATARI_RUNTIME_CONFIG_FILES))
+	$(call STAGE_CONFIG_FILES,$(ATARI_RUNTIME_CONFIG_FILES))
 
 $(OBJDIR):
 	mkdir -p $(OBJDIR)
@@ -316,8 +350,8 @@ $(OBJDIR)/%.o: %.S $(ATARI_FLAGS_STAMP)
 	mkdir -p $(dir $@)
 	$(ATARI_CC) -m68000 -c $< -o $@
 
-sdl-stage-runtime-files: | $(BUILDDIR)
-	$(call STAGE_RUNTIME_FILES,$(SDL_RUNTIME_CONFIG_FILES))
+sdl-stage-runtime-files: stage-runtime-files
+	$(call STAGE_CONFIG_FILES,$(SDL_RUNTIME_CONFIG_FILES))
 
 $(SDL_OUTPUT): $(SDL_OBJECTS) | $(BUILDDIR)
 	$(SDL_CC) -s -m68000 $(SDL_OBJECTS) $(SDL_LIBS) -o $@

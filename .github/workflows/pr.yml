@@ -10,7 +10,7 @@ name: PR
 on:
   pull_request:
     branches:
-      - atarist
+      - main
   workflow_dispatch:
 
 # Read-only: this workflow runs code from a contributor's branch, so it
@@ -61,10 +61,10 @@ jobs:
 
       - name: Build the games
         # dist/ROTT_ST.TOS, dist/ROTT_SDL.TOS and dist/ROTT_030.TOS.
-        run: stcmd make -j4 all sdl sdl-030
+        run: stcmd make -j4 games
 
       - name: Build the ROTT Accelerator firmware
         # No APP_UUID_KEY on purpose. The Makefile falls back to the sample
         # UUID, which is all a build check needs, and it keeps this working
         # for pull requests from forks, where secrets are not available.
-        run: make -C sidecart build
+        run: make sidecart

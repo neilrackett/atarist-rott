@@ -32,14 +32,14 @@ shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
    `not responding` in place of `ready` if the firmware isn't up):
 
    ```
-   ROTT Accelerator v0.1.0 ready
+   ROTT Accelerator v1.4.0 ready
    GPLv3 (c)2026 Neil Rackett
 
    Download ROTT: neilrackett.com/atarist
    ```
 
 5. Run `ROTT_ST.TOS` from disk as normal. At startup it prints
-   `ROTT Accelerator v0.1.0` when it will use the Multi-device, or the
+   `ROTT Accelerator v1.4.0` when it will use the Multi-device, or the
    reason it will not, e.g. `ROTT Accelerator: /rott/HUNTBGIN.WAD missing`
    followed by `Using the ST renderer`.
 
@@ -117,7 +117,7 @@ make -C sidecart build     # release firmware -> dist/<uuid>.uf2 + .json
 make -C sidecart debug     # debug firmware (serial console), bumps the patch version
 make -C sidecart tests     # PINGTEST.TOS, UPTEST.TOS in sidecart/tests/
 make -C sidecart census    # WAD sections vs the flash budget
-STCMD_NO_TTY=1 stcmd make  # the game: dist/ROTT_ST.TOS
+make st                    # the game: dist/ROTT_ST.TOS (make sidecart = make -C sidecart build)
 ```
 
 `ATARI_MD_RENDER=0` builds `ROTT_ST.TOS` without any of this;
@@ -185,7 +185,7 @@ god mode and write a hash of the game state after every frame to
 same write the same file, on any machine or emulated speed.
 
 ```sh
-STCMD_NO_TTY=1 stcmd make ATARI_LOGIC_CHECK=4 BUILDDIR=build/check OBJDIR=obj/check
+make st ATARI_LOGIC_CHECK=4 BUILDDIR=build/check OBJDIR=obj/check
 cd sidecart && emu/emumd/tools/mdfw run --headless --frames 13000 \
     --no-user-config --harddrive ../build/check
 cmp ../build/check/LOGIC.TXT /path/to/reference/LOGIC.TXT
@@ -209,7 +209,7 @@ to itself. `tests/emu/pi1topng.py` converts the shots. In the emulator the
 Multi-device is infinitely fast.
 
 ```sh
-STCMD_NO_TTY=1 stcmd make ATARI_MD_AUTOTEST=8 ATARI_SHOW_FPS=1 \
+make st ATARI_MD_AUTOTEST=8 ATARI_SHOW_FPS=1 \
     BUILDDIR=build/autotest OBJDIR=obj/autotest
 mkdir -p /tmp/run/sd/rott && ln -s $PWD/tmp/ROTT/HUNTBGIN.WAD /tmp/run/sd/rott/
 sidecart/tests/emu/run-hatari.sh <hatari> <tos.img> build/autotest /tmp/run 8000 md
