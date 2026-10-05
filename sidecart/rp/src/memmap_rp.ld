@@ -36,6 +36,16 @@ MEMORY
 /*    FLASH(rx) : ORIGIN = 0x10000000, LENGTH = 1152k  The first 1152kb available */
     RAM(rwx) : ORIGIN =  0x20000000, LENGTH = 192k
     ROM_IN_RAM (rwx) : ORIGIN = 0x20030000, LENGTH = 64K
+    /* MD/ROTT: two holes the protocol leaves in the cartridge window
+       (rott_md_protocol.h): after the second frame buffer up to the token
+       at $F000, and after the result block at $F100. Ordinary SRAM the ST
+       never reads, so a few frame-scoped buffers are parked there
+       (MD_CART_HOLE in rott/r_local.h), leaving main RAM a heap big enough
+       for the settings at boot (see the heap ASSERT below). They overlap
+       ROM_IN_RAM, whose section is empty; md_main.c checks the protocol
+       still leaves them free. */
+    CART_HOLE_A (rw) : ORIGIN = 0x2003E680, LENGTH = 0x980
+    CART_HOLE_B (rw) : ORIGIN = 0x2003F200, LENGTH = 0xE00
     SCRATCH_X(rwx) : ORIGIN = 0x20040000, LENGTH = 4k
     SCRATCH_Y(rwx) : ORIGIN = 0x20041000, LENGTH = 4k
     BOOSTER_APP_FLASH(r) : ORIGIN = 0x10120000, LENGTH = 768K /* Size of the flash for the booster app */ 
@@ -220,6 +230,11 @@ SECTIONS
     } > ROM_IN_RAM AT > FLASH
     __rom_in_ram_source__ = LOADADDR(.rom_in_ram);
 
+    /* Buffers parked in the cartridge-window holes (CART_HOLE_A/B above).
+       NOLOAD: nothing here is zeroed at start. */
+    .cart_hole_a (NOLOAD) : { *(.cart_hole_a.*) } > CART_HOLE_A
+    .cart_hole_b (NOLOAD) : { *(.cart_hole_b.*) } > CART_HOLE_B
+
     .bss  : {
         . = ALIGN(4);
         __bss_start__ = .;
@@ -323,6 +338,12 @@ SECTIONS
 
     /* Check if data + heap + stack exceeds RAM limit */
     ASSERT(__StackLimit >= __HeapLimit, "region RAM overflowed")
+
+    /* MD/ROTT: the heap must hold the settings at boot (gconfig_init and
+       aconfig_init keep 4 KB each and briefly copy their defaults: about
+       9 KB at the peak) plus FatFs's LFN buffers. Short of that, main()
+       goes back to Booster on every start, so fail the link instead. */
+    ASSERT(__StackLimit - __end__ >= 11 * 1024, "heap too small for the settings at boot: free some RAM (see MD_CART_HOLE)")
 
     ASSERT( __binary_info_header_end - __logical_binary_start <= 256, "Binary info must be in first 256 bytes of the binary")
     /* todo assert on extra code */

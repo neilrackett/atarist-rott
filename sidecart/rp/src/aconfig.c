@@ -2,7 +2,7 @@
 
 // MD/ROTT: the folder holds the WAD the level packs are built from.
 
-static SettingsConfigEntry defaultEntries[] = {
+static const SettingsConfigEntry defaultEntries[] = {
     {ACONFIG_PARAM_FOLDER, SETTINGS_TYPE_STRING, "/rott"},
     {ACONFIG_PARAM_MODE, SETTINGS_TYPE_INT, "255"},  // 255: Menu mode
 };

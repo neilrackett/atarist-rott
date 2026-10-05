@@ -153,6 +153,18 @@ extern r_pwall_t pwallobjlist[MAXPWALLS];
 extern int pwallnum;
 extern int animwalls[MAXANIMWALLS]; /* current texture of each */
 
+/* On the RP2040, park a buffer in one of the cartridge window's unused
+ * holes ("a" or "b": CART_HOLE_A/B in memmap_rp.ld) rather than main RAM,
+ * which has to keep a heap big enough for the settings at boot. The holes
+ * are not zeroed at start, so only for buffers cleared before each use.
+ * Elsewhere (EmuMD's host builds) buffers stay where they are. */
+#if defined(__ARM_ARCH_6M__)
+#define MD_CART_HOLE(hole, name) \
+  __attribute__((section(".cart_hole_" hole "." name)))
+#else
+#define MD_CART_HOLE(hole, name)
+#endif
+
 /* Tiles the caster touched this frame (ROTT's spotvis[][] byte array, as
  * a bitset in the published layout to save 14 KB of RAM). */
 extern uint16_t spotvis_bits[MD_BITSET_WORDS];

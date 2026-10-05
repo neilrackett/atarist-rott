@@ -43,8 +43,9 @@
 /**
  * @brief Report the heap window (end..__StackLimit) and how much of it
  * the C runtime consumed before the caller ran. Boot-time settings init
- * needs ~8.4 KB of it; a shortfall fails its mallocs and the app bails
- * to Booster, so main() probes this just before gconfig_init.
+ * needs ~9 KB of it at the peak; a shortfall fails its mallocs and the app
+ * bails to Booster, so main() probes this just before gconfig_init (and
+ * memmap_rp.ld refuses to link with less than 11 KB).
  */
 #define DPRINT_HEAP()                                                    \
   do {                                                                   \

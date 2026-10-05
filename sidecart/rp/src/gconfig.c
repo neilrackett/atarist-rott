@@ -1,6 +1,6 @@
 #include "include/gconfig.h"
 
-static SettingsConfigEntry defaultEntries[] = {
+static const SettingsConfigEntry defaultEntries[] = {
     {PARAM_APPS_FOLDER, SETTINGS_TYPE_STRING, "/apps"},
     {PARAM_APPS_CATALOG_URL, SETTINGS_TYPE_STRING,
      "http://atarist.sidecartridge.com/apps.json"},
@@ -49,12 +49,10 @@ static SettingsContext gSettingsCtx;
 int gconfig_init(const char *currentAppName) {
   DPRINTF("Initializing settings\n");
 
-  // If we know the number of default entries in advance, we can use it
-  // uint16_t entriesCount = sizeof(defaultEntries) / sizeof(defaultEntries[0]);
-
-  // If we don't know the number of default entries in advance, we can use the
-  // max value of entries in the flash.
-  uint16_t entriesCount = CONFIG_BUFFER_SIZE / sizeof(SettingsConfigEntry);
+  // MD/ROTT: the real number of defaults, not the most the flash can hold:
+  // settings_init copies that many entries from defaultEntries, so the
+  // maximum read past its end, and briefly took 4 KB of heap doing so.
+  uint16_t entriesCount = sizeof(defaultEntries) / sizeof(defaultEntries[0]);
 
   int err = settings_init(&gSettingsCtx, defaultEntries, entriesCount,
                           (unsigned int)&_global_config_flash_start - XIP_BASE,

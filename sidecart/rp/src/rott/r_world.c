@@ -14,7 +14,9 @@
 #include "r_local.h"
 
 word tilemap[MAPSIZE][MAPSIZE];
-uint16_t spotvis_bits[MD_BITSET_WORDS];
+/* Both bitsets are cleared at the start of every frame (R_ClearFrameBits),
+ * so they can live in the cartridge window's holes. */
+uint16_t spotvis_bits[MD_BITSET_WORDS] MD_CART_HOLE("a", "spotvis_bits");
 r_door_t doorobjlist[MAXDOORS];
 int doornum;
 r_mwall_t maskobjlist[MAXMASKED];
@@ -23,7 +25,7 @@ r_pwall_t pwallobjlist[MAXPWALLS];
 int pwallnum;
 int animwalls[MAXANIMWALLS];
 uint16_t *r_mapseen_bits;
-uint16_t r_frame_bits[MD_BITSET_WORDS];
+uint16_t r_frame_bits[MD_BITSET_WORDS] MD_CART_HOLE("b", "r_frame_bits");
 
 /* Sparse maps keyed by tile index ((x << 7) | y): plane 2 for 0x2000
  * tiles, and light source values. Open addressing, linear probing; a

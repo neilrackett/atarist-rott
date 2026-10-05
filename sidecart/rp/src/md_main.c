@@ -32,6 +32,14 @@
 #define RELEASE_VERSION "dev"
 #endif
 
+/* memmap_rp.ld parks buffers (MD_CART_HOLE) in two holes the protocol
+ * leaves in the cartridge window: CART_HOLE_A at $E680-$EFFF, CART_HOLE_B
+ * at $F200-$FFFF. */
+_Static_assert(MD_FRAME_END <= 0xE680 && MD_TOKEN_OFFSET >= 0xF000,
+               "the protocol now uses CART_HOLE_A: see memmap_rp.ld");
+_Static_assert(MD_RESULT_OFFSET + MD_RESULT_SIZE <= 0xF200,
+               "the protocol now uses CART_HOLE_B: see memmap_rp.ld");
+
 /* The view is rendered here, one PLAYPAL index per pixel, then converted
  * into a ROM4 frame buffer. Lent to md_pack_build as scratch while a level
  * pack is built. */
@@ -113,23 +121,33 @@ static inline int render_target(void) { return s_ready_buf == 0 ? 1 : 0; }
  * horizontal ones the same bit 8 words either side. The edge rows and
  * columns pick up nothing from beyond the map, and the ST never asks about
  * them. */
-static void publish_spotvis(const uint16_t *in, volatile uint16_t *out) {
-  static uint16_t col[MD_BITSET_WORDS];
-  for (unsigned x = 0; x < 128; x++) {
-    const uint16_t *c = in + x * 8;
-    uint16_t *o = col + x * 8;
-    for (unsigned k = 0; k < 8; k++) {
-      const uint16_t w = c[k];
-      const uint16_t below = (uint16_t)(w << 1) | (k > 0 ? (uint16_t)(c[k - 1] >> 15) : 0);
-      const uint16_t above = (uint16_t)(w >> 1) | (k < 7 ? (uint16_t)(c[k + 1] << 15) : 0);
-      o[k] = (uint16_t)(w | below | above);
-    }
+static void spread_column(const uint16_t *c, uint16_t *o) {
+  for (unsigned k = 0; k < 8; k++) {
+    const uint16_t w = c[k];
+    const uint16_t below = (uint16_t)(w << 1) | (k > 0 ? (uint16_t)(c[k - 1] >> 15) : 0);
+    const uint16_t above = (uint16_t)(w >> 1) | (k < 7 ? (uint16_t)(c[k + 1] << 15) : 0);
+    o[k] = (uint16_t)(w | below | above);
   }
-  for (unsigned i = 0; i < MD_BITSET_WORDS; i++) {
-    uint16_t w = col[i];
-    if (i >= 8) w |= col[i - 8];
-    if (i + 8 < MD_BITSET_WORDS) w |= col[i + 8];
-    out[i] = w;
+}
+
+static void publish_spotvis(const uint16_t *in, volatile uint16_t *out) {
+  /* Each column spread up and down (spread_column), three at a time: the
+   * one before, this one and the next, ORed into this one's output. */
+  uint16_t cols[3][8];
+  uint16_t *prev = cols[0], *cur = cols[1], *next = cols[2];
+  memset(prev, 0, sizeof(cols[0]));
+  spread_column(in, cur);
+  for (unsigned x = 0; x < 128; x++) {
+    if (x + 1 < 128)
+      spread_column(in + (x + 1) * 8, next);
+    else
+      memset(next, 0, sizeof(cols[0]));
+    for (unsigned k = 0; k < 8; k++)
+      out[x * 8 + k] = (uint16_t)(prev[k] | cur[k] | next[k]);
+    uint16_t *t = prev;
+    prev = cur;
+    cur = next;
+    next = t;
   }
 }
 
@@ -138,7 +156,7 @@ static void publish_spotvis(const uint16_t *in, volatile uint16_t *out) {
  * say once per level which lumps could not be had -- the first thing to
  * check when something draws as a flat colour or not at all. */
 #if defined(_DEBUG) && (_DEBUG != 0)
-static uint16_t s_missing_logged[4096 / 16];
+static uint16_t s_missing_logged[4096 / 16] MD_CART_HOLE("b", "missing_logged");
 #endif
 const byte *R_Lump(int lump) {
   const byte *p = md_pack_lump(lump);
