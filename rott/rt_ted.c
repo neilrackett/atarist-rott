@@ -1277,12 +1277,24 @@ void PreCache( void )
       // MD/ROTT: the list is what the Multi-device packs for this level.
       if (ATARI_MD_Active())
          {
+         const int first = W_CheckNumForName("digistrt");
+         const int last = W_CheckNumForName("digistop");
          int i;
 
          MiscPreCache();
          ATARI_MD_BeginLumpList();
          for (i = 0; i < cacheindex; i++)
             ATARI_MD_AddLump(cachelist[i].lump);
+         // And the level's sounds now rather than mid-game, where each was
+         // a disk read the first time it played (the list only has sounds
+         // when they are on). Only with the MD: the ST holds no walls or
+         // sprites then, so there is room, where the C2P renderer needs
+         // that memory for what it draws.
+         if (first >= 0 && last > first)
+            for (i = 0; i < cacheindex; i++)
+               if (cachelist[i].lump > first && cachelist[i].lump < last)
+                  W_CacheLumpNum(cachelist[i].lump, cachelist[i].cachelevel,
+                                 CvtForType(cachelist[i].type), 1);
          }
 #endif
       ShutdownPreCache();
