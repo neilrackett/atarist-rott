@@ -81,7 +81,9 @@ static void music_vbl(void)
 
     if (music_md)
     {
-        if (ATARI_MD_Active())
+        /* Not ATARI_MD_Active(): that is cleared for a moment while the
+         * ST draws "Preparing level", which stopped the level's music. */
+        if (!ATARI_MD_Gone())
         {
             ATARI_MD_MusicVbl();
             return;

@@ -1474,8 +1474,15 @@ void ATARI_MD_MusicVbl(void) {
 
 static int md_hud_redraw;
 
+/* Set when the Accelerator gave up in play, where atari_md_active is also
+ * cleared for a moment to draw through the ST's renderer (show_progress). */
+static volatile int md_gone;
+
+int ATARI_MD_Gone(void) { return md_gone; }
+
 static void give_up(const char *why) {
   atari_md_active = 0;
+  md_gone = 1;
   md_hud_redraw = 1; /* the bars again, without the Accelerator's sign */
   AddMessage((char *)why, MSG_SYSTEM);
 }

@@ -122,6 +122,10 @@ int ATARI_MD_Music(int action, int lump, int loop, int volume);
 int ATARI_MD_MusicPlaying(void);
 void ATARI_MD_MusicVbl(void);
 
+/* The Accelerator gave up (not just atari_md_active cleared for a moment,
+ * as it is while "Preparing level" is drawn by the ST). */
+int ATARI_MD_Gone(void);
+
 #if defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
 /* Test runs: after frame `frame` is on screen, save it as SHOTnnn.PI1 if
  * it is one of the frames compared between MD and ST runs. */
@@ -137,6 +141,7 @@ void ATARI_MD_AutotestShot(int frame);
 #define ATARI_MD_Music(action, lump, loop, volume) 0
 #define ATARI_MD_MusicPlaying() 0
 #define ATARI_MD_MusicVbl() ((void)0)
+#define ATARI_MD_Gone() 1
 
 #endif
 
