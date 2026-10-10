@@ -15,6 +15,9 @@
 
 /* Once, from Core 0 after Core 1 is up: the registers at MD_YM_OFFSET of
  * the cartridge window, and the 50Hz timer on Core 1. */
+/* Whether music can play here (its RAM works): MD_CAP_MUSIC. */
+bool md_music_ok(void);
+
 void md_music_init(uintptr_t rom_base);
 
 /* An MD_CMD_MUSIC command (MD_MUSIC_*). PLAY reads the song's lump from

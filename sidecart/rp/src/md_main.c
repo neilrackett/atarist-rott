@@ -225,8 +225,8 @@ static void cmd_hello(const uint16_t *w, uint32_t n) {
                            md_get32(b + MD_HELLO_WADSIZE),
                            md_get32(b + MD_HELLO_DIROFS));
   }
-  /* Music comes from the WAD, so only with it. */
-  status_set(MD_ST_CAPS, md_pack_wad_ok() ? MD_CAP_MUSIC : 0);
+  /* Music comes from the WAD, so only with it (and RAM for it). */
+  status_set(MD_ST_CAPS, md_pack_wad_ok() && md_music_ok() ? MD_CAP_MUSIC : 0);
   /* A new session: the old errors are history. */
   s_errors = 0;
   status_set(MD_ST_ERRORS, 0);

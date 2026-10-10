@@ -31,7 +31,7 @@ shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
    the ST's copy and refuses a different one.
 4. On the Booster screen, press ESC for the app list and select ROTT
    Accelerator. The ST restarts and prints this during boot, with the
-   firmware's version (such as `v1.4.0-beta.3`), and `not responding` in
+   firmware's version (such as `v1.4.0-beta.4`), and `not responding` in
    place of `ready` if the firmware isn't up:
 
    ```

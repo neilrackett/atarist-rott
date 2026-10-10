@@ -52,12 +52,14 @@
 #define MD_MUSIC_TIMER_US 5000
 
 #if PICO_ON_DEVICE
+#include "hardware/resets.h"
 #define s_win ((uint8_t(*)[MD_MUSIC_WINDOW])USBCTRL_DPRAM_BASE)
 _Static_assert(MD_MUSIC_TRACKS * MD_MUSIC_WINDOW <= 4096,
                "the windows are the USB controller's 4KB");
 #else
 static uint8_t s_win[MD_MUSIC_TRACKS][MD_MUSIC_WINDOW];
 #endif
+static bool s_ok; /* the windows hold what is written to them */
 static uint8_t s_read[MD_MUSIC_WINDOW];
 static uint32_t s_first[MD_MUSIC_TRACKS]; /* WAD offset of the track's data */
 static uint32_t s_next[MD_MUSIC_TRACKS];  /* of the byte after the window's */
@@ -156,7 +158,28 @@ static void start_timer_job(void *arg) {
 /* Core 0                                                               */
 /* ------------------------------------------------------------------ */
 
+bool md_music_ok(void) { return s_ok; }
+
 void md_music_init(uintptr_t rom_base) {
+#if PICO_ON_DEVICE
+  /* The windows are the USB controller's RAM, which reads 0 and ignores
+   * writes while the controller is held in reset, as it is from boot when
+   * nothing uses USB: out of reset, and never enabled, it leaves the RAM
+   * to us. (EmuMD's is plain memory, so beta.3 played silence on a real
+   * Multi-device and fine in the emulator.) */
+  unreset_block_wait(RESETS_RESET_USBCTRL_BITS);
+#endif
+  /* That it holds a pattern, or the ST keeps the music (no MD_CAP_MUSIC). */
+  {
+    volatile uint32_t *w = (volatile uint32_t *)s_win;
+    const unsigned words = MD_MUSIC_TRACKS * MD_MUSIC_WINDOW / 4u;
+    s_ok = true;
+    for (unsigned i = 0; i < words; i++) w[i] = 0xA55A0000u ^ (i * 0x9E3779B1u);
+    for (unsigned i = 0; i < words; i++)
+      if (w[i] != (0xA55A0000u ^ (i * 0x9E3779B1u))) s_ok = false;
+    for (unsigned i = 0; i < words; i++) w[i] = 0;
+    DPRINTF("music: window RAM %s\n", s_ok ? "ok" : "not working");
+  }
   s_newest = (volatile uint16_t *)(rom_base + MD_YM_NEWEST_OFFSET);
   s_slots = (volatile uint16_t *)(rom_base + MD_YM_SLOT_OFFSET);
   *s_newest = 0;
@@ -235,6 +258,7 @@ static bool play(int lump, bool loop) {
 void md_music_command(unsigned action, int lump, bool loop, unsigned volume) {
   uint32_t irq;
 
+  if (!s_ok) return; /* not offered (MD_CAP_MUSIC) */
   switch (action) {
     case MD_MUSIC_PLAY:
       irq = spin_lock_blocking(s_lock);
