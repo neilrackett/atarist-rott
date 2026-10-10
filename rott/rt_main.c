@@ -2508,6 +2508,11 @@ fromloadedgame:
          MU_PlaySong(MU_GetSongNumber()); /* its song, on the ST now */
          }
 #endif
+      if (atari_bars_redraw)
+         {
+         atari_bars_redraw = 0;
+         DrawPlayScreen(true); /* and the clock's digits all drawn again */
+         }
       ATARI_BeginRenderFrame();
       const int render = 1;
 #elif ATARI_SDL

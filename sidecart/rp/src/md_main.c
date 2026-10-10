@@ -138,30 +138,21 @@ static void publish_spotvis(const uint16_t *in, volatile uint16_t *out) {
   uint16_t cols[3][8];
   uint16_t *prev = cols[0], *cur = cols[1], *next = cols[2];
   int first = 128, last = -1;
-  memset(prev, 0, sizeof(cols[0]));
-  spread_column(in, cur);
-  for (unsigned x = 0; x < 128; x++) {
+
+  /* The columns this frame's bits will cover (a column's neighbours pick
+   * its bits up), published with the last frame's before the bits go out
+   * (MD_ST_SPOTVIS_X): whichever the ST then copies, old bits or new, or
+   * some of each, lie within it. */
+  for (int x = 0; x < 128; x++) {
     uint16_t any = 0;
-    if (x + 1 < 128)
-      spread_column(in + (x + 1) * 8, next);
-    else
-      memset(next, 0, sizeof(cols[0]));
-    for (unsigned k = 0; k < 8; k++) {
-      const uint16_t w = (uint16_t)(prev[k] | cur[k] | next[k]);
-      out[x * 8 + k] = w;
-      any |= w;
-    }
+    for (unsigned k = 0; k < 8; k++) any |= in[x * 8 + k];
     if (any) {
-      if (first > (int)x) first = (int)x;
-      last = (int)x;
+      if (first > x - 1) first = x - 1;
+      last = x + 1;
     }
-    uint16_t *t = prev;
-    prev = cur;
-    cur = next;
-    next = t;
   }
-  /* This frame's columns and the last one's (MD_ST_SPOTVIS_X): the ST may
-   * read the range for one frame and copy the next's bits. */
+  if (first < 0) first = 0;
+  if (last > 127) last = 127;
   {
     const int f = first < s_last_first ? first : s_last_first;
     const int l = last > s_last_last ? last : s_last_last;
@@ -169,6 +160,22 @@ static void publish_spotvis(const uint16_t *in, volatile uint16_t *out) {
     s_last_last = last;
     status_set(MD_ST_SPOTVIS_X,
                (uint16_t)(f <= l ? MD_SVX(f, l) : MD_SVX(127, 0)));
+    __dmb();
+  }
+
+  memset(prev, 0, sizeof(cols[0]));
+  spread_column(in, cur);
+  for (unsigned x = 0; x < 128; x++) {
+    if (x + 1 < 128)
+      spread_column(in + (x + 1) * 8, next);
+    else
+      memset(next, 0, sizeof(cols[0]));
+    for (unsigned k = 0; k < 8; k++)
+      out[x * 8 + k] = (uint16_t)(prev[k] | cur[k] | next[k]);
+    uint16_t *t = prev;
+    prev = cur;
+    cur = next;
+    next = t;
   }
 }
 

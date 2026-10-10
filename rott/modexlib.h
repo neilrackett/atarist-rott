@@ -188,6 +188,9 @@ void  VGAWRITEMAP(int x);
 // _RECT says where (screen x, y, width, height); _AT the same for a
 // destination pointer into the chunky screen.
 extern int atari_hud_dirty;
+// Something drew over the status bars that only redrawing them puts right
+// (the Help overlay, turned off): the play loop does it, between frames.
+extern volatile int atari_bars_redraw;
 void atari_hud_touch_rect(int x, int y, int w, int h);
 void atari_hud_touch_at(const unsigned char *dst, int w, int h);
 #define ATARI_HUD_TOUCH() (atari_hud_dirty = 1)

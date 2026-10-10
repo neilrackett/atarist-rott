@@ -1602,6 +1602,8 @@ void DrawTime
 #if defined(ATARI_NATIVE)
       // Only the digits that changed, usually one a second, where each was
       // drawn (and converted) every second: as DrawTimeXY would draw them.
+      // Anything drawn over the clock is put right by DrawPlayScreen,
+      // which sets oldsec to -1 (atari_bars_redraw).
       static signed char drawn[6];
       int digit[6], hour, min, i;
 

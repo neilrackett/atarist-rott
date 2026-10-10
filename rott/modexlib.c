@@ -89,6 +89,7 @@ extern word Joy_y;
 #include "atari_sfx.h"
 
 static int sfx_debug_overlay = 0;
+volatile int atari_bars_redraw;
 
 unsigned char atari_joy_buttons = 0;
 
@@ -742,6 +743,8 @@ static void atari_enqueue_key(unsigned char data)
       if (k == sc_F11)
       {
          sfx_debug_overlay = !sfx_debug_overlay;
+         if (!sfx_debug_overlay)
+            atari_bars_redraw = 1; // what it covered, the clock among it
          return;
       }
       Keystate[k] = 1;

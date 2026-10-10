@@ -190,9 +190,10 @@
 #define MD_CAP_MUSIC 0x0001 /* MD_CMD_MUSIC: plays songs from the WAD */
 
 /* MD_ST_SPOTVIS_X: the columns (x) that hold any SPOTVIS bits for the
- * newest frame or the one before, so the ST need copy only those. Without
- * MD_SVX_VALID (older firmware) the ST copies all of it; first > last is
- * none at all. */
+ * newest frame or the one before, so the ST need copy only those; set
+ * before a frame's bits go out, so the ST reads it again after copying and
+ * copies again if it changed. Without MD_SVX_VALID (older firmware) the ST
+ * copies all of it; first > last is none at all. */
 #define MD_SVX_VALID 0x8000
 #define MD_SVX_FIRST(w) ((unsigned)(w) & 127u)
 #define MD_SVX_LAST(w) (((unsigned)(w) >> 7) & 127u)

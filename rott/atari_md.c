@@ -732,43 +732,57 @@ static void spotvis_clear(int first, int last) {
     memset(md_spotvis + first * 8, 0, (last - first + 1) * 16);
 }
 
-static void read_spotvis(void) {
-  const unsigned short svx = MD_STATUS[MD_ST_SPOTVIS_X];
-  const int px = player->tilex, py = player->tiley;
-  int first = 0, last = MAPSIZE - 1, x, y;
+/* The columns of the MD's SPOTVIS that svx says hold bits (all of them
+ * from older firmware), and those that held some here and don't now
+ * cleared. */
+static void spotvis_copy(unsigned short svx) {
+  int first = 0, last = MAPSIZE - 1;
 
-  /* Only the columns the MD says hold bits (older firmware: all of them),
-   * those that held some last time and don't now cleared. */
   if (svx & MD_SVX_VALID) {
     first = MD_SVX_FIRST(svx);
     last = MD_SVX_LAST(svx);
   }
   if (first > last) {
     spotvis_clear(md_spot_first, md_spot_last);
-  } else {
-    spotvis_clear(md_spot_first, (first <= md_spot_last ? first : md_spot_last + 1) - 1);
-    spotvis_clear(last >= md_spot_first ? last + 1 : md_spot_first, md_spot_last);
-    memcpy(md_spotvis + first * 8,
-           (const void *)(MD_ROM4_BASE + MD_SPOTVIS_OFFSET + first * 16),
-           (last - first + 1) * 16);
+    md_spot_first = MAPSIZE;
+    md_spot_last = -1;
+    return;
   }
-  for (x = px - 2; x <= px + 2; x++) {
-    if (x < 0 || x >= MAPSIZE) continue;
-    for (y = py - 2; y <= py + 2; y++) {
-      if (y >= 0 && y < MAPSIZE)
-        md_spotvis[MD_BITSET_WORD(x, y)] |= (unsigned short)(1u << MD_BITSET_BIT(y));
+  spotvis_clear(md_spot_first, (first <= md_spot_last ? first : md_spot_last + 1) - 1);
+  spotvis_clear(last >= md_spot_first ? last + 1 : md_spot_first, md_spot_last);
+  memcpy(md_spotvis + first * 8,
+         (const void *)(MD_ROM4_BASE + MD_SPOTVIS_OFFSET + first * 16),
+         (last - first + 1) * 16);
+  md_spot_first = first;
+  md_spot_last = last;
+}
+
+static void read_spotvis(void) {
+  const int px = player->tilex, py = player->tiley;
+  unsigned short svx = MD_STATUS[MD_ST_SPOTVIS_X], again;
+  int x, y;
+
+  /* The MD publishes a frame's range before its bits: a new range since
+   * the copy began may have new columns in it, so those too. */
+  spotvis_copy(svx);
+  again = MD_STATUS[MD_ST_SPOTVIS_X];
+  if (again != svx) spotvis_copy(again);
+  /* the 5 x 5 tiles around the player, the bounds outside the loops (as
+   * tests inside them, -O3 unrolled them into 8KB) */
+  {
+    const int x0 = px - 2 < 0 ? 0 : px - 2;
+    const int x1 = px + 2 >= MAPSIZE ? MAPSIZE - 1 : px + 2;
+    const int y0 = py - 2 < 0 ? 0 : py - 2;
+    const int y1 = py + 2 >= MAPSIZE ? MAPSIZE - 1 : py + 2;
+    for (x = x0; x <= x1; x++) {
+      unsigned short *const col = md_spotvis + x * 8;
+      for (y = y0; y <= y1; y++)
+        col[y >> 4] |= (unsigned short)(1u << (y & 15));
     }
+    /* what may hold bits now: the columns copied and the player's */
+    if (md_spot_first > x0) md_spot_first = x0;
+    if (md_spot_last < x1) md_spot_last = x1;
   }
-  /* what may hold bits now: the columns copied and the player's */
-  if (first > last) {
-    first = px - 2;
-    last = px + 2;
-  } else {
-    if (first > px - 2) first = px - 2;
-    if (last < px + 2) last = px + 2;
-  }
-  md_spot_first = first < 0 ? 0 : first;
-  md_spot_last = last >= MAPSIZE ? MAPSIZE - 1 : last;
 }
 
 /* Is the tile at (x, y), one of its eight neighbours or the player near?
