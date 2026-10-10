@@ -419,6 +419,7 @@ int main (int argc, char *argv[])
       ATARI_MD_Init();
 #endif
       ReadAtariSoundToggles();
+      ReadAtariConfig();
       GetMenuInfo ();
 #else
       ReadConfig ();
@@ -2145,7 +2146,9 @@ void UpdateGameObjects ( void )
 	objtype * ob,*temp;
    battle_status BattleStatus;
 #if defined(ATARI_NATIVE)
+   extern volatile unsigned long atari_hz200_count;
    int catchup_steps = 0;
+   unsigned long logic_t0;
 #endif
 
    wami(2);
@@ -2166,6 +2169,9 @@ void UpdateGameObjects ( void )
 
    UpdateClientControls ();
 
+#if defined(ATARI_NATIVE)
+   logic_t0 = atari_hz200_count;
+#endif
 
    while (oldpolltime<oldtime)
 	   {
@@ -2194,14 +2200,40 @@ void UpdateGameObjects ( void )
 				TRIGGER[Clocks[j].linkindex]=1;
 #if defined(ATARI_NATIVE) && (ATARI_ACTOR_THROTTLE_DIV > 1)
       const unsigned int actor_div = (unsigned int)ATARI_ACTOR_THROTTLE_DIV;
-      const unsigned int actor_time_phase = (unsigned int)gamestate.TimeCount % actor_div;
+      // TimeCount % actor_div by two divu.w (high word, then the
+      // remainder and the low word), not __umodsi3: about 900 cycles a
+      // tic with the __udivsi3 and __mulsi3 it calls.
+      unsigned int actor_time_phase = (unsigned int)gamestate.TimeCount >> 16;
+      __asm__("divu.w %1,%0" : "+d"(actor_time_phase) : "d"((unsigned short)actor_div));
+      actor_time_phase = (actor_time_phase & 0xFFFF0000u) |
+                         ((unsigned int)gamestate.TimeCount & 0xFFFFu);
+      __asm__("divu.w %1,%0" : "+d"(actor_time_phase) : "d"((unsigned short)actor_div));
+      actor_time_phase >>= 16;
 #endif
 #if defined(ATARI_NATIVE)
 #if (ATARI_ACTOR_BUDGET > 0)
       unsigned int actor_budget = atari_actor_budget_runtime;
 #endif
+#if (ATARI_ACTOR_BUDGET > 0 || ATARI_PROFILE)
       unsigned int actor_updates_this_tick = 0;
 #endif
+#endif
+#if defined(ATARI_NATIVE) && (ATARI_ACTOR_BUDGET > 0 || ATARI_PROFILE)
+// Only read by the budget and ATARI_PROFILE's report: otherwise two
+// counts in memory for every actor every tic, to no effect.
+#define ATARI_COUNT_ACTOR() (actor_updates_this_tick++, atari_frame_actor_updates++)
+#else
+#define ATARI_COUNT_ACTOR() ((void)0)
+#endif
+#if defined(ATARI_NATIVE) && !(ATARI_ACTOR_BUDGET > 0 || ATARI_PROFILE) && \
+    (DEVELOPMENT != 1)
+      // The same loop, where the disks' path can be inline (rt_actor.c).
+#if (ATARI_ACTOR_THROTTLE_DIV > 1)
+      ATARI_DoActiveActors(actor_div, actor_time_phase);
+#else
+      ATARI_DoActiveActors(1, 0);
+#endif
+#else
 		for (ob = firstactive; ob;)
 			{
 			 temp = ob->nextactive;
@@ -2232,23 +2264,20 @@ void UpdateGameObjects ( void )
                                   (unsigned short)actor_div;
              if (actor_time_phase == phase)
              {
-                DoActor(ob);
-                actor_updates_this_tick++;
-                atari_frame_actor_updates++;
+                ATARI_DoActor(ob);
+                ATARI_COUNT_ACTOR();
              }
           }
           else
           {
-             DoActor(ob);
-             actor_updates_this_tick++;
-             atari_frame_actor_updates++;
+             ATARI_DoActor(ob);
+             ATARI_COUNT_ACTOR();
           }
+#elif defined(ATARI_NATIVE)
+          ATARI_DoActor(ob);
+          ATARI_COUNT_ACTOR();
 #else
 			 DoActor (ob);
-#if defined(ATARI_NATIVE)
-          actor_updates_this_tick++;
-          atari_frame_actor_updates++;
-#endif
 #endif
 #if (DEVELOPMENT == 1)
 			 if ((ob->x<=0) || (ob->y<=0))
@@ -2258,6 +2287,7 @@ void UpdateGameObjects ( void )
 #endif
 			 ob = temp;
 			}
+#endif
 
       BattleStatus = BATTLE_CheckGameStatus( battle_refresh, 0 );
       if ( BattleStatus != battle_no_event )
@@ -2305,6 +2335,10 @@ void UpdateGameObjects ( void )
       if (GamePaused==true)
          break;
 		}
+#if defined(ATARI_NATIVE)
+   atari_logic_tics += catchup_steps;
+   atari_logic_hz200 += atari_hz200_count - logic_t0;
+#endif
    actortime=GetFastTics()-atime;
 
    UpdateClientControls ();
@@ -2468,6 +2502,18 @@ fromloadedgame:
       {
 #if defined(ATARI_NATIVE)
       IN_PumpEvents();
+#if ATARI_MD_RENDER
+      if (ATARI_MD_TakeHudRedraw())
+         {
+         DrawPlayScreen(true); /* without the Accelerator's sign */
+         MU_PlaySong(MU_GetSongNumber()); /* its song, on the ST now */
+         }
+#endif
+      if (atari_bars_redraw)
+         {
+         atari_bars_redraw = 0;
+         DrawPlayScreen(true); /* and the clock's digits all drawn again */
+         }
       ATARI_BeginRenderFrame();
       const int render = 1;
 #elif ATARI_SDL

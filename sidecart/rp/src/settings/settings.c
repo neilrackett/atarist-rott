@@ -1,5 +1,6 @@
 /**
  * @file settings.c
+ * Modified: 2026 Neil Rackett, for the ROTT Accelerator
  */
 
 #include "settings.h"

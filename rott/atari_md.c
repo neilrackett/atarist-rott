@@ -31,6 +31,8 @@
 #include <string.h>
 
 #include "atari_c2p.h"
+#include "atari_megaste.h"
+#include "atari_perf.h"
 #include "i_timer.h"
 #include "isr.h"
 #include "lumpy.h"
@@ -87,6 +89,8 @@ extern int CalcRotate(objtype *ob);
 #define FIXEDTRANSLEVEL (30) /* _rt_draw.h */
 
 int atari_md_active;
+static unsigned short md_caps; /* MD_ST_CAPS, read at HELLO */
+static int md_mste;            /* a Mega STE: its cache in the way */
 int atari_md_masked_dirty = 1;
 
 #define MD_PKT_WORDS (MD_CMD_MAX_BYTES / 2)
@@ -358,7 +362,9 @@ void ATARI_MD_Init(void) {
     }
   }
   sidecart_md_result(result, sizeof(result));
+  md_caps = MD_STATUS[MD_ST_CAPS]; /* 0 from an older firmware */
   sidecart_md_bus_end();
+  md_mste = is_megaste();
 
   if (rc != 0) {
     printf("ROTT Accelerator not answering\nUsing the ST renderer\n");
@@ -476,10 +482,22 @@ static void show_progress(int percent) {
   px = (viewwidth - w) / 2 + (screenofs % iGLOBAL_SCREENWIDTH);
   py = (screenofs / iGLOBAL_SCREENWIDTH) + (viewheight / 2) - 4;
   VW_DrawPropString(text);
-  atari_md_active = 0; /* the plain C2P path, just this once */
-  I_FinishUpdate();
-  atari_md_active = 1;
+  {
+    /* the plain C2P path, just this once, and not zoomed (which cut the
+     * text off) */
+    const int zoom = atari_view_zoom;
+    atari_view_zoom = 0;
+    atari_md_active = 0;
+    I_FinishUpdate();
+    atari_md_active = 1;
+    atari_view_zoom = zoom;
+  }
 }
+
+/* Defined below: frames of the start position before play (warm_up), and
+ * the wait for the MD's frames it uses. */
+static void warm_up(void);
+static int wait_ready(int ahead);
 
 static int wait_level_state(void) {
   long t0 = I_GetTimeMS();
@@ -494,7 +512,8 @@ static int wait_level_state(void) {
     if (I_GetTimeMS() - last > 250) {
       last = I_GetTimeMS();
       I_GetTime(); /* keeps the music going */
-      show_progress(MD_STATUS[MD_ST_PROGRESS]);
+      /* the pack is the first 80%; warm_up the rest */
+      show_progress(MD_STATUS[MD_ST_PROGRESS] * 4 / 5);
     }
     if (I_GetTimeMS() - t0 > MD_PACK_WAIT_MS) return MD_LEVEL_ERROR;
   }
@@ -635,7 +654,9 @@ static void view_rect(void) {
   md_view_y = sy;
   md_view_w = viewwidth;
   md_view_h = viewheight;
-  if (viewwidth <= 80)
+  if (!atari_view_zoom)
+    zoom = 1;
+  else if (viewwidth <= 80)
     zoom = 4;
   else if (viewwidth <= 160)
     zoom = 2;
@@ -713,25 +734,85 @@ void ATARI_MD_Messages(const char *const *lines, int count) {
 }
 
 /* The MD's spotvis of its newest frame, copied out of ROM4 once a frame
- * so the object loop reads RAM with the cache on. */
+ * so the object loop reads RAM with the cache on, with the 5 x 5 tiles
+ * around the player added: an object is sent if its tile's bit is set,
+ * one test where it was a bitset look and a distance check. */
 static unsigned short md_spotvis[MD_BITSET_WORDS];
+/* The columns (x) of md_spotvis that may hold bits: the rest are 0. */
+static int md_spot_first, md_spot_last = MAPSIZE - 1;
+
+/* Columns first..last of md_spotvis, 8 words each, cleared. */
+static void spotvis_clear(int first, int last) {
+  if (first <= last)
+    memset(md_spotvis + first * 8, 0, (last - first + 1) * 16);
+}
+
+/* The columns of the MD's SPOTVIS that svx says hold bits (all of them
+ * from older firmware), and those that held some here and don't now
+ * cleared. */
+static void spotvis_copy(unsigned short svx) {
+  int first = 0, last = MAPSIZE - 1;
+
+  if (svx & MD_SVX_VALID) {
+    first = MD_SVX_FIRST(svx);
+    last = MD_SVX_LAST(svx);
+  }
+  if (first > last) {
+    spotvis_clear(md_spot_first, md_spot_last);
+    md_spot_first = MAPSIZE;
+    md_spot_last = -1;
+    return;
+  }
+  spotvis_clear(md_spot_first, (first <= md_spot_last ? first : md_spot_last + 1) - 1);
+  spotvis_clear(last >= md_spot_first ? last + 1 : md_spot_first, md_spot_last);
+  memcpy(md_spotvis + first * 8,
+         (const void *)(MD_ROM4_BASE + MD_SPOTVIS_OFFSET + first * 16),
+         (last - first + 1) * 16);
+  md_spot_first = first;
+  md_spot_last = last;
+}
 
 static void read_spotvis(void) {
-  memcpy(md_spotvis, (const void *)(MD_ROM4_BASE + MD_SPOTVIS_OFFSET),
-         MD_BITSET_WORDS * 2);
+  const int px = player->tilex, py = player->tiley;
+  unsigned short svx = MD_STATUS[MD_ST_SPOTVIS_X], again;
+  int x, y;
+
+  /* The MD publishes a frame's range before its bits: a new range since
+   * the copy began may have new columns in it, so those too. */
+  spotvis_copy(svx);
+  again = MD_STATUS[MD_ST_SPOTVIS_X];
+  if (again != svx) spotvis_copy(again);
+  /* the 5 x 5 tiles around the player, the bounds outside the loops (as
+   * tests inside them, -O3 unrolled them into 8KB) */
+  {
+    const int x0 = px - 2 < 0 ? 0 : px - 2;
+    const int x1 = px + 2 >= MAPSIZE ? MAPSIZE - 1 : px + 2;
+    const int y0 = py - 2 < 0 ? 0 : py - 2;
+    const int y1 = py + 2 >= MAPSIZE ? MAPSIZE - 1 : py + 2;
+    for (x = x0; x <= x1; x++) {
+      unsigned short *const col = md_spotvis + x * 8;
+      for (y = y0; y <= y1; y++)
+        col[y >> 4] |= (unsigned short)(1u << (y & 15));
+    }
+    /* what may hold bits now: the columns copied and the player's */
+    if (md_spot_first > x0) md_spot_first = x0;
+    if (md_spot_last < x1) md_spot_last = x1;
+  }
 }
 
-/* Is the tile at (x, y) or one of its eight neighbours marked? The MD
- * publishes each tile with its neighbours' bits already ORed in. */
-static int spotvis_near(int x, int y) {
-  if (x < 1 || y < 1 || x >= MAPSIZE - 1 || y >= MAPSIZE - 1) return 0;
-  return (md_spotvis[MD_BITSET_WORD(x, y)] >> MD_BITSET_BIT(y)) & 1;
+/* Is the tile at (x, y), one of its eight neighbours or the player near?
+ * The MD publishes each tile with its neighbours' bits already ORed in.
+ * Tile i = (x << 7) | y is bit i & 15 of word i >> 4, which on the ST is
+ * bit i & 7 of byte (i >> 3) ^ 1: a byte look and a test. Every object
+ * is on the map (x, y < MAPSIZE). */
+static __inline__ int spotvis_near(unsigned x, unsigned y) {
+  const unsigned short i = (unsigned short)((x << 7) | y);
+  return (((const unsigned char *)md_spotvis)[(unsigned short)((i >> 3) ^ 1)] >>
+          (i & 7)) & 1;
 }
 
-static int near_player(int tx, int ty) {
-  int dx = tx - player->tilex;
-  int dy = ty - player->tiley;
-  return dx >= -2 && dx <= 2 && dy >= -2 && dy <= 2;
+int ATARI_MD_SpotvisNear(int x, int y) {
+  return (unsigned)x < MAPSIZE && (unsigned)y < MAPSIZE && spotvis_near(x, y);
 }
 
 static unsigned short *obj_item(void) { return pkt_item(MD_REC_OBJS, MD_OBJ_WORDS); }
@@ -761,6 +842,7 @@ static int disk_shape(int value) {
  * light them. Rotation and the height flips are resolved here because they
  * need game state; the MD does the rest. */
 static void add_objects(void) {
+  objtype *const me = player;
   statobj_t *statptr;
   objtype *obj;
   int count = 0;
@@ -771,9 +853,8 @@ static void add_objects(void) {
     unsigned short *p;
 
     if (statptr->shapenum == NOTHING) continue;
-    if (!spotvis_near(statptr->tilex, statptr->tiley) &&
-        !near_player(statptr->tilex, statptr->tiley)) {
-      statptr->flags &= ~FL_VISIBLE;
+    if (!spotvis_near(statptr->tilex, statptr->tiley)) {
+      if (statptr->flags & FL_VISIBLE) statptr->flags &= ~FL_VISIBLE;
       continue;
     }
     statptr->flags |= FL_SEEN | FL_VISIBLE;
@@ -814,11 +895,10 @@ static void add_objects(void) {
     int shapenum, flags = MD_OF_NORMAL, extra = 0;
     unsigned short *p;
 
-    if (obj == player) continue;
+    if (obj == me) continue;
     if (obj->shapenum == NOTHING) continue;
-    if (!spotvis_near(obj->tilex, obj->tiley) &&
-        !near_player(obj->tilex, obj->tiley)) {
-      obj->flags &= ~FL_VISIBLE;
+    if (!spotvis_near(obj->tilex, obj->tiley)) {
+      if (obj->flags & FL_VISIBLE) obj->flags &= ~FL_VISIBLE;
       continue;
     }
     obj->flags |= FL_SEEN | FL_VISIBLE;
@@ -860,6 +940,32 @@ static void add_objects(void) {
   }
 }
 
+/* Does the MD's copy differ? */
+static int door_changed(int i) {
+  const doorobj_t *d = doorobjlist[i];
+  const md_door_shadow_t *s = &md_doors[i];
+  return d->texture != s->texture || d->alttexture != s->alttexture ||
+         (byte)d->action != s->action || d->flags != s->flags;
+}
+
+static int mwall_changed(int i) {
+  const maskedwallobj_t *m = maskobjlist[i];
+  const md_mwall_shadow_t *s = &md_mwalls[i];
+  return m->flags != s->flags || m->toptexture != s->top ||
+         m->midtexture != s->mid || m->bottomtexture != s->bottom;
+}
+
+static int pwall_changed(int i) {
+  const pwallobj_t *w = pwallobjlist[i];
+  const md_pwall_shadow_t *s = &md_pwalls[i];
+  return w->x != s->x || w->y != s->y || w->texture != s->texture ||
+         (byte)w->action != s->action;
+}
+
+#define MD_ROLL 2         /* doors and moving walls compared a frame */
+#define MD_ROLL_MASKED 8  /* masked walls compared a frame */
+static int md_roll_door, md_roll_pwall, md_roll_mwall;
+
 /* World deltas since the last frame, into the packet (flushed as WORLD
  * commands when it fills). */
 static void add_deltas(void) {
@@ -893,31 +999,54 @@ static void add_deltas(void) {
     for (i = old_pwalls; i < pwallnum; i++)
       put_pwall(world_item(MD_REC_PWALL, MD_PWALL_WORDS), i);
   }
-  for (i = 0; i < doornum; i++) {
-    const doorobj_t *d = doorobjlist[i];
-    const md_door_shadow_t *s = &md_doors[i];
-    if (d->texture != s->texture || d->alttexture != s->alttexture ||
-        (byte)d->action != s->action || d->flags != s->flags)
-      put_door(world_item(MD_REC_DOOR, MD_DOOR_WORDS), i);
-  }
-  /* Masked walls rarely change, and the changes in play say so
-   * (MD_MASKED_TOUCH): look for them then, and every 8th frame anyway. */
-  if (atari_md_masked_dirty || !(md_seq & 7)) {
-    atari_md_masked_dirty = 0;
-    for (i = 0; i < maskednum; i++) {
-      const maskedwallobj_t *m = maskobjlist[i];
-      const md_mwall_shadow_t *s = &md_mwalls[i];
-      if (m->flags != s->flags || m->toptexture != s->top ||
-          m->midtexture != s->mid || m->bottomtexture != s->bottom)
-        put_mwall(world_item(MD_REC_MWALL, MD_MWALL_WORDS), i);
+  /* A door or moving wall at rest whose action has not changed has not
+   * changed (its texture and position only move with it), but for the odd
+   * flag (an elevator door locked): those moving or changed are compared
+   * in full, and the rest MD_ROLL a frame in turn. */
+  {
+    doorobj_t *const *d = doorobjlist;
+    const md_door_shadow_t *sh = md_doors;
+    for (i = 0; i < doornum; i++, d++, sh++) {
+      const int a = (*d)->action;
+      if ((a == dr_opening || a == dr_closing || (byte)a != sh->action) &&
+          door_changed(i))
+        put_door(world_item(MD_REC_DOOR, MD_DOOR_WORDS), i);
     }
   }
-  for (i = 0; i < pwallnum; i++) {
-    const pwallobj_t *w = pwallobjlist[i];
-    const md_pwall_shadow_t *s = &md_pwalls[i];
-    if (w->x != s->x || w->y != s->y || w->texture != s->texture ||
-        (byte)w->action != s->action)
-      put_pwall(world_item(MD_REC_PWALL, MD_PWALL_WORDS), i);
+  for (i = 0; i < MD_ROLL && i < doornum; i++) {
+    if (++md_roll_door >= doornum) md_roll_door = 0;
+    if (door_changed(md_roll_door))
+      put_door(world_item(MD_REC_DOOR, MD_DOOR_WORDS), md_roll_door);
+  }
+  /* Masked walls rarely change, and the changes in play say so
+   * (MD_MASKED_TOUCH): all of them then, and otherwise MD_ROLL_MASKED a
+   * frame in turn. */
+  if (atari_md_masked_dirty) {
+    atari_md_masked_dirty = 0;
+    for (i = 0; i < maskednum; i++) {
+      if (mwall_changed(i)) put_mwall(world_item(MD_REC_MWALL, MD_MWALL_WORDS), i);
+    }
+  } else {
+    for (i = 0; i < MD_ROLL_MASKED && i < maskednum; i++) {
+      if (++md_roll_mwall >= maskednum) md_roll_mwall = 0;
+      if (mwall_changed(md_roll_mwall))
+        put_mwall(world_item(MD_REC_MWALL, MD_MWALL_WORDS), md_roll_mwall);
+    }
+  }
+  {
+    pwallobj_t *const *w = pwallobjlist;
+    const md_pwall_shadow_t *sh = md_pwalls;
+    for (i = 0; i < pwallnum; i++, w++, sh++) {
+      const int a = (*w)->action;
+      if ((a == pw_pushing || a == pw_moving || (byte)a != sh->action) &&
+          pwall_changed(i))
+        put_pwall(world_item(MD_REC_PWALL, MD_PWALL_WORDS), i);
+    }
+  }
+  for (i = 0; i < MD_ROLL && i < pwallnum; i++) {
+    if (++md_roll_pwall >= pwallnum) md_roll_pwall = 0;
+    if (pwall_changed(md_roll_pwall))
+      put_pwall(world_item(MD_REC_PWALL, MD_PWALL_WORDS), md_roll_pwall);
   }
   for (i = 0; i < MAXANIMWALLS; i++) {
     if (animwalls[i].texture != md_anims[i])
@@ -1026,13 +1155,146 @@ static int send_frame(void) {
                            (long)md_copied_seq, (long)md_level_serial);
 }
 
+/* After a snapshot, with "Preparing level" up: frames of the start
+ * position facing each way in turn, never shown, so the MD loads from its
+ * SD card what the level opens with (sprites near the player, the weapon)
+ * now, not in the first seconds of play, where each load held a frame up
+ * and the game seemed not to answer. Each way again until a frame loads
+ * nothing more (objects are chosen from what the MD saw the frame before),
+ * the player's own view last, so the frame play starts on is that one.
+ * It stops if the MD has to drop lumps for room: more would only churn. */
+#define MD_WARM_TRIES 6
+static void warm_up(void) {
+  const int angle = viewangle;
+  const unsigned short evicts = MD_STATUS[MD_ST_EVICTS];
+  int dir, done = 0;
+
+  if (MD_STATUS[MD_ST_PACK_MISSING] == 0) return; /* the pack has it all */
+  for (dir = 1; dir <= 4 && !done; dir++) {
+    unsigned short loads = MD_STATUS[MD_ST_LOADS];
+    int tries;
+
+    show_progress(80 + (dir - 1) * 5);
+    viewangle = (angle + dir * (FINEANGLES / 4)) & (FINEANGLES - 1);
+    for (tries = 0; tries < MD_WARM_TRIES; tries++) {
+      unsigned short now;
+
+      read_spotvis();
+      build_frame();
+      if (send_frame() || !wait_ready(0)) {
+        done = 1;
+        break;
+      }
+      now = MD_STATUS[MD_ST_LOADS];
+      if (MD_STATUS[MD_ST_EVICTS] != evicts) {
+        done = 1;
+        break;
+      }
+      if (tries > 0 && now == loads) break;
+      loads = now;
+    }
+  }
+  viewangle = angle;
+  if (done) {
+    /* stopped early: the player's view, so play starts on it */
+    read_spotvis();
+    build_frame();
+    if (!send_frame()) wait_ready(0);
+  }
+}
+
+/* The Help key's overlay (ATARI_MD_GetStats): 200Hz ticks the ST spent
+ * waiting for the MD, frames, and the MD's own figures for its frame. */
+extern volatile unsigned long atari_hz200_count;
+static unsigned long md_stat_t0, md_stat_wait, md_stat_cmd, md_stat_frames;
+static unsigned long md_stat_logic_tics, md_stat_logic_hz200;
+static int md_stat_fps10, md_stat_wait_ms, md_stat_cmd_ms;
+static int md_stat_tics10, md_stat_logic_ms;
+static unsigned short md_stat_render_us, md_stat_c2p_us;
+/* The MD's counters now, and as they stood when the level began. */
+enum { MDC_LOADS, MDC_EVICTS, MDC_DROPS, MDC_CHKERRS, MDC_FRAMES, MDC_COUNT };
+static const unsigned char md_stat_word[MDC_COUNT] = {
+    MD_ST_LOADS, MD_ST_EVICTS, MD_ST_DROPS, MD_ST_CHKERRS, MD_ST_FRAMES};
+static unsigned short md_stat_now[MDC_COUNT], md_stat_base[MDC_COUNT];
+static unsigned short md_stat_base_seq, md_stat_base_retries;
+static long md_stat_level = -1;
+
+/* Once a frame: the averages, every second. */
+static void md_stat_frame(void) {
+  const unsigned long now = atari_hz200_count;
+  unsigned long dt;
+
+  if (md_stat_t0 == 0) {
+    md_stat_t0 = now;
+    md_stat_frames = md_stat_wait = 0;
+    md_stat_logic_tics = atari_logic_tics;
+    md_stat_logic_hz200 = atari_logic_hz200;
+    return;
+  }
+  md_stat_frames++;
+  dt = now - md_stat_t0;
+  if (dt >= 200 && md_stat_frames) {
+    md_stat_fps10 = (int)((md_stat_frames * 2000 + dt / 2) / dt);
+    md_stat_wait_ms = (int)(md_stat_wait * 5 / md_stat_frames);
+    md_stat_cmd_ms = (int)(md_stat_cmd * 5 / md_stat_frames);
+    md_stat_tics10 =
+        (int)((atari_logic_tics - md_stat_logic_tics) * 10 / md_stat_frames);
+    md_stat_logic_ms =
+        (int)((atari_logic_hz200 - md_stat_logic_hz200) * 5 / md_stat_frames);
+    md_stat_t0 = now;
+    md_stat_frames = md_stat_wait = md_stat_cmd = 0;
+    md_stat_logic_tics = atari_logic_tics;
+    md_stat_logic_hz200 = atari_logic_hz200;
+  }
+}
+
+/* With the cartridge bus open, once a frame: the MD's figures, the counts
+ * starting again from where they stand when a new level begins. */
+static void md_stat_read(void) {
+  int i;
+
+  md_stat_render_us = MD_STATUS[MD_ST_RENDER_US];
+  md_stat_c2p_us = MD_STATUS[MD_ST_C2P_US];
+  for (i = 0; i < MDC_COUNT; i++) md_stat_now[i] = MD_STATUS[md_stat_word[i]];
+  if (md_stat_level != md_level_serial) {
+    md_stat_level = md_level_serial;
+    for (i = 0; i < MDC_COUNT; i++) md_stat_base[i] = md_stat_now[i];
+    md_stat_base_seq = (unsigned short)md_seq;
+    md_stat_base_retries = md_command_retries;
+  }
+}
+
+void ATARI_MD_GetStats(atari_md_stats_t *s) {
+#define MDC(i) ((unsigned short)(md_stat_now[i] - md_stat_base[i]))
+  s->fps10 = md_stat_fps10;
+  s->tics10 = md_stat_tics10;
+  s->logic_ms = md_stat_logic_ms;
+  s->wait_ms = md_stat_wait_ms;
+  s->cmd_ms = md_stat_cmd_ms;
+  s->render_ms = (md_stat_render_us + 500) / 1000;
+  s->c2p_ms = (md_stat_c2p_us + 500) / 1000;
+  s->sd_loads = MDC(MDC_LOADS);
+  s->evicts = MDC(MDC_EVICTS);
+  s->drops = MDC(MDC_DROPS);
+  s->chkerrs = MDC(MDC_CHKERRS);
+  s->retries = (unsigned short)(md_command_retries - md_stat_base_retries);
+  s->dups = (short)(MDC(MDC_FRAMES) - (unsigned short)((unsigned short)md_seq - md_stat_base_seq));
+#undef MDC
+}
+
 /* Wait until the MD has at most `ahead` frames left to finish. */
 static int wait_ready(int ahead) {
   long t0 = I_GetTimeMS();
+  const unsigned long w0 = atari_hz200_count;
+  int ok = 1;
   while ((unsigned short)(md_seq - MD_STATUS[MD_ST_READY_SEQ]) > ahead) {
-    if (I_GetTimeMS() - t0 > MD_WAIT_MS) return 0;
+    if (I_GetTimeMS() - t0 > MD_WAIT_MS) {
+      ok = 0;
+      break;
+    }
   }
-  return 1;
+  md_stat_wait += atari_hz200_count - w0;
+  return ok;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1148,9 +1410,141 @@ void ATARI_MD_ViewToChunky(unsigned char *chunky) {
                              md_shown_y, md_shown_w, md_shown_h);
 }
 
+/* ------------------------------------------------------------------ */
+/* Music on the MD (MD_CAP_MUSIC)                                       */
+/* ------------------------------------------------------------------ */
+
+#define MSTE_CTL (*(volatile unsigned char *)0xFFFF8E21UL)
+#define YM_SELECT (*(volatile unsigned char *)0xFFFF8800UL)
+#define YM_DATA (*(volatile unsigned char *)0xFFFF8802UL)
+
+static unsigned short md_ym_last; /* the last step played (0: none yet) */
+static unsigned char md_ym_shadow[14];
+static volatile unsigned char md_ym_playing;
+
+#ifndef ATARI_MD_MUSIC
+#define ATARI_MD_MUSIC 1
+#endif
+
+int ATARI_MD_MusicAvailable(void) {
+  return ATARI_MD_MUSIC && atari_md_active && (md_caps & MD_CAP_MUSIC);
+}
+
+int ATARI_MD_Music(int action, int lump, int loop, int volume) {
+  if (!ATARI_MD_MusicAvailable()) return 0;
+  if (action == MD_MUSIC_PLAY) {
+    /* every register written from the first step of the song on (all of
+     * it compared, not just its changes) */
+    memset(md_ym_shadow, 0xFF, sizeof(md_ym_shadow));
+    md_ym_last = 0;
+    md_ym_playing = 1; /* until the MD says otherwise */
+  }
+  return sidecart_md_command(MD_CMD_MUSIC,
+                             ((long)action << 16) | (long)(lump & 0xFFFF),
+                             ((long)(loop ? 1 : 0) << 8) | (long)(volume & 0xFF)) == 0;
+}
+
+int ATARI_MD_MusicPlaying(void) { return md_ym_playing; }
+
+/* The lowest set bit of a byte (md_ym_step's walk of a register mask). */
+static const unsigned char md_lsb[256] = {
+#define L4(n) n, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0
+    0, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, L4(4), L4(5), L4(4),
+    L4(6), L4(4), L4(5), L4(4), L4(7), L4(4), L4(5), L4(4), L4(6), L4(4),
+    L4(5), L4(4)
+#undef L4
+};
+
+/* One step from its slot (step is MD_YM_STEP(n)): its changed registers,
+ * or all of them, read out, its number read again (the MD may have come
+ * round to the slot meanwhile), then those that differ from the chip
+ * written to it. 0 if the slot no longer held the step. */
+static int md_ym_step(unsigned short step, int all) {
+  volatile const unsigned short *slot =
+      (volatile const unsigned short *)(MD_ROM4_BASE + MD_YM_SLOT_OFFSET) +
+      (step % MD_YM_SLOTS) * MD_YM_WORDS;
+  unsigned char reg[14], val[14];
+  unsigned short flags;
+  unsigned m;
+  int n = 0, k;
+
+  if (slot[MD_YM_SEQ] != step) return 0;
+  flags = slot[MD_YM_FLAGS];
+  for (m = all ? 0x3FFF : MD_YMF_CHANGED(flags); m; m &= m - 1) {
+    const int i = (m & 0xFF) ? md_lsb[m & 0xFF] : 8 + md_lsb[m >> 8];
+    reg[n] = (unsigned char)i;
+    val[n++] = (unsigned char)slot[MD_YM_REGS + i];
+  }
+  if (slot[MD_YM_SEQ] != step) return 0;
+  md_ym_playing = (unsigned char)(flags & MD_YMF_PLAYING);
+  for (k = 0; k < n; k++) {
+    const int i = reg[k];
+    unsigned char b = val[k];
+    unsigned short sr;
+    if (b == md_ym_shadow[i]) continue;
+    md_ym_shadow[i] = b;
+    __asm__ volatile("move.w %%sr,%0\n\tori.w #0x0700,%%sr" : "=d"(sr) : : "cc");
+    YM_SELECT = (unsigned char)i;
+    if (i == 7) b = (unsigned char)((YM_SELECT & 0xC0) | (b & 0x3F));
+    YM_DATA = b;
+    __asm__ volatile("move.w %0,%%sr" : : "d"(sr) : "cc");
+  }
+  return 1;
+}
+
+/* The VBL (supervisor): the MD's steps in order (MD_YM_SLOTS), one a VBL,
+ * or two while behind so it doesn't stay at the edge of the ring. Just
+ * started, too far behind or a step missed: on from the newest, every
+ * register compared, as only a step that follows the one played can go by
+ * its changes. The cartridge is read with a Mega STE's cache off, as
+ * everywhere, put back as it was (the game may have it off just now). R7's
+ * port bits stay as the chip has them. */
+void ATARI_MD_MusicVbl(void) {
+  unsigned short newest;
+  unsigned char ctl = 0;
+  int k;
+
+  if (md_mste) {
+    ctl = MSTE_CTL;
+    if (ctl & 1) MSTE_CTL = (unsigned char)(ctl & ~1);
+  }
+  newest = *(volatile const unsigned short *)(MD_ROM4_BASE + MD_YM_NEWEST_OFFSET);
+  for (k = 0; k < 2 && newest != md_ym_last && (newest & 0x8000); k++) {
+    unsigned short step = (unsigned short)MD_YM_STEP(md_ym_last + 1);
+    int all = 0;
+    if (md_ym_last == 0 ||
+        ((newest - md_ym_last) & MD_YM_STEP_MASK) >= MD_YM_SLOTS) {
+      step = newest;
+      all = 1;
+    }
+    if (!md_ym_step(step, all)) {
+      md_ym_last = 0;
+      break;
+    }
+    md_ym_last = step;
+  }
+  if (md_mste && (ctl & 1)) MSTE_CTL = ctl;
+}
+
+static int md_hud_redraw;
+
+/* Set when the Accelerator gave up in play, where atari_md_active is also
+ * cleared for a moment to draw through the ST's renderer (show_progress). */
+static volatile int md_gone;
+
+int ATARI_MD_Gone(void) { return md_gone; }
+
 static void give_up(const char *why) {
   atari_md_active = 0;
+  md_gone = 1;
+  md_hud_redraw = 1; /* the bars again, without the Accelerator's sign */
   AddMessage((char *)why, MSG_SYSTEM);
+}
+
+int ATARI_MD_TakeHudRedraw(void) {
+  const int r = md_hud_redraw;
+  md_hud_redraw = 0;
+  return r;
 }
 
 #if defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
@@ -1213,9 +1607,11 @@ void ATARI_MD_AutotestShot(int frame) {
 
 int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
   long ssp;
+  int resume = 0; /* the game clock paused for a snapshot (I_PauseTime) */
 
   if (!atari_md_active || !md_frame_pending) return 0;
   md_frame_pending = 0;
+  md_stat_frame();
 
   /* The frame runs in supervisor mode on a Mega STE, so the cache can be
    * off just while the cartridge is in use (not while building the frame
@@ -1236,12 +1632,20 @@ int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
     sidecart_md_bus_end();
     sidecart_md_super_end(ssp);
     sidecart_md_bus_begin();
+    /* The game clock waits too (preparing the level, warm_up, and the
+     * rest of this frame, the HUD all converted): caught up afterwards, it
+     * ran ten tics a frame on the input of before for as long again, and
+     * seemed not to answer. On again in user mode, at the end (Super). */
+    I_PauseTime();
+    resume = 1;
     if (!send_snapshot()) {
+      I_ResumeTime();
       sidecart_md_bus_end();
       if (++md_snapshot_tries >= 3) give_up("ROTT Accelerator failed: ST renderer");
       return 0;
     }
     md_snapshot_tries = 0;
+    warm_up();
     sidecart_md_bus_end();
     ssp = sidecart_md_super_begin();
     sidecart_md_bus_begin();
@@ -1249,18 +1653,26 @@ int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
 
   /* Pipelined: keep at most one frame in flight before sending another. */
   if (ATARI_MD_PIPELINE) wait_ready(1);
+  md_stat_read();
   read_spotvis();
   sidecart_md_bus_end();
 
   build_frame();
-  if (send_frame()) {
-    if (++md_failures >= 8) {
-      sidecart_md_super_end(ssp);
-      give_up("ROTT Accelerator lost: ST renderer");
-      return 0;
+  {
+    const unsigned long c0 = atari_hz200_count;
+    const int failed = send_frame();
+
+    md_stat_cmd += atari_hz200_count - c0;
+    if (failed) {
+      if (++md_failures >= 8) {
+        sidecart_md_super_end(ssp);
+        if (resume) I_ResumeTime();
+        give_up("ROTT Accelerator lost: ST renderer");
+        return 0;
+      }
+    } else {
+      md_failures = 0;
     }
-  } else {
-    md_failures = 0;
   }
 
   /* The HUD the ST drew, around the view; then the view. */
@@ -1270,6 +1682,7 @@ int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
   copy_ready(screen);
   sidecart_md_bus_end();
   sidecart_md_super_end(ssp);
+  if (resume) I_ResumeTime();
 #if defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
   sidecart_md_bus_begin();
   autotest_report();

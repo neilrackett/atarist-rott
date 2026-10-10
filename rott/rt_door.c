@@ -142,6 +142,9 @@ void Teleport(elevator_t*eptr,int destination);
 void ConnectPushWall (int pwall);
 void SetupPushWall (int pwall);
 void WallMoving (int pwall);
+#if defined(ATARI_NATIVE) && ATARI_LOD
+static void WallMovingSteps (int pwall, int steps);
+#endif
 int SetNextAction(elevator_t*eptr,int action);
 
 /*
@@ -3687,7 +3690,31 @@ void MovePWalls (void)
 			}
 		if (pwallobjlist[pwall]->action==pw_moving)
 			{
+#if defined(ATARI_NATIVE) && ATARI_LOD
+			// Far from the player a wall moves ATARI_LOD_TICS tics at a
+			// time; back in range it catches up first.
+			pwallobj_t * pw = pwallobjlist[pwall];
+			int steps = 1;
+
+			if (ATARI_LodFar(pw->tilex, pw->tiley))
+				{
+				if (++pw->atari_lodtics < ATARI_LOD_TICS)
+					continue;
+				steps = pw->atari_lodtics;
+				pw->atari_lodtics = 0;
+				}
+			else if (pw->atari_lodtics)
+				{
+				steps = pw->atari_lodtics + 1;
+				pw->atari_lodtics = 0;
+				}
+			if (steps > 1)
+				WallMovingSteps (pwall, steps);
+			else
+				WallMoving (pwall);
+#else
 			WallMoving (pwall);
+#endif
 			SD_PanRTP (pwallobjlist[pwall]->soundhandle, pwallobjlist[pwall]->x, pwallobjlist[pwall]->y );
 			}
 		}
@@ -3706,11 +3733,23 @@ void ClearActorat(pwallobj_t*pw)
  txhigh = (tryx + pwrad) >> 16;
  tylow = (tryy - pwrad) >> 16;
  tyhigh = (tryy + pwrad) >> 16;
+#if defined(ATARI_NATIVE)
+ // A pointer down each column (actorat is [x][y]) rather than the whole
+ // index each time: every moving wall, twice every tic. The order the
+ // tiles go in makes no difference.
+ for(x=txlow;x<=txhigh;x++)
+	{void **p = &actorat[x][tylow];
+	 for(y=tylow;y<=tyhigh;y++,p++)
+		if (*p == pw)
+			*p = NULL;
+	}
+#else
  for(y=tylow;y<=tyhigh;y++)
 	 for(x=txlow;x<=txhigh;x++)
 		{if (actorat[x][y] == pw)
 			actorat[x][y] = NULL;
 		}
+#endif
 }
 
 void SetActorat(pwallobj_t*pw)
@@ -3725,9 +3764,18 @@ void SetActorat(pwallobj_t*pw)
  tylow = (tryy - pwrad) >> 16;
  tyhigh = (tryy + pwrad) >> 16;
 
+#if defined(ATARI_NATIVE)
+ // As ClearActorat
+ for(x=txlow;x<=txhigh;x++)
+	{void **p = &actorat[x][tylow];
+	 for(y=tylow;y<=tyhigh;y++)
+		*p++ = pw;
+	}
+#else
  for(y=tylow;y<=tyhigh;y++)
 	 for(x=txlow;x<=txhigh;x++)
 		actorat[x][y] = pw;
+#endif
 }
 
 /*
@@ -3861,6 +3909,130 @@ void WallPushing (int pwall)
 =
 =================
 */
+#if defined(ATARI_NATIVE)
+/* One tic of a moving wall's travel, as WallMoving had it, without the
+ * actorat marks or the pushing around it: 1 if it arrived on a tile (its
+ * state ran out and the next leg is set up), when it is left unmarked. */
+static int WallMoveStep (pwallobj_t * pw, int pwall)
+{
+	int      checkx,checky;
+	int      spot;
+
+	pw->x+=pw->momentumx;
+	pw->y+=pw->momentumy;
+
+	pw->state--;
+
+	checkx=pw->tilex;
+	checky=pw->tiley;
+
+	pw->tilex=pw->x>>16;
+	pw->tiley=pw->y>>16;
+
+	if ((pw->tilex!=checkx) || (pw->tiley!=checky))
+		{
+		int area = MAPSPOT(pw->tilex,pw->tiley,0)-AREATILE;
+
+		if ((area<=0) || (area>NUMAREAS))
+			{
+			area=pw->areanumber;
+			MAPSPOT (pw->tilex, pw->tiley, 0)=(word)(pw->areanumber+AREATILE);
+			}
+		// block crossed into a new block
+		//
+		// the tile can now be walked into
+		//
+		if (areabyplayer[area])
+			{
+			if (pw->speed==2)
+				pw->soundhandle=SD_PlaySoundRTP ( SD_GOWALLSND, pw->x, pw->y );
+			else
+				pw->soundhandle=SD_PlaySoundRTP ( SD_TURBOWALLSND, pw->x, pw->y );
+			}
+
+		if (actorat[pw->tilex][pw->tilex])
+		  ResolveDoorSpace(pw->tilex,pw->tiley);
+		mapseen[checkx][checky] = 0;
+		pw->areanumber = MAPSPOT (pw->tilex, pw->tiley, 0)-AREATILE;
+		//actorat[pw->tilex][pw->tiley]=pw;
+		if ( (pw->tilex==0) || (pw->tilex==127) ||
+			  (pw->tiley==0) || (pw->tiley==127) )
+			{
+         if (W_CheckNumForName("imfree")>=0)
+            {
+            lbm_t *LBM;
+
+            LBM = (lbm_t *) W_CacheLumpNum (W_GetNumForName ("imfree"), PU_CACHE, Cvt_lbm_t, 1);
+            VL_DecompressLBM (LBM,true);
+            VW_UpdateScreen ();
+            I_Delay (2000);
+            }
+			Error ("PushWall Attempting to escape off the edge of the map\nIt is located at x=%d y=%d\nI'm Free!!!!\n",
+					  pw->tilex, pw->tiley);
+			}
+		}
+	if (pw->state==0)
+		{
+		pw->x=(pw->tilex<<16)+0x8000;
+		pw->y=(pw->tiley<<16)+0x8000;
+		spot = MAPSPOT(pw->tilex,pw->tiley,1)-ICONARROWS;
+		if ((spot >= 0) && (spot <= 7))
+			{
+			int area = MAPSPOT(pw->tilex,pw->tiley,0)-AREATILE;
+
+			if ((area<=0) || (area>NUMAREAS))
+				{
+				area=pw->areanumber;
+				MAPSPOT (pw->tilex, pw->tiley, 0)=(word)(pw->areanumber+AREATILE);
+				}
+
+			if (areabyplayer[area] && (abs(spot-pw->dir)==4))
+				SD_PlaySoundRTP ( SD_PUSHWALLHITSND, pw->x, pw->y );
+			pw->dir = spot;
+			}
+		SetupPushWall(pwall);
+		return 1;
+		}
+	return 0;
+}
+
+
+
+
+void WallMoving (int pwall)
+{
+	pwallobj_t * pw;
+
+	pw=pwallobjlist[pwall];
+
+   ClearActorat(pw);
+
+	PushWallMove(pwall);
+	if (!WallMoveStep(pw, pwall))
+      SetActorat(pw);
+}
+
+#if ATARI_LOD
+/* WallMoving for steps tics at once, for ATARI_LOD's far walls: its marks
+ * cleared and set, and actors in its way pushed, once (before the last
+ * step), where a tic each was most of its cost. */
+static void WallMovingSteps (int pwall, int steps)
+{
+	pwallobj_t * pw = pwallobjlist[pwall];
+	int arrived = 0;
+
+	ClearActorat(pw);
+	while (steps-- > 0)
+		{
+		if (steps == 0)
+			PushWallMove(pwall);
+		arrived = WallMoveStep(pw, pwall);
+		}
+	if (!arrived)
+		SetActorat(pw);
+}
+#endif
+#else
 void WallMoving (int pwall)
 {
 	int      checkx,checky;
@@ -3951,6 +4123,8 @@ void WallMoving (int pwall)
 }
 
 
+
+#endif
 
 /*
 =================

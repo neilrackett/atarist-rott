@@ -7,13 +7,13 @@ Version            14
 ; Music Modes
 ; 0  -  Off
 ; 6  -  On
-MusicMode          0
+MusicMode          6
 
 ;
-; FX Modes
+; FX Modes (sound effects need DMA sound: STE, Mega STE)
 ; 0  -  Off
 ; 6  -  On
-FXMode             0
+FXMode             6
 
 ;
 ; Music Volume
@@ -26,9 +26,18 @@ MusicVolume      128
 FXVolume         254
 
 ;
-; Number of Voices
+; Number of Voices: sound effects at once, each costing CPU time
+; while it plays
+; 0 - Automatic: 2 with the ROTT Accelerator, 1 without
 ; 1 - 8
-NumVoices          4
+NumVoices          0
+
+;
+; Sound effects mixing rate (Hz): 6258 costs half the CPU time of 12517,
+; for duller sound
+; 0 - Automatic: 6258 on an 8MHz CPU, 12517 on a Mega STE at 16MHz
+; 6258 or 12517
+FXRate             0
 
 ;
 ; Stereo or Mono

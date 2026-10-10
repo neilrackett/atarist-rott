@@ -1,10 +1,13 @@
 # Makefile for building ROTT for Atari ST, TT & Falcon
+# Copyright (C) 2026 Neil Rackett
+# SPDX-License-Identifier: GPL-2.0-or-later
 #
 #   make             the three games below
 #   make st          ROTT_ST.TOS: the native ST renderers (C2P, ROTT Accelerator)
 #   make sdl         ROTT_SDL.TOS: ROTT's own renderer through SDL, any ST-compatible
 #   make sdl-030     ROTT_030.TOS: the same for 68030 + 68882 (TT, Falcon)
 #   make sidecart    the ROTT Accelerator firmware (make -C sidecart build)
+#   make shareware   HUNTBGIN.zip: the ROTT 1.3 shareware release, from SHAREWARE_DIR
 #
 # Run on the host, the games build through stcmd (atarist-toolkit-docker);
 # inside stcmd (stcmd make st, ...) they build directly. The firmware builds
@@ -36,6 +39,7 @@ ATARI_NOIR_DITHERING ?= 0 # Dither noir output
 ATARI_MD_RENDER ?= 1 # Use the MD/ROTT firmware when present
 ATARI_MD_PIPELINE ?= 1 # MD renders frame N while the ST runs N+1
 ATARI_MD_BLIT ?= 1 # The blitter copies MD frames while the CPU goes on
+ATARI_MD_MUSIC ?= 1 # The MD plays the music, if its firmware can
 ATARI_MD_AUTOTEST ?= 0 # Test runs: start a game, turn N angles a tic
 ATARI_MD_AUTOTEST_DIE ?= 0 # Test runs: the player is killed at frame N
 ATARI_LOGIC_CHECK ?= 0 # Test runs: N tics a frame, scripted, state hashes
@@ -44,11 +48,19 @@ ATARI_LOGIC_CHECK ?= 0 # Test runs: N tics a frame, scripted, state hashes
 
 ATARI_ACTOR_BUDGET ?= 0 # Max actor updates
 ATARI_ACTOR_THROTTLE_DIV ?= 3 # Actor update divisor
+# Game logic level of detail: moving walls and elevator disks far from the
+# player step several tics at once, and disks go last in their areas'
+# actor lists. Close to the original but not exact, so logic-check builds
+# leave it off unless asked.
+ifneq ($(strip $(ATARI_LOGIC_CHECK)),0)
+ATARI_LOD ?= 0
+endif
+ATARI_LOD ?= 1 # Far walls and disks every few tics
 ATARI_C2P_DIRTY_TILES ?= 1 # Update only dirty tiles
 ATARI_C2P_DIRTY_TILE_THRESHOLD ?= 200 # Dirty-tile cutoff
 ATARI_C2P_FAST_COPY ?= 1 # Use fast C2P copy
 ATARI_C2P_STRICT_NO_OVERLAP ?= 1 # Prevent HUD overlap
-ATARI_C2P_VIEW_ZOOM ?= 1 # Auto zoom viewport
+ATARI_C2P_VIEW_ZOOM ?= 1 # View zoom built in (ViewZoom in config.rot, off by default)
 ATARI_CATCHUP_POLL_INTERVAL ?= 4 # Input poll interval
 ATARI_EFFECT_BUDGET ?= 0 # Max effect passes
 ATARI_ENABLE_KBDINT ?= 1 # Use keyboard interrupt
@@ -107,24 +119,22 @@ ATARI_CFLAGS ?= -O3 -fomit-frame-pointer -s -std=gnu99 -m68000 \
 	-DATARI_USE_ASM_HOTSPOTS=$(ATARI_USE_ASM_HOTSPOTS) \
 	-DATARI_SKIP_LIGHTLEVEL=$(ATARI_SKIP_LIGHTLEVEL) -DATARI_SKIP_FIZZLE=$(ATARI_SKIP_FIZZLE) \
 	-DATARI_MD_RENDER=$(ATARI_MD_RENDER) -DATARI_MD_PIPELINE=$(ATARI_MD_PIPELINE) \
-	-DATARI_MD_BLIT=$(ATARI_MD_BLIT) \
+	-DATARI_MD_BLIT=$(ATARI_MD_BLIT) -DATARI_MD_MUSIC=$(ATARI_MD_MUSIC) \
 	-DATARI_MD_AUTOTEST=$(ATARI_MD_AUTOTEST) -DATARI_LOGIC_CHECK=$(ATARI_LOGIC_CHECK) \
+	-DATARI_LOD=$(ATARI_LOD) \
 	-DATARI_MD_AUTOTEST_DIE=$(ATARI_MD_AUTOTEST_DIE)
-ATARI_LDFLAGS ?= -s -nostdlib -L/freemint/libcmini/lib /freemint/libcmini/lib/crt0.o -m68000
+ATARI_LDFLAGS ?= -s -nostdlib -L/freemint/libcmini/lib -m68000
 ATARI_LIBS ?= -lcmini -lgcc
 ATARI_INCLUDES ?= -I$(SRCDIR) -I$(SRCDIR)/audiolib -Isidecart/include -Ilib/xpad/src -I/freemint/libcmini/include
 SDL_ONLY_SOURCES := $(SRCDIR)/atari_sdl.c $(SRCDIR)/audio_stubs.c $(SRCDIR)/modexlib_sdl.c
+# Sound effects are rott/atari_sfx.c (the FX_ calls, on DMA sound), in place
+# of the DOS library's fx_man.c, multivoc.c and its DMA driver.
 ATARI_AUDIOLIB_SOURCES := \
 	$(SRCDIR)/audiolib/atari_stubs.c \
 	$(SRCDIR)/audiolib/atari_music.c \
 	$(SRCDIR)/audiolib/atari_music_api.c \
 	$(SRCDIR)/audiolib/debugio.c \
-	$(SRCDIR)/audiolib/dsl.c \
-	$(SRCDIR)/audiolib/fx_man.c \
 	$(SRCDIR)/audiolib/ll_man.c \
-	$(SRCDIR)/audiolib/multivoc.c \
-	$(SRCDIR)/audiolib/mv_mix.c \
-	$(SRCDIR)/audiolib/mvreverb.c \
 	$(SRCDIR)/audiolib/nodpmi.c \
 	$(SRCDIR)/audiolib/pitch.c \
 	$(SRCDIR)/audiolib/user.c \
@@ -132,13 +142,22 @@ ATARI_AUDIOLIB_SOURCES := \
 ATARI_SOURCES := $(filter-out $(SRCDIR)/amiga_%.c $(SRCDIR)/dosutil.c $(SRCDIR)/dukemusc.c $(SRCDIR)/fx_man.c $(SRCDIR)/lookups.c $(SRCDIR)/vocdecode.c $(SDL_ONLY_SOURCES),$(wildcard $(SRCDIR)/*.c)) $(ATARI_AUDIOLIB_SOURCES) \
 	lib/xpad/src/xpad.c
 ATARI_ASM_SOURCES := $(SRCDIR)/sidecart_stubs.S $(SRCDIR)/atari_md_s.S
-ATARI_OBJECTS := $(addprefix $(OBJDIR)/,$(ATARI_SOURCES:.c=.o) $(ATARI_ASM_SOURCES:.S=.o))
+# libcmini's crt0, and a clear of the BSS first (see the file): linked first.
+ATARI_CRT0 := $(OBJDIR)/$(SRCDIR)/atari_crt0.o
+ATARI_OBJECTS := $(ATARI_CRT0) $(addprefix $(OBJDIR)/,$(ATARI_SOURCES:.c=.o) $(ATARI_ASM_SOURCES:.S=.o))
 ATARI_OUTPUT ?= $(BUILDDIR)/ROTT_ST.TOS
+# The shareware data the games use: the WAD, the levels (RTC: Comm-bat),
+# the remote ridicule sounds (the sound effects need its REMOSTRT), and the
+# demos the menu plays.
 RUNTIME_DATA_FILES := \
 	$(DATADIR)/HUNTBGIN.WAD \
 	$(DATADIR)/HUNTBGIN.RTL \
 	$(DATADIR)/HUNTBGIN.RTC \
-	$(DATADIR)/REMOTE1.RTS
+	$(DATADIR)/REMOTE1.RTS \
+	$(DATADIR)/DEMO1_3.DMO \
+	$(DATADIR)/DEMO2_3.DMO \
+	$(DATADIR)/DEMO3_3.DMO \
+	$(DATADIR)/DEMO4_3.DMO
 RUNTIME_CONFIG_FILES := \
 	$(SRCDIR)/battle.rot \
 	$(SRCDIR)/scores.rot
@@ -170,7 +189,26 @@ endif
 sidecart:
 	$(MAKE) -C sidecart build
 
-.PHONY: games st sdl sdl-030 sidecart
+# The shareware release (ROTT 1.3) as Apogee's installer lays it out, for
+# the release page: the data the games use and the DOS programs with it.
+# VENDOR.DOC lets it be passed on only whole and unmodified, so this is every
+# file of a clean install, by name, never whatever a played-in folder holds.
+SHAREWARE_DIR ?= tmp/ROTT_DOS
+SHAREWARE_ZIP := $(BUILDDIR)/HUNTBGIN.zip
+SHAREWARE_FILES := $(addprefix $(SHAREWARE_DIR)/, \
+	HUNTBGIN.WAD HUNTBGIN.RTL HUNTBGIN.RTC REMOTE1.RTS \
+	DEMO1_3.DMO DEMO2_3.DMO DEMO3_3.DMO DEMO4_3.DMO \
+	ROTT.EXE SETUP.EXE SNDSETUP.EXE ROTTIPX.EXE ROTTSER.EXE ROTTHELP.EXE \
+	README.EXE MODEM.PCK APOGEE.BAT VENDOR.DOC \
+	CATALOG.EXE DEALERS.EXE ORDER.FRM SWCBBS.EXE 3DRCAT.EXE 3DRORDER.FRM)
+
+shareware: $(SHAREWARE_ZIP)
+
+$(SHAREWARE_ZIP): $(SHAREWARE_FILES) Makefile | $(BUILDDIR)
+	$(RM) $@
+	zip -X -j -9 $@ $(SHAREWARE_FILES)
+
+.PHONY: games st sdl sdl-030 sidecart shareware
 .PHONY: FORCE rott-huntbgin rott-darkwar rott-rottcd rott-rottsite rott-dev rott-68882 stage-runtime-files atari-stage-runtime-files
 .SECONDARY: $(ATARI_OBJECTS)
 FORCE:
@@ -270,7 +308,7 @@ sdl-030: sdl-stage-runtime-files $(SDL_030_OUTPUT)
 endif
 
 clean:
-	$(RM) -r $(ATARI_OUTPUT) $(SDL_OUTPUT) $(SDL_030_OUTPUT) $(OBJDIR) $(SDL_OBJDIR) $(SDL_030_OBJDIR)
+	$(RM) -r $(ATARI_OUTPUT) $(SDL_OUTPUT) $(SDL_030_OUTPUT) $(SHAREWARE_ZIP) $(OBJDIR) $(SDL_OBJDIR) $(SDL_030_OBJDIR)
 
 # The game in EmuMD (sidecart/emu/emumd): Hatari with the ROTT Accelerator
 # emulated on the cartridge port. Run on the host, not in stcmd: builds
@@ -344,7 +382,10 @@ $(ATARI_FLAGS_STAMP): FORCE | $(OBJDIR)
 
 $(OBJDIR)/%.o: %.c $(ATARI_FLAGS_STAMP)
 	mkdir -p $(dir $@)
-	$(ATARI_CC) $(ATARI_CFLAGS) $(ATARI_INCLUDES) -c $< -o $@
+	$(ATARI_CC) $(ATARI_CFLAGS) $(ATARI_INCLUDES) -MMD -MP -c $< -o $@
+
+# Headers too: an object rebuilds when one it includes changes.
+-include $(ATARI_OBJECTS:.o=.d)
 
 $(OBJDIR)/%.o: %.S $(ATARI_FLAGS_STAMP)
 	mkdir -p $(dir $@)

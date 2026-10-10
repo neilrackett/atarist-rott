@@ -52,7 +52,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "rt_str.h"
 #if defined(ATARI_NATIVE)
-#include "dsl.h"
+#include "atari_sfx.h"
+#include "atari_music.h"
 #endif
 
 #if (SHAREWARE==0)
@@ -250,7 +251,7 @@ int SD_Startup ( boolean bombonerror )
       return (0);
 
 #if defined(ATARI_NATIVE)
-   if (!DSL_HasDMASound())
+   if (!ATARI_SFX_HasDMA())
       {
       // No STE DMA hardware: keep the game running without SFX.
       return 0;
@@ -309,13 +310,18 @@ int SD_Startup ( boolean bombonerror )
 
 #if ATARI_SDL
    NumVoices = 1;
-#else
+#elif !defined(ATARI_NATIVE)
    NumVoices = 4;
 #endif
    NumChannels = 1;
    NumBits = 8;
-   
+
+#if defined(ATARI_NATIVE)
+   // NumVoices from sound.rot, 0 for automatic: see atari_sfx.c.
+   voices   = ATARI_SFX_Voices(NumVoices);
+#else
    voices   = NumVoices;
+#endif
    channels = NumChannels;
    bits     = NumBits;
 
@@ -400,6 +406,13 @@ int SD_PlayIt ( int sndnum, int angle, int distance, int pitch )
 #if (SOUNDTEST == 1)
    SoftError("SOUND =%d \n",sndnum);
 #endif
+#endif
+
+#if defined(ATARI_NATIVE)
+   // Sounds that have ended handed back first (their count below goes
+   // down): FX_SoundActive no longer does that for every voice, and a
+   // frame can be several tics.
+   ATARI_SFX_Service();
 #endif
 
    if (!(sounds[sndnum].flags & SD_WRITE))
@@ -1202,6 +1215,16 @@ void MU_PlaySong ( int num )
    lastsongnumber=num;
 
    lump = W_GetNumForName(rottsongs[num].lumpname);
+#if defined(ATARI_NATIVE)
+   // The ROTT Accelerator plays it from its own copy of the WAD if it can,
+   // so the ST needn't load it at all.
+   if (MUSIC_PlaySongLump(lump, (rottsongs[num].loopflag == loop_yes) ?
+                          MUSIC_LoopSong : MUSIC_PlayOnce) == MUSIC_Ok)
+      {
+      MU_SetVolume (MUvolume);
+      return;
+      }
+#endif
    size = W_LumpLength(lump);
 
    currentsong=W_CacheLumpNum(lump,PU_STATIC, CvtNull, 1);

@@ -762,7 +762,7 @@ void I_ShutdownKeyboard (void)
 static int ticoffset;    /* offset for SDL_GetTicks() */
 static int ticbase;      /* game-supplied base */
 
-int GetTicCount (void)
+int (GetTicCount) (void)
 {
 #if defined(ATARI_NATIVE)
 #ifndef ATARI_DEBUG

@@ -55,6 +55,18 @@ static void wad_dbg(const char *msg) { Cconws(msg); }
 #endif
 
 #if defined(__MINT__)
+#if defined(ATARI_NATIVE)
+// toupper without the call for the letters (lump names are ASCII)
+static __inline__ unsigned wad_upper(unsigned c)
+{
+    if (c >= 'a' && c <= 'z')
+        return c - ('a' - 'A');
+    return (c >= 0x80) ? (unsigned char)toupper(c) : c;
+}
+#else
+#define wad_upper(c) toupper(c)
+#endif
+
 static int wad_name_eq(const char *lumpname, const char *name8)
 {
     int i;
@@ -68,7 +80,7 @@ static int wad_name_eq(const char *lumpname, const char *name8)
             b = 0;
         if (a == 0 || b == 0)
             return a == b;
-        if (toupper(a) != toupper(b))
+        if (wad_upper(a) != wad_upper(b))
             return 0;
     }
     return 1;
@@ -99,6 +111,84 @@ void            **lumpcache;
 //=============
 
 static lumpinfo_t      *lumpinfo;              // location of each lump on disk
+
+#if defined(ATARI_NATIVE)
+//
+// Lump names by hash, for W_CheckNumForName: its search upper-cased every
+// character of every name, 3ms a lookup on a Mega STE, and setting up a
+// level makes thousands. Built when first needed (again if a file was
+// added since), under the search's own rules: the first lump of a name
+// wins, a name ends at a space or a 0, and case is ignored. A name in
+// that form already (upper case, 0 after its end: all of ROTT's) matches
+// a key in two compares; any other is compared as the search did.
+//
+#define WAD_HASH_SIZE 1024
+static unsigned short *wad_hash_head;   // WAD_HASH_SIZE, 0xFFFF: none
+static unsigned short *wad_hash_next;   // one a lump
+static byte *wad_hash_plain;            // a bit a lump: its name is a key
+static int wad_hash_lumps = -1;         // numlumps it was built for
+
+typedef union
+{
+   char c[8];
+   unsigned long l[2];
+} wad_key_t;
+
+// name as compared (upper case to its end, at most 8, 0 after) into key;
+// returns its hash
+static unsigned wad_key(const char *name, wad_key_t *key)
+{
+   unsigned h = 0;
+   int i;
+
+   key->l[0] = key->l[1] = 0;
+   for (i = 0; i < 8; i++)
+      {
+      unsigned c = (unsigned char)name[i];
+
+      if (c == ' ' || c == 0)
+         break;
+      c = wad_upper(c); // as wad_name_eq compares them
+      key->c[i] = (char)c;
+      h = (h << 5) - h + c;
+      }
+   return (h ^ (h >> 10)) & (WAD_HASH_SIZE - 1);
+}
+
+static int wad_hash_build(void)
+{
+   int i;
+
+   free(wad_hash_head);
+   free(wad_hash_next);
+   free(wad_hash_plain);
+   wad_hash_head = NULL;
+   wad_hash_next = NULL;
+   wad_hash_plain = NULL;
+   wad_hash_lumps = -1;
+   if (numlumps <= 0 || numlumps >= 0xFFFF)
+      return 0;
+   wad_hash_head = malloc(WAD_HASH_SIZE * sizeof(*wad_hash_head));
+   wad_hash_next = malloc(numlumps * sizeof(*wad_hash_next));
+   wad_hash_plain = calloc((numlumps + 7) >> 3, 1);
+   if (wad_hash_head == NULL || wad_hash_next == NULL || wad_hash_plain == NULL)
+      return 0; // the plain search, then
+   memset(wad_hash_head, 0xFF, WAD_HASH_SIZE * sizeof(*wad_hash_head));
+   // from the last, so each chain runs first lump to last
+   for (i = numlumps - 1; i >= 0; i--)
+      {
+      wad_key_t key;
+      const unsigned h = wad_key(lumpinfo[i].name, &key);
+
+      wad_hash_next[i] = wad_hash_head[h];
+      wad_hash_head[h] = (unsigned short)i;
+      if (!memcmp(lumpinfo[i].name, key.c, 8))
+         wad_hash_plain[i >> 3] |= (byte)(1 << (i & 7));
+      }
+   wad_hash_lumps = numlumps;
+   return 1;
+}
+#endif
 
 
 #if (DATACORRUPTIONTEST == 1)
@@ -425,7 +515,8 @@ int     W_CheckNumForName (char *name)
         lumpinfo_t      *endlump;
 
 #if defined(ATARI_NATIVE)
-        if (!strcmp(name, "tables") || !strcmp(name, "TABLES"))
+        if ((name[0] == 't' || name[0] == 'T') &&
+            (!strcmp(name, "tables") || !strcmp(name, "TABLES")))
         {
                 char buf[64];
                 sprintf(buf, "W_CheckNumForName: %s numlumps=%d\r\n", name, numlumps);
@@ -435,15 +526,52 @@ int     W_CheckNumForName (char *name)
 
 // make the name into two integers for easy compares
 
+#if defined(ATARI_NATIVE)
+        {
+           // strncpy and strupr in one, without their calls
+           int i;
+
+           for (i = 0; i < 8 && name[i]; i++)
+              name8[i] = (char)wad_upper((unsigned char)name[i]);
+           for (; i < 9; i++)
+              name8[i] = 0;
+        }
+#else
         strncpy (name8,name,8);
         name8[8] = 0;                   // in case the name was a fill 8 chars
         strupr (name8);                 // case insensitive
+#endif
 
 
+#if defined(ATARI_NATIVE)
+        if (wad_hash_lumps == numlumps || wad_hash_build())
+           {
+           wad_key_t key;
+           unsigned short i = wad_hash_head[wad_key(name8, &key)];
+
+           while (i != 0xFFFF)
+              {
+              const unsigned long *n = (const unsigned long *)lumpinfo[i].name;
+
+              if ((wad_hash_plain[i >> 3] & (1 << (i & 7))) ?
+                     (n[0] == key.l[0] && n[1] == key.l[1]) :
+                     wad_name_eq(lumpinfo[i].name, name8))
+                 return i;
+              i = wad_hash_next[i];
+              }
+           lump_p = endlump = lumpinfo; // not there
+           }
+        else
+           {
+           lump_p = lumpinfo;
+           endlump = lumpinfo + numlumps;
+           }
+#else
 // scan backwards so patch lump files take precedence
 
         lump_p = lumpinfo;
         endlump = lumpinfo + numlumps;
+#endif
 
         while (lump_p != endlump)
            {

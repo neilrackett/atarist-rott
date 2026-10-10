@@ -19,7 +19,7 @@ This repository contains 3 versions of ROTT:
 All builds:
 
 - Require 4MB RAM
-- Need you to install or download the DOS version of [ROTT shareware ("The Hunt Begins")](https://archive.org/details/rott_shareware)
+- Need the DOS version of ROTT shareware ("The Hunt Begins"), which is on the releases page as [`HUNTBGIN.zip`](https://github.com/neilrackett/atarist-rott/releases/download/latest/HUNTBGIN.zip)
 - Support keyboard and mouse controls
 
 Stable builds are avilable on the [releases page](https://github.com/neilrackett/atarist-rott/releases).
@@ -36,13 +36,14 @@ To achieve this, optimisations include:
 
 - 16 colours with dithering
 - Static intro screens
-- Automatic 2x or 4x game area zoom based on selected view size
+- Optional 2x or 4x game area zoom for small view sizes (`ViewZoom 1` in `CONFIG.ROT`)
 - Event-driven menus
 - Optimised keyboard input handling
 - Blitter chip HUD updates (if available)
 - Skip precache, fades, fizzle, advanced lighting
 - Low-memory mode always on
 - Using lower-precision numbers for internal calculations
+- Distant moving walls, elevator disks and idle enemies out of sight are updated less often
 - And more!
 
 | Model    | Music | SFX | Typical FPS |
@@ -54,6 +55,10 @@ To achieve this, optimisations include:
 So, in terms of raw FPS it's 2-3x faster than the SDL build, which is great to see, but not quite as playable as I would like. Please feel free to fork it and send me a PR if you think you can squeeze a few more FPS out of it!
 
 FPS based on running ROTT with automatic detail selection enabled.
+
+Music plays ROTT's MIDI songs on the ST's own sound chip, so it works on any ST. Set `MusicMode` to `0` in `SOUND.ROT` to turn it off, or `MusicVolume` (0-255) to change its volume. With the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device) (firmware v1.4.0-beta.4 or later), the Multi-device plays the songs and your ST just copies the notes to its sound chip, which gives an 8MHz ST about 7% of its time back.
+
+Sound effects use the STE's DMA sound, so they need an STE or Mega STE (an ST just plays without them). Set `FXMode` to `0` in `SOUND.ROT` to turn them off. `NumVoices` sets how many play at once, from 1 to 8; each one costs CPU time while it plays (about 5% of a Mega STE for one), and nothing when it's quiet. The default, `0`, plays one at a time, or two with the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device). On an 8MHz ST they're mixed at 6258Hz rather than 12517Hz, for half the CPU time: set `FXRate` to `12517` for the full rate.
 
 ## Rise of the Triad (SDL)
 
@@ -75,7 +80,7 @@ The SDL versions keep their settings in `SDLCONF.ROT` and `SDLSOUND.ROT`, so the
 
 ## ROTT Accelerator (SidecarTridge Multi-device)
 
-If you have a [SidecarTridge Multi-device](https://store.sidecartridge.com/products/sidecartridge-multi-device), the ROTT Accelerator can take over the heavy lifting: your ST keeps running the game, including the HUD, menus, sound and input, while the Multi-device's RP2040 renders the 3D view (walls, floors, ceilings, skies and sprites) using ROTT's own renderer and hands each finished frame back to your ST.
+If you have a [SidecarTridge Multi-device](https://store.sidecartridge.com/products/sidecartridge-multi-device), the ROTT Accelerator can take over the heavy lifting: your ST keeps running the game, including the HUD, menus, sound effects and input, while the Multi-device's RP2040 renders the 3D view (walls, floors, ceilings, skies and sprites) using ROTT's own renderer and hands each finished frame back to your ST. It plays the music too.
 
 As well as taking the load off the ST, it brings back some of what the ST version had to cut:
 
@@ -83,7 +88,7 @@ As well as taking the load off the ST, it brings back some of what the ST versio
 - Full resolution at every view size, rather than a 2x or 4x zoom, up to the full width between the status bars
 - On-screen messages
 
-`ROTT_ST.TOS` looks for the ROTT Accelerator when it starts and falls back to the ST renderer if it isn't there, so there's still only one version to install.
+`ROTT_ST.TOS` looks for the ROTT Accelerator when it starts and falls back to the ST renderer if it isn't there, so there's still only one version to install. While the Accelerator is rendering, a small yellow lightning bolt shows on the bottom status bar.
 
 See the [ROTT Accelerator readme](sidecart/README.md) for installation, testing and build instructions.
 
@@ -108,8 +113,7 @@ See the [ROTT Accelerator readme](sidecart/README.md) for installation, testing 
 
 ## Installation
 
-- Install the shareware version of ROTT for DOS using DOSbox, or [download the files from Internet.org](https://archive.org/details/rott_shareware)
-- Copy the installation folder to your Atari's hard disk
+- Download [`HUNTBGIN.zip`](https://github.com/neilrackett/atarist-rott/releases/download/latest/HUNTBGIN.zip), the ROTT 1.3 shareware release, from the [releases page](https://github.com/neilrackett/atarist-rott/releases) and unzip it into a folder on your Atari's hard disk (or install the [shareware from archive.org](https://archive.org/details/rott_shareware) for DOS using DOSBox and copy the installation folder across)
 - Copy `ROTT_ST.TOS`, `ROTT_SDL.TOS` and/or `ROTT_030.TOS` to the the same folder (the 030 build runs 20-30% faster on TT/Falcon)
 - Optionally, install the ROTT Accelerator on your SidecarTridge Multi-device (see the [ROTT Accelerator readme](sidecart/README.md))
 - Run `ROTT_ST.TOS`, `ROTT_SDL.TOS` or `ROTT_030.TOS`
@@ -125,9 +129,10 @@ make st          # ROTT_ST.TOS
 make sdl         # ROTT_SDL.TOS
 make sdl-030     # ROTT_030.TOS
 make sidecart    # the ROTT Accelerator firmware
+make shareware   # HUNTBGIN.zip: the ROTT 1.3 shareware release, from tmp/ROTT_DOS
 ```
 
-The games are built through `stcmd`, so you can run these from your own shell (or run `stcmd make st` and so on yourself). The firmware needs the Pico toolchain too: see the [ROTT Accelerator readme](sidecart/README.md). Everything goes to `dist/`, along with the config files and, if you put the shareware files in `tmp/ROTT`, the game data, so `dist/` is ready to run in an emulator or copy to your Atari.
+The games are built through `stcmd`, so you can run these from your own shell (or run `stcmd make st` and so on yourself). The firmware needs the Pico toolchain too: see the [ROTT Accelerator readme](sidecart/README.md). Everything goes to `dist/`, along with the config files and, if you unzip `HUNTBGIN.zip` into `tmp/ROTT`, the game data, so `dist/` is ready to run in an emulator or copy to your Atari.
 
 There's loads of build settings you can try too, just take a look at `Makefile`, including the ability to build ROTT Noir, a greyscale version that can be built with or without dithering:
 

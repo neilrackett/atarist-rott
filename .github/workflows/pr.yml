@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Neil Rackett
+# SPDX-License-Identifier: GPL-2.0-or-later
+
 name: PR
 
 # Does it build? That is the whole job. This runs the same builds as
@@ -11,6 +14,15 @@ on:
   pull_request:
     branches:
       - main
+    # Documentation cannot break a build, so a pull request that changes
+    # nothing else does not run (the same list as release.yml). Nothing
+    # on main requires this check: if a rule ever does, these pull
+    # requests would wait on it forever, so drop this filter then.
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
+      - '**/COPYING'
+      - '**/LICENSE'
   workflow_dispatch:
 
 # Read-only: this workflow runs code from a contributor's branch, so it

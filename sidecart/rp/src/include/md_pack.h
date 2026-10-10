@@ -79,6 +79,13 @@ const uint8_t *md_pack_lump_fixed(int lump);
  * `busy` returns true. */
 void md_pack_service(bool (*busy)(void));
 
+/* The open WAD for md_music.c: lump `lump`'s offset and size in the file
+ * (false if there is none), and a read from it (Core 0, between frames).
+ * md_pack_wad_ok says md_pack_open_wad found the WAD the ST named. */
+bool md_pack_wad_ok(void);
+bool md_pack_wad_lump(int lump, uint32_t *pos, uint32_t *size);
+bool md_pack_wad_read(uint32_t pos, void *dst, uint32_t len);
+
 /* Demand-loader counters, for the status block. */
 extern volatile uint32_t md_pack_loads;
 extern volatile uint32_t md_pack_evicts;

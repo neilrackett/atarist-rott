@@ -1087,6 +1087,30 @@ void ReadConfig (void)
    ConfigLoaded = true;
 }
 
+#if defined(ATARI_NATIVE)
+// The number after key at the start of a sound.rot or config.rot line, if it
+// is that key.
+static boolean AtariSoundValue (const char *line, const char *line_end,
+                                const char *key, long *value)
+{
+   size_t len = strlen(key);
+   const char *q = line + len;
+   char *qend;
+
+   if ((size_t)(line_end - line) <= len || strncmp(line, key, len) ||
+       !isspace((unsigned char)*q))
+      return false;
+   while (q < line_end && isspace((unsigned char)*q))
+      q++;
+   *value = strtol(q, &qend, 10);
+   return qend > q;
+}
+#endif
+
+#if defined(ATARI_NATIVE)
+int AtariFXRate = 0; /* see atari_sfx.h */
+#endif
+
 void ReadAtariSoundToggles (void)
 {
 #if defined(ATARI_NATIVE)
@@ -1096,6 +1120,10 @@ void ReadAtariSoundToggles (void)
    long size = 0;
    int parsed_music_mode = MusicMode;
    int parsed_fx_mode = FXMode;
+   int parsed_voices = 0; // automatic: see atari_sfx.c
+   int parsed_fx_volume = FXvolume;
+   int parsed_music_volume = MUvolume;
+   int parsed_fx_rate = 0;
 
    GetPathFromEnvironment(filename, ApogeePath, SoundName);
    if (stat(filename, &st) == 0)
@@ -1120,28 +1148,20 @@ void ReadAtariSoundToggles (void)
 
             if (line < line_end && *line != ';')
                {
-               if ((line_end - line) > 9 && !strncmp(line, "MusicMode", 9))
-                  {
-                  long v;
-                  char *q = line + 9;
-                  char *qend;
-                  while (q < line_end && isspace((unsigned char)*q))
-                     q++;
-                  v = strtol(q, &qend, 10);
-                  if (qend > q)
-                     parsed_music_mode = (v == 0) ? 0 : 6;
-                  }
-               else if ((line_end - line) > 6 && !strncmp(line, "FXMode", 6))
-                  {
-                  long v;
-                  char *q = line + 6;
-                  char *qend;
-                  while (q < line_end && isspace((unsigned char)*q))
-                     q++;
-                  v = strtol(q, &qend, 10);
-                  if (qend > q)
-                     parsed_fx_mode = (v == 0) ? 0 : 6;
-                  }
+               long v;
+
+               if (AtariSoundValue(line, line_end, "MusicMode", &v))
+                  parsed_music_mode = (v == 0) ? 0 : 6;
+               else if (AtariSoundValue(line, line_end, "FXMode", &v))
+                  parsed_fx_mode = (v == 0) ? 0 : 6;
+               else if (AtariSoundValue(line, line_end, "NumVoices", &v))
+                  parsed_voices = (v < 0) ? 0 : (v > 8 ? 8 : (int)v);
+               else if (AtariSoundValue(line, line_end, "FXVolume", &v))
+                  parsed_fx_volume = (v < 0) ? 0 : (v > 255 ? 255 : (int)v);
+               else if (AtariSoundValue(line, line_end, "MusicVolume", &v))
+                  parsed_music_volume = (v < 0) ? 0 : (v > 255 ? 255 : (int)v);
+               else if (AtariSoundValue(line, line_end, "FXRate", &v))
+                  parsed_fx_rate = (v < 0) ? 0 : (int)v;
                }
 
             while (p < end && (*p == '\n' || *p == '\r'))
@@ -1154,6 +1174,61 @@ void ReadAtariSoundToggles (void)
 
    MusicMode = parsed_music_mode;
    FXMode = parsed_fx_mode;
+   NumVoices = parsed_voices;
+   FXvolume = parsed_fx_volume;
+   MUvolume = parsed_music_volume;
+   AtariFXRate = parsed_fx_rate;
+#endif
+}
+
+//******************************************************************************
+//
+// ReadAtariConfig () - the native build's own settings in config.rot, which
+// it otherwise doesn't read: each found by its key wherever it is.
+//
+//******************************************************************************
+
+void ReadAtariConfig (void)
+{
+#if defined(ATARI_NATIVE)
+   extern int atari_view_zoom;
+   char filename[128];
+   struct stat st;
+   void *buffer = NULL;
+   long size = 0;
+
+   GetPathFromEnvironment(filename, ApogeePath, ConfigName);
+   if (stat(filename, &st) != 0)
+      return;
+   size = LoadFile(filename, &buffer);
+   if (buffer && size > 0)
+      {
+      char *p = (char *)buffer;
+      char *end = p + size;
+
+      while (p < end)
+         {
+         char *line = p;
+         char *line_end;
+
+         while (p < end && *p != '\n' && *p != '\r')
+            p++;
+         line_end = p;
+         while (line < line_end && isspace((unsigned char)*line))
+            line++;
+         if (line < line_end && *line != ';')
+            {
+            long v;
+
+            if (AtariSoundValue(line, line_end, "ViewZoom", &v))
+               atari_view_zoom = (v != 0);
+            }
+         while (p < end && (*p == '\n' || *p == '\r'))
+            p++;
+         }
+      }
+   if (buffer)
+      SafeFree(buffer);
 #endif
 }
 

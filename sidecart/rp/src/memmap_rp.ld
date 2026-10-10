@@ -1,4 +1,5 @@
 /* Based on GCC ARM embedded samples.
+   Modified: 2026 Neil Rackett, for the ROTT Accelerator.
    Defines the following symbols for use by code:
     __exidx_start
     __exidx_end

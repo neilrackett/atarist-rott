@@ -3,6 +3,7 @@
  * Author: Diego Parrilla Santamaría
  * Date: July 2023, February 2026
  * Copyright: 2023-2026 - GOODDATA LABS SL
+ * Modified: 2026 Neil Rackett, for the ROTT Accelerator
  * Description: Header file for basic traces and debug messages
  */
 

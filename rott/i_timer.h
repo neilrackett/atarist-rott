@@ -33,6 +33,16 @@
 // Called by D_DoomLoop,
 // returns current time in tics.
 int I_GetTime (void);
+#if defined(ATARI_NATIVE) && !(ATARI_LOGIC_CHECK > 0)
+// Most calls, without one: the 200Hz count has not moved since the last
+// answer (dozens of calls a frame, at 340 cycles each through GetTicCount).
+// atari_time_hz200 is all ones while the count is not ours (i_timer.c).
+extern volatile unsigned long atari_hz200_count;
+extern unsigned long atari_time_hz200;
+extern int atari_time_tics;
+#define I_GetTime() \
+   ((atari_hz200_count == atari_time_hz200) ? atari_time_tics : (I_GetTime)())
+#endif
 
 // returns current time in ms
 int I_GetTimeMS (void);
@@ -47,6 +57,11 @@ void I_InitTimer(void);
 void I_WaitVBL(int count);
 #if defined(ATARI_NATIVE)
 void I_HookTimer(int on);
+// The game clock stops between these (they nest): for waits inside play
+// the game shouldn't catch up on afterwards (the Accelerator preparing a
+// level). I_GetTimeMS goes on.
+void I_PauseTime(void);
+void I_ResumeTime(void);
 #endif
 
 #endif

@@ -171,7 +171,8 @@ int DPMI_GetDOSMemory( void **ptr, long *descriptor, unsigned length )
 {
 #if defined(__MINT__)
 	void *p = (void *)Mxalloc(length, 0); /* ST-RAM */
-	if (!p)
+	/* TOS 1.x has no Mxalloc: EINVFN, not NULL */
+	if ((long)p <= 0)
 		p = (void *)malloc(length);
 	*ptr = p;
 	*descriptor = (long) *ptr;

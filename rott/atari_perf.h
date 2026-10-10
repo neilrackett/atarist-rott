@@ -37,6 +37,11 @@ extern unsigned int atari_frame_sprite_draws;
 extern unsigned int atari_frame_effect_passes;
 extern int atari_frame_tics;
 
+/* For the Help key's overlay: game logic tics run, and the 200Hz ticks
+ * spent running them (UpdateGameObjects). */
+extern unsigned long atari_logic_tics;
+extern unsigned long atari_logic_hz200;
+
 void ATARI_PerfBeginFrame(int frame_tics);
 void ATARI_PerfEndFrame(void);
 int ATARI_PerfTryUseEffectPass(void);

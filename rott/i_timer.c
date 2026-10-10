@@ -41,9 +41,6 @@
 #define TOS_HZ_200_ADDR 0x4BA
 
 static unsigned long basetime = 0;
-static unsigned long music_service_hz200 = 0;
-
-extern void MUSIC_Service(void);
 
 /* A copy of _hz_200 the program can read without Super(), which costs two
  * GEMDOS traps and was called dozens of times a frame. Timer C (the
@@ -52,6 +49,12 @@ extern void MUSIC_Service(void);
 volatile unsigned long atari_hz200_count;
 void *atari_old_timer_c;
 static int timer_hooked;
+
+/* The last answer and the 200 Hz count it was for, all ones while the
+ * count is not hooked (so atari_hz200_count is not moving): see I_GetTime
+ * in i_timer.h, which answers from these without a call. */
+unsigned long atari_time_hz200 = ~0UL;
+int atari_time_tics;
 
 void atari_timer_c(void);
 __asm__(
@@ -81,6 +84,7 @@ void I_HookTimer(int on)
     else
     {
         *(void *volatile *)0x114 = atari_old_timer_c;
+        atari_time_hz200 = ~0UL; /* the copy stops: no answers from it */
     }
     __asm__ volatile("move.w %0,%%sr" : : "d"(sr) : "cc");
     Super(ssp);
@@ -134,9 +138,29 @@ static int hz200_to_tics(unsigned long ticks)
     return (int)(second_tics + tics_in_second[d]);
 }
 
-/* The last answer and the 200 Hz count it was for: see I_GetTime. */
-static unsigned long last_hz200 = ~0UL;
-static int last_tics;
+
+#if defined(ATARI_NATIVE)
+/* The 200Hz ticks the game clock leaves out (I_PauseTime..I_ResumeTime):
+ * waits inside play the game shouldn't catch up on afterwards, ten tics a
+ * frame with the input of before the wait, as if not answering. */
+static unsigned long skip_hz200, pause_hz200;
+static int paused;
+
+void I_PauseTime(void)
+{
+    if (!paused++)
+        pause_hz200 = tos_hz200();
+}
+
+void I_ResumeTime(void)
+{
+    if (paused && !--paused)
+    {
+        skip_hz200 += tos_hz200() - pause_hz200;
+        atari_time_hz200 = ~0UL; /* the next answer worked out afresh */
+    }
+}
+#endif
 
 static int __attribute__((noinline)) get_time(unsigned long ticks)
 {
@@ -149,13 +173,6 @@ static int __attribute__((noinline)) get_time(unsigned long ticks)
     if (ATARI_DEBUG && dbg_count < 8)
         Cconws("ROTT: I_GetTime entry\r\n");
 #endif
-    if (music_service_hz200 == 0)
-        music_service_hz200 = ticks;
-    while ((ticks - music_service_hz200) >= 4)
-    {
-        MUSIC_Service();
-        music_service_hz200 += 4;
-    }
 #if defined(ATARI_NATIVE)
     if (ATARI_DEBUG && dbg_count < 8)
         Cconws("ROTT: I_GetTime after hz200\r\n");
@@ -163,6 +180,9 @@ static int __attribute__((noinline)) get_time(unsigned long ticks)
     if (basetime == 0)
         basetime = ticks;
     ticks -= basetime;
+#if defined(ATARI_NATIVE)
+    ticks -= skip_hz200;
+#endif
 #if ATARI_LOGIC_CHECK > 0
     if (atari_check_clock_on)
         return atari_check_clock;
@@ -176,24 +196,25 @@ static int __attribute__((noinline)) get_time(unsigned long ticks)
             dbg_count++;
         }
 #endif
-        last_hz200 = hz200;
-        last_tics = t;
+        atari_time_hz200 = timer_hooked ? hz200 : ~0UL;
+        atari_time_tics = t;
         return t;
     }
 }
 
 /* Called hundreds of times a second, far more often than the 200 Hz count
  * moves on: the same count gives the same answer, with no more work than
- * this (the rest is out of line, so this path stays small). */
-int I_GetTime(void)
+ * this (the rest is out of line, so this path stays small). i_timer.h
+ * makes the same test before calling. */
+int (I_GetTime)(void)
 {
     const unsigned long ticks = tos_hz200();
 #if ATARI_LOGIC_CHECK > 0
     if (atari_check_clock_on)
         return get_time(ticks); /* virtual time: no shortcut */
 #endif
-    if (ticks == last_hz200)
-        return last_tics;
+    if (ticks == atari_time_hz200)
+        return atari_time_tics;
     return get_time(ticks);
 }
 
@@ -227,8 +248,7 @@ void I_WaitVBL(int count)
 void I_InitTimer(void)
 {
     basetime = 0;
-    music_service_hz200 = 0;
-    last_hz200 = ~0UL;
+    atari_time_hz200 = ~0UL;
 }
 
 void I_ExitTimer(void)

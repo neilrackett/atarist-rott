@@ -219,3 +219,10 @@ DefaultPlayerColor     0
 
 ;
 SecretPassword         7d7e4a2d3b6a0319554654231c
+
+;
+; Atari ST (ROTT_ST.TOS): show view sizes up to 160 wide twice the size and
+; up to 80 four times (the ST's renderer zooms them; the ROTT Accelerator
+; renders them that big), 0 or 1. The view size itself is set in the game
+; (- and +) and starts at the full width between the status bars.
+ViewZoom           0

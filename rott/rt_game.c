@@ -435,6 +435,42 @@ void GameMemToScreen
 // DrawPlayScreen ()
 //
 //******************************************************************************
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
+#include "atari_md.h"
+/* The ROTT Accelerator's sign: a lightning bolt on the bottom bar while
+ * the Multi-device renders the view, between the health bar and the ammo
+ * (clear of both, and of the demo sign). Drawn with the bar, so it goes
+ * when the bar is drawn again after the Accelerator gives up. */
+#define MD_SIGN_X 214
+#define MD_SIGN_Y 188
+static void DrawAcceleratorSign (boolean bufferofsonly)
+   {
+   static const byte bolt[7] = { 0x03, 0x06, 0x0c, 0x1f, 0x06, 0x0c, 0x18 };
+   static int color = -1;
+   byte *base[3];
+   int pages = 1, p, row, col;
+
+   if (!ATARI_MD_Active() || SHOW_KILLS())
+      return;
+   if (color < 0)
+      color = BestColor(63, 56, 0, origpal); /* yellow */
+   base[0] = bufferofsonly ? bufferofs : page1start;
+   if (!bufferofsonly)
+      {
+      if (page2start != base[0])
+         base[pages++] = page2start;
+      if (page3start != base[0] && page3start != page2start)
+         base[pages++] = page3start;
+      }
+   ATARI_HUD_TOUCH_AT(base[0] + ylookup[MD_SIGN_Y] + MD_SIGN_X, 5, 7);
+   for (row = 0; row < 7; row++)
+      for (col = 0; col < 5; col++)
+         if (bolt[row] & (0x10 >> col))
+            for (p = 0; p < pages; p++)
+               base[p][ylookup[MD_SIGN_Y + row] + MD_SIGN_X + col] = (byte)color;
+   }
+#endif
+
 void DrawPlayScreen (boolean bufferofsonly)
 
    {
@@ -481,6 +517,9 @@ void DrawPlayScreen (boolean bufferofsonly)
 
       DrawBarAmmo( bufferofsonly );
       DrawBarHealth( bufferofsonly );
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
+      DrawAcceleratorSign( bufferofsonly );
+#endif
 
       if ( demoplayback )
       {
@@ -1560,8 +1599,42 @@ void DrawTime
 
    if ( oldsec != sec )
       {
+#if defined(ATARI_NATIVE)
+      // Only the digits that changed, usually one a second, where each was
+      // drawn (and converted) every second: as DrawTimeXY would draw them.
+      // Anything drawn over the clock is put right by DrawPlayScreen,
+      // which sets oldsec to -1 (atari_bars_redraw).
+      static signed char drawn[6];
+      int digit[6], hour, min, i;
+
+      if (oldsec == -1) // the bar was drawn afresh
+         memset(drawn, -1, sizeof(drawn));
+      oldsec = sec;
+      while (sec > ( ( 9 * 3600 ) + 3599 ) )
+         sec -= ( ( 9 * 3600 ) + 3599 );
+      hour = sec / 3600;
+      min = ( sec / 60 ) - ( hour * 60 );
+      sec %= 60;
+      digit[0] = (hour < 10) ? -1 : hour / 10; // DrawTimeNumber leaves it
+      digit[1] = hour % 10;
+      digit[2] = min / 10;
+      digit[3] = min % 10;
+      digit[4] = sec / 10;
+      digit[5] = sec % 10;
+      for (i = 0; i < 6; i++)
+         {
+         static const short xoff[6] =
+            { HOUR_X, HOUR_X + 8, MIN_X, MIN_X + 8, SEC_X, SEC_X + 8 };
+         if (digit[i] < 0 || drawn[i] == digit[i])
+            continue;
+         drawn[i] = (signed char)digit[i];
+         StatusDrawTime( GAMETIME_X + xoff[i], GAMETIME_Y, digit[i],
+                         bufferofsonly );
+         }
+#else
       oldsec = sec;
       DrawTimeXY( GAMETIME_X, GAMETIME_Y, sec, bufferofsonly) ;
+#endif
       }
    }
 
@@ -1738,6 +1811,7 @@ void DrawColoredMPPic (int xpos, int ypos, int width, int height, int heightmod,
    int write_page3 = (!bufferofsonly && base3 != base1 && base3 != base2);
    byte *cmap = playermaps[color] + (1 << 12);
 
+   ATARI_HUD_TOUCH_AT(base1 + ylookup[ypos] + xpos, pixwidth, height);
    for (y = 0; y < height; ++y)
    {
       for (x = 0; x < pixwidth; ++x)

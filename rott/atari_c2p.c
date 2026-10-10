@@ -119,6 +119,18 @@ static void c2p_restore_game_hud_bars(unsigned char *out, const unsigned char *i
 }
 
 #if ATARI_C2P_DIRTY_TILES
+/* A tile's row (16 bytes) against the last screen's, as four longs (both
+ * even, all a 68000 asks), where memcmp was a call and a byte loop: 1,100
+ * cycles, thousands of times a full-screen update (the loading screen's
+ * every step, menus). */
+static __inline__ int c2p_row16_differs(const unsigned char *a, const unsigned char *b)
+{
+    const unsigned long *p = (const unsigned long *)a;
+    const unsigned long *q = (const unsigned long *)b;
+
+    return p[0] != q[0] || p[1] != q[1] || p[2] != q[2] || p[3] != q[3];
+}
+
 static int c2p_try_fullscreen_dirty_1x(unsigned char *out, const unsigned char *in)
 {
     enum
@@ -157,7 +169,7 @@ static int c2p_try_fullscreen_dirty_1x(unsigned char *out, const unsigned char *
             {
                 const unsigned char *src = in + ((y + row) * 320) + x;
                 const unsigned char *old = prev_chunky + ((y + row) * 320) + x;
-                if (memcmp(src, old, TILE_W) != 0)
+                if (c2p_row16_differs(src, old))
                 {
                     changed = 1;
                     break;
@@ -372,6 +384,19 @@ static void build_palette16(const unsigned char *colors, Color *out16)
     }
 }
 
+/* v * v for -255..255 in one muls.w, not a 32-bit multiply's library
+ * call (__mulsi3): the same number. */
+static __inline__ long c2p_sq(int v)
+{
+#if defined(__mc68000__) || defined(__m68k__)
+    long r = v;
+    __asm__("muls.w %1,%0" : "+d"(r) : "d"(v));
+    return r;
+#else
+    return (long)v * v;
+#endif
+}
+
 static void build_weights(const unsigned char *colors, int dither)
 {
     int i, j;
@@ -387,7 +412,7 @@ static void build_weights(const unsigned char *colors, int dither)
             int dr = (int)r - (int)palette16[j].r;
             int dg = (int)g - (int)palette16[j].g;
             int db = (int)b - (int)palette16[j].b;
-            unsigned int d = (unsigned int)(dr * dr + dg * dg + db * db);
+            unsigned int d = (unsigned int)(c2p_sq(dr) + c2p_sq(dg) + c2p_sq(db));
             if (d < bestd)
             {
                 second = best;
@@ -539,40 +564,64 @@ static void save_st_palette(unsigned short *palette)
     Super(old);
 }
 
-static short bayer4_color(const unsigned char *weights, short numcolors, short phase, short px)
-{
-    static unsigned char bayer[4][4] = {
-        {0, 8, 2, 10},
-        {12, 4, 14, 6},
-        {3, 11, 1, 9},
-        {15, 7, 13, 5}};
-    unsigned char bayer_lwb = 0, bayer_upb = 0;
-    short c;
-    for (c = 0; c < numcolors; ++c)
-    {
-        bayer_upb += weights[c];
-        if (bayer[phase][px & 3] >= bayer_lwb && bayer[phase][px & 3] < bayer_upb)
-        {
-            return c;
-        }
-        bayer_lwb += weights[c];
-    }
-    return -1;
-}
+static const unsigned char bayer4[4][4] = {
+    {0, 8, 2, 10},
+    {12, 4, 14, 6},
+    {3, 11, 1, 9},
+    {15, 7, 13, 5}};
 
-static unsigned long bayer4_lorez_pdata(const unsigned char *weights, short phase, short px)
+/* Colour i's c2p table entries from its weights. The colour a pixel gets
+ * depends only on its Bayer threshold (0-15): the first of the 16 colours
+ * whose span of the weights holds it, -1 if none. So the 16 answers once,
+ * where they were worked out again for each of the 64 entries (most of a
+ * palette change: 1.5s at 8MHz, at each level start and pause). */
+static void c2p_color_tables(const unsigned char *weights, int i)
 {
-    short c = bayer4_color(weights, 16, phase, px);
-    unsigned long pdata = 0;
-    if (c & 1)
-        pdata |= 0x01000000;
-    if (c & 2)
-        pdata |= 0x00010000;
-    if (c & 4)
-        pdata |= 0x00000100;
-    if (c & 8)
-        pdata |= 0x00000001;
-    return pdata << (7 - px);
+    unsigned long plane[16]; /* the colour's bit in each plane, before px */
+    int t, phase;
+
+    for (t = 0; t < 16; ++t)
+    {
+        unsigned char lwb = 0, upb = 0;
+        short c, col = -1;
+        unsigned long pdata = 0;
+
+        for (c = 0; c < 16; ++c)
+        {
+            upb += weights[c];
+            if (t >= lwb && t < upb)
+            {
+                col = c;
+                break;
+            }
+            lwb += weights[c];
+        }
+        if (col & 1)
+            pdata |= 0x01000000;
+        if (col & 2)
+            pdata |= 0x00010000;
+        if (col & 4)
+            pdata |= 0x00000100;
+        if (col & 8)
+            pdata |= 0x00000001;
+        plane[t] = pdata;
+    }
+    for (phase = 0; phase < 4; ++phase)
+    {
+        const unsigned char *bayer = bayer4[phase];
+        int px;
+
+        for (px = 0; px < 8; ++px)
+            c2p_table[phase][i][px] = plane[bayer[px & 3]] << (7 - px);
+        for (px = 0; px < 4; ++px)
+            c2p_2x_table[phase][i][px] = c2p_table[phase][i][px << 1] |
+                                         c2p_table[phase][i][(px << 1) + 1];
+        for (px = 0; px < 2; ++px)
+            c2p_4x_table[phase][i][px] = c2p_table[phase][i][px << 2] |
+                                         c2p_table[phase][i][(px << 2) + 1] |
+                                         c2p_table[phase][i][(px << 2) + 2] |
+                                         c2p_table[phase][i][(px << 2) + 3];
+    }
 }
 
 static void c2p_1x_lorez(register unsigned char *out, const unsigned char *in, unsigned short pixels, unsigned long table[][8])
@@ -843,34 +892,7 @@ void atari_c2p_set_palette(const unsigned char *colors)
     install_st_palette(stpalette);
 
     for (i = 0; i < 256; ++i)
-    {
-        unsigned char *weights = weights256[i];
-        int phase;
-        for (phase = 0; phase < 4; ++phase)
-        {
-            int px;
-            for (px = 0; px < 8; ++px)
-            {
-                c2p_table[phase][i][px] = bayer4_lorez_pdata(weights, phase, px);
-            }
-            for (px = 0; px < 4; ++px)
-            {
-                unsigned long pdata = 0;
-                int opx;
-                for (opx = px << 1; opx < (px << 1) + 2; ++opx)
-                    pdata |= bayer4_lorez_pdata(weights, phase, opx);
-                c2p_2x_table[phase][i][px] = pdata;
-            }
-            for (px = 0; px < 2; ++px)
-            {
-                unsigned long pdata = 0;
-                int opx;
-                for (opx = px << 2; opx < (px << 2) + 4; ++opx)
-                    pdata |= bayer4_lorez_pdata(weights, phase, opx);
-                c2p_4x_table[phase][i][px] = pdata;
-            }
-        }
-    }
+        c2p_color_tables(weights256[i], i);
 }
 
 int atari_hud_dirty = 1;
@@ -971,9 +993,10 @@ void atari_c2p_hud(unsigned char *out, const unsigned char *in,
     all = !prev_chunky_valid;
     /* Comparing the whole HUD costs more than the rest of this put
      * together, so: all of it when something drew without saying where
-     * (ATARI_HUD_TOUCH) and every 16th frame in case something drew without
-     * saying at all; else just where something drew (_RECT), if anything. */
-    if (!all && !atari_hud_dirty && (++frames & 15))
+     * (ATARI_HUD_TOUCH) and every 64th frame in case something drew without
+     * saying at all; else just where something drew (_RECT), if anything.
+     * (Every 16th was 2% of an 8MHz ST, and the status bars all say.) */
+    if (!all && !atari_hud_dirty && (++frames & 63))
     {
         if (hud_x1 <= hud_x0 || hud_y1 <= hud_y0)
             return;

@@ -3,6 +3,7 @@
  * Author: Diego Parrilla Santamaría
  * Date: December 2025, February 2026
  * Copyright: 2024-2026 - GOODDATA LABS SL
+ * Modified: 2026 Neil Rackett, for the ROTT Accelerator
  * Description: Header file for RESET functions of the booster app
  */
 

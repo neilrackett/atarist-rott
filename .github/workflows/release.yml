@@ -1,11 +1,15 @@
+# Copyright (C) 2026 Neil Rackett
+# SPDX-License-Identifier: GPL-2.0-or-later
+
 name: Release
 
-# Rolling release: build the three games and the ROTT Accelerator
-# firmware, tag the commit with the next v<version>-atarist.N, move the
-# lightweight "latest" tag onto it, and replace those files on the "latest"
-# release. The release's title and body are left exactly as they are --
-# `gh release upload` touches assets only -- and the asset names never
-# change, so a download link handed to someone keeps working.
+# Rolling release: build the three games and, when anything it is built
+# from has changed, the ROTT Accelerator firmware; tag the commit with the
+# next v<version>-atarist.N, replace those files on the "latest" release
+# and move the lightweight "latest" tag onto the commit. The release's
+# title and body are left exactly as they are -- `gh release upload`
+# touches assets only -- and the asset names never change, so a download
+# link handed to someone keeps working.
 
 on:
   # Anything landing on main is a release: a merge, or a direct push.
@@ -14,12 +18,21 @@ on:
   push:
     branches:
       - main
-    # A prose-only push cannot change either binary. GitHub still runs
-    # the job when a push touches anything else as well, and
+    # A documentation-only push cannot change a single file on the
+    # release, so it does not run (the same list as pr.yml). GitHub still
+    # runs the job when a push touches anything else as well, and
     # workflow_dispatch forces one by hand.
     paths-ignore:
       - '**.md'
+      - 'doc/**'
+      - '**/COPYING'
+      - '**/LICENSE'
   workflow_dispatch:
+    inputs:
+      firmware:
+        description: Rebuild the ROTT Accelerator firmware even if nothing it is built from has changed
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -41,13 +54,6 @@ jobs:
     # manual dispatch from some other branch tagging and releasing it.
     if: github.ref == 'refs/heads/main'
     steps:
-      - name: Check the APP_UUID_KEY secret is set
-        # Without it, make would quietly fall back to the sample UUID and
-        # release under the wrong name. Fail here, before the toolchains.
-        env:
-          APP_UUID_KEY: ${{ secrets.APP_UUID_KEY }}
-        run: test -n "$APP_UUID_KEY" || { echo "The APP_UUID_KEY secret is not set."; exit 1; }
-
       - name: Check out the code
         uses: actions/checkout@v5
         with:
@@ -88,12 +94,52 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "Releasing $VERSION."
 
+      - name: Decide whether to build the firmware
+        # Two builds of the same source differ only in the build time the
+        # cartridge stub stamps into its header, so rebuilding with nothing
+        # changed would just hand Booster a new MD5 for the same firmware.
+        # The latest tag marks the commit whose files are on the release
+        # (it only moves once they are all uploaded, below), so the
+        # firmware there is current unless something it is built from has
+        # changed since: sidecart/, apart from its documentation, and what
+        # it compiles from the ST build's rott/ (the fixed-point tables and
+        # the music player).
+        env:
+          FORCE: ${{ inputs.firmware }}
+        run: |
+          SOURCES=(sidecart rott/atari_tables.c rott/atari_tables.h
+                   rott/audiolib/atari_music.c rott/audiolib/atari_music.h
+                   ':(exclude)*.md' ':(exclude)sidecart/LICENSE')
+
+          if [ "$FORCE" = "true" ]; then
+            echo "Rebuilding the firmware, as asked."
+          elif ! git rev-parse -q --verify 'refs/tags/latest^{commit}' > /dev/null; then
+            echo "There is no latest tag yet, so building the firmware."
+          elif ! git diff --quiet refs/tags/latest HEAD -- "${SOURCES[@]}"; then
+            echo "The firmware's source has changed since the last release:"
+            git diff --stat refs/tags/latest HEAD -- "${SOURCES[@]}"
+          else
+            echo "Nothing the firmware is built from has changed since the last release; leaving it as it is."
+            exit 0
+          fi
+
+          echo "BUILD_FIRMWARE=1" >> "$GITHUB_ENV"
+
+      - name: Check the APP_UUID_KEY secret is set
+        # Without it, make would quietly fall back to the sample UUID and
+        # release under the wrong name. Fail here, before the toolchains.
+        if: env.BUILD_FIRMWARE == '1'
+        env:
+          APP_UUID_KEY: ${{ secrets.APP_UUID_KEY }}
+        run: test -n "$APP_UUID_KEY" || { echo "The APP_UUID_KEY secret is not set."; exit 1; }
+
       - name: Fetch the Xpad submodule
         # Only Xpad: sidecart/rp/build.sh fetches the SDKs itself, at full
         # depth so it can pin their tags (see pr.yml).
         run: git submodule update --init lib/xpad
 
       - name: Install the Pico toolchain
+        if: env.BUILD_FIRMWARE == '1'
         run: |
           sudo grep -l dl.google.com /etc/apt/sources.list.d/* | xargs -r sudo rm -f
           sudo DEBIAN_FRONTEND=noninteractive apt update || true
@@ -111,6 +157,7 @@ jobs:
         # binary URL uses) and <uuid>.json in dist/ beside the games. The
         # app UUID comes from the APP_UUID_KEY secret; uuid.txt is
         # deliberately not committed.
+        if: env.BUILD_FIRMWARE == '1'
         env:
           APP_UUID_KEY: ${{ secrets.APP_UUID_KEY }}
         run: make sidecart
@@ -128,14 +175,37 @@ jobs:
             -f ref="refs/tags/$VERSION" -f sha="$GITHUB_SHA" --silent
           echo "Tagged $VERSION."
 
+      - name: Replace the files on the latest release
+        # The three games and, if it was built, the firmware image and its
+        # Booster app descriptor: dist/ also holds config files and, on a
+        # developer's machine, the game data, none of which belongs on the
+        # release. A firmware left alone keeps the files already there.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FILES=(dist/*.TOS)
+          if [ "$BUILD_FIRMWARE" = "1" ]; then
+            FILES+=(dist/*.uf2 dist/*.json)
+          fi
+
+          gh release view latest >/dev/null 2>&1 \
+            || gh release create latest --title "Rise of the Triad for Atari ST, TT & Falcon" --notes "Rolling build of the Atari ST port."
+          gh release upload latest "${FILES[@]}" --clobber
+          echo "Published $VERSION to the latest release: ${FILES[*]}"
+
       - name: Move the latest tag onto this commit
         # The "latest" release is attached to this tag, so moving it keeps
         # the release's source link pointing at the commit the attached
-        # binaries were built from. Through the API rather than `git push`:
-        # pushing a tag is refused when the commit it points at touches
-        # .github/workflows and the token has no workflow scope, which is
-        # exactly the commit that adds these files. PATCH first because the
-        # tag already exists; POST covers a repository where it does not.
+        # binaries were built from. It moves only after the upload, so it
+        # never marks a commit whose files did not all make it (a cancelled
+        # or failed run leaves it where it was), which is what the firmware
+        # check above relies on (after moving it by hand, run this workflow
+        # by hand with the firmware box ticked). Through the API rather than
+        # `git push`: pushing a tag is refused when the commit it points at
+        # touches .github/workflows and the token has no workflow scope,
+        # which is exactly the commit that adds these files. PATCH first
+        # because the tag already exists; POST covers a repository where it
+        # does not.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -143,15 +213,3 @@ jobs:
             -f sha="$GITHUB_SHA" -F force=true --silent \
             || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
                  -f ref=refs/tags/latest -f sha="$GITHUB_SHA" --silent
-
-      - name: Replace the files on the latest release
-        # The three games, the firmware image and its Booster app
-        # descriptor: dist/ also holds config files and, on a developer's
-        # machine, the game data, none of which belongs on the release.
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release view latest >/dev/null 2>&1 \
-            || gh release create latest --title "Rise of the Triad for Atari ST, TT & Falcon" --notes "Rolling build of the Atari ST port."
-          gh release upload latest dist/*.TOS dist/*.uf2 dist/*.json --clobber
-          echo "Published $VERSION to the latest release."

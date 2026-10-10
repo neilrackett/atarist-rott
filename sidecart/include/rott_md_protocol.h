@@ -88,6 +88,7 @@
 #define MD_BITSET_WORD(x, y) ((((unsigned)(x) << 7) | (unsigned)(y)) >> 4)
 #define MD_BITSET_BIT(y) ((unsigned)(y) & 15u)
 
+
 /* Two frame buffers, each up to MD_VIEW_MAX_W x MD_VIEW_MAX_H 4-plane ST
  * low-res pixels. A frame is stored row by row, natural order, each row
  * (w / 2) bytes of interleaved plane words exactly as they go on screen,
@@ -106,11 +107,43 @@
 #define MD_SEED_OFFSET 0xF004  /* next token seed                       */
 #define MD_READY_OFFSET 0xF00A /* both bytes = MD_READY_MAGIC when up    */
 #define MD_READY_MAGIC 0x52    /* 'R'                                    */
+/* Music on the MD (MD_CAP_MUSIC, MD_CMD_MUSIC): the YM2149's registers
+ * after each 50Hz step of ROTT's song, which the ST's VBL writes to the
+ * chip in order, so none is lost to the two clocks' jitter (a note's
+ * first step is often its loudest). Steps are numbered 0-32767 (then 0
+ * again); step n is in slot n % MD_YM_SLOTS, whose MD_YM_SEQ word is 0
+ * while the MD writes it and MD_YM_STEP(n) once it is out, so the ST
+ * reads it, the registers, then it again, and keeps them only if both
+ * reads are the step it wants. MD_YM_NEWEST (also MD_YM_STEP(n), 0 until
+ * the first) says how far the MD has got: an ST more than
+ * MD_YM_SLOTS - 1 behind skips to the newest. Every step carries all of
+ * R0-R13 (low byte of each word); R7's port bits stay as the chip has
+ * them. */
+#define MD_YM_NEWEST_OFFSET 0xF040 /* word: the newest step out */
+#define MD_YM_SLOT_OFFSET 0xF060
+#define MD_YM_SLOTS 4
+#define MD_YM_STEP_MASK 0x7FFF
+#define MD_YM_STEP(n) (0x8000u | ((unsigned)(n) & MD_YM_STEP_MASK))
+#define MD_YM_SEQ 0     /* slot word index */
+#define MD_YM_REGS 1    /* R0..R13: words 1..14 */
+#define MD_YM_FLAGS 15  /* MD_YMF_*, and which registers changed */
+#define MD_YM_WORDS 16
+#define MD_YMF_PLAYING 0x0001 /* a song is playing (not stopped or paused) */
+/* Registers that differ from the step before (bit r of the mask is Rr), so
+ * an ST that played that step need only write these. */
+#define MD_YMF_CHANGED(flags) ((unsigned)(flags) >> 2)
+#define MD_YMF_CHANGED_SHIFT 2
+
 /* Result text: version string after HELLO, error text after a failure.
  * Stored as ST-order bytes (read with move.b from the ST). */
 #define MD_RESULT_OFFSET 0xF100
 #define MD_RESULT_SIZE 256
 
+#if (MD_YM_NEWEST_OFFSET < MD_READY_OFFSET + 2) || \
+    (MD_YM_SLOT_OFFSET < MD_YM_NEWEST_OFFSET + 2) || \
+    (MD_YM_SLOT_OFFSET + MD_YM_SLOTS * MD_YM_WORDS * 2 > MD_RESULT_OFFSET)
+#error "the YM steps no longer fit in the protocol block"
+#endif
 #if (MD_FRAME_END > MD_TOKEN_OFFSET)
 #error "frame buffers overlap the protocol block"
 #endif
@@ -145,10 +178,27 @@
 #define MD_ST_ECHO_OK 23     /* ECHO commands whose payload checked out    */
 #define MD_ST_ECHO_BAD 24    /* ECHO commands whose payload did not        */
 #define MD_ST_FRAMES 25      /* frames rendered (low 16 bits)              */
-#define MD_ST_LAST_CMD 26    /* id of the last command dispatched          */
+#define MD_ST_LAST_CMD 26    /* id of the last command run, once it has   */
 #define MD_ST_LOADS 27       /* lumps loaded from SD on demand (low 16)   */
 #define MD_ST_EVICTS 28      /* demand-loaded lumps dropped for room       */
 #define MD_ST_LOAD_FAILS 29  /* lumps that could not be loaded at all      */
+#define MD_ST_CAPS 30        /* MD_CAP_*: what this firmware can do        */
+#define MD_ST_SPOTVIS_X 31   /* MD_SVX_*: SPOTVIS columns in use            */
+
+/* MD_ST_CAPS bits. An older firmware leaves the word 0, so the ST does the
+ * job itself. */
+#define MD_CAP_MUSIC 0x0001 /* MD_CMD_MUSIC: plays songs from the WAD */
+
+/* MD_ST_SPOTVIS_X: the columns (x) that hold any SPOTVIS bits for the
+ * newest frame or the one before, so the ST need copy only those; set
+ * before a frame's bits go out, so the ST reads it again after copying and
+ * copies again if it changed. Without MD_SVX_VALID (older firmware) the ST
+ * copies all of it; first > last is none at all. */
+#define MD_SVX_VALID 0x8000
+#define MD_SVX_FIRST(w) ((unsigned)(w) & 127u)
+#define MD_SVX_LAST(w) (((unsigned)(w) >> 7) & 127u)
+#define MD_SVX(first, last) \
+  (MD_SVX_VALID | ((unsigned)(first) & 127u) | (((unsigned)(last) & 127u) << 7))
 
 #define MD_STATUS_MAGIC 0x4D52 /* 'MR' */
 
@@ -224,6 +274,17 @@
 
 /* LEVEL_END (sync). d3 = level serial. The snapshot is complete. */
 #define MD_CMD_LEVEL_END 0x0049
+
+/* MUSIC (sync, MD_CAP_MUSIC). d3 = (MD_MUSIC_* << 16) | WAD lump of the
+ * song, d4 = (loop << 8) | volume 0-255. PLAY starts the song (a MIDI
+ * lump) from the start; the others take no lump. The registers appear at
+ * MD_YM_OFFSET. */
+#define MD_CMD_MUSIC 0x004A
+#define MD_MUSIC_STOP 0
+#define MD_MUSIC_PLAY 1
+#define MD_MUSIC_PAUSE 2
+#define MD_MUSIC_CONTINUE 3
+#define MD_MUSIC_VOLUME 4
 
 /* ------------------------------------------------------------------ */
 /* HELLO buffer                                                         */

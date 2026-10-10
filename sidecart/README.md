@@ -4,13 +4,15 @@ Microfirmware for the [SidecarTridge Multi-device](https://sidecartridge.com)
 that renders Rise of the Triad's 3D view for the Atari ST port in this
 repository (`ROTT_ST.TOS`). In the source it goes by MD/ROTT for short.
 
-The ST keeps running the game: logic, input, sound, HUD, menus. For each
+The ST keeps running the game: logic, input, sound effects, HUD, menus. For each
 frame it sends the Multi-device what changed (doors, pushwalls, lights,
 the view, the objects in sight) over the cartridge port; the
 Multi-device's RP2040, at 400 MHz, ray-casts and draws the view with
 ROTT's own renderer (walls, floors, ceilings, sky, sprites, lighting,
 messages), dithers it to the ST's 16 colours and converts it to bitplanes
-in the cartridge ROM window, where the ST copies it to the screen.
+in the cartridge ROM window, where the ST copies it to the screen. It
+plays ROTT's music as well, with the ST build's own YM2149 player, and
+the ST copies the sound chip's registers from it each VBL.
 
 Without the Multi-device, or if anything goes wrong, `ROTT_ST.TOS` falls
 back to its own renderer, so one executable serves both.
@@ -28,18 +30,21 @@ shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
    file the ST uses: the firmware checks its size and directory against
    the ST's copy and refuses a different one.
 4. On the Booster screen, press ESC for the app list and select ROTT
-   Accelerator. The ST restarts and prints this during boot (with
-   `not responding` in place of `ready` if the firmware isn't up):
+   Accelerator. The ST restarts and prints this during boot, with the
+   firmware's version (such as `v1.4.0-beta.4`), and `not responding` in
+   place of `ready` if the firmware isn't up:
 
    ```
-   ROTT Accelerator v1.4.0 ready
+   ROTT Accelerator <version> ready
    GPLv3 (c)2026 Neil Rackett
 
-   Download ROTT: neilrackett.com/atarist
+   Get ROTT from neilrackett.com/atarist
+   and run ROTT_ST.TOS from GEM Desktop
+
    ```
 
 5. Run `ROTT_ST.TOS` from disk as normal. At startup it prints
-   `ROTT Accelerator v1.4.0` when it will use the Multi-device, or the
+   `ROTT Accelerator <version>` when it will use the Multi-device, or the
    reason it will not, e.g. `ROTT Accelerator: /rott/HUNTBGIN.WAD missing`
    followed by `Using the ST renderer`.
 
@@ -95,7 +100,10 @@ opens the console.
   STE the blitter copies each frame while the CPU goes on with the next
   (`ATARI_MD_BLIT`, on unless a test copy at startup disagrees with the
   CPU); the HUD is converted only where something drew; masked walls are
-  looked at only when one changed (`MD_MASKED_TOUCH`).
+  compared in full only when one changed (`MD_MASKED_TOUCH`), and doors
+  and moving walls only while they move or change state, with a few of
+  the rest checked each frame in turn; an object is sent if one bit of
+  the MD's spotvis (with the tiles around the player added) is set.
 - **Matching builds.** `ROTT_ST.TOS` and the firmware must come from the
   same sources (`MD_PROTOCOL_VERSION`); with a mismatch the ST says so and
   uses its own renderer.
@@ -122,17 +130,18 @@ overlapping it with the next.
 
 ## How it works
 
-| Where | What |
-| --- | --- |
-| `include/rott_md_protocol.h` | The wire protocol, shared by both sides: ROM4 layout, commands, records |
-| `../rott/atari_md.c` | The ST side: level snapshot, per-frame deltas and view, frame copy |
-| `../rott/sidecart_md.c`, `sidecart_stubs.S` | ROM3 command transport (from STDOOM) with retries and the Mega STE cache guard |
-| `rp/src/md_proto.c` | Decodes ROM3 commands in an interrupt into a queue |
-| `rp/src/md_main.c` | Runs the commands: level setup, world updates, frames |
-| `rp/src/rott/` | ROTT's renderer (engine, walls, planes, sprites, text) against a mirror of the ST's world |
-| `rp/src/md_video.c` | The ST's 16-colour palette choice and dither, identical on both sides, and chunky-to-planar |
-| `rp/src/md_pack.c` | Level packs in flash, and the demand-loading ring |
-| `target/atarist/` | The 1 KB cartridge header and boot message |
+| Where                                       | What                                                                                                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `include/rott_md_protocol.h`                | The wire protocol, shared by both sides: ROM4 layout, commands, records                                |
+| `../rott/atari_md.c`                        | The ST side: level snapshot, per-frame deltas and view, frame copy                                     |
+| `../rott/sidecart_md.c`, `sidecart_stubs.S` | ROM3 command transport (from STDOOM) with retries and the Mega STE cache guard                         |
+| `rp/src/md_proto.c`                         | Decodes ROM3 commands in an interrupt into a queue                                                     |
+| `rp/src/md_main.c`                          | Runs the commands: level setup, world updates, frames                                                  |
+| `rp/src/rott/`                              | ROTT's renderer (engine, walls, planes, sprites, text) against a mirror of the ST's world              |
+| `rp/src/md_video.c`                         | The ST's 16-colour palette choice and dither, identical on both sides, and chunky-to-planar            |
+| `rp/src/md_pack.c`                          | Level packs in flash, and the demand-loading ring                                                      |
+| `rp/src/md_music.c`                         | Music: the ST build's player (`../rott/audiolib/atari_music.c`) on a timer, the song read from the WAD |
+| `target/atarist/`                           | The 1 KB cartridge header and boot message                                                             |
 
 **Level packs.** The flash window for graphics is 896 KB; one shareware
 level can ask for 1.6 MB, and the whole WAD holds 4.5 MB. When a level
@@ -144,6 +153,19 @@ the renderer asks for that is not in flash is read from the SD card into
 it (straight away if there is erased space, otherwise between frames,
 when erasing a 4 KB sector can drop older lumps without pulling one out
 from under the renderer).
+
+**Music.** When the firmware can play music (`MD_CAP_MUSIC` in the
+status block, set when it has the WAD open), `MU_PlaySong` sends
+`MD_CMD_MUSIC` with the song's lump instead of loading the song on the
+ST. The firmware reads the song from the WAD on the SD card a 256-byte
+window per MIDI track at a time (in the USB controller's RAM, which the
+firmware doesn't otherwise use), and a timer on core 1 steps the ST
+build's player every 20 ms. Each step's 14 YM registers go into a ring
+of four slots in ROM4 with a mask of those that changed; the ST's VBL
+takes the next step from it and writes the changed registers to the
+chip (about 1% of an 8 MHz ST). Firmware without it leaves the
+capability word 0 and the ST plays the music itself, as before.
+`ATARI_MD_MUSIC=0` builds `ROTT_ST.TOS` without this.
 
 **Frames.** Two frame buffers live in the ROM4 window. With pipelining,
 the Multi-device draws frame N while the ST copies frame N-1 and runs the

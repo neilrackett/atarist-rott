@@ -21,6 +21,7 @@
 
 #include "debug.h"
 #include "hardware/sync.h"
+#include "md_music.h"
 #include "md_pack.h"
 #include "md_proto.h"
 #include "md_video.h"
@@ -133,8 +134,35 @@ static void spread_column(const uint16_t *c, uint16_t *o) {
 static void publish_spotvis(const uint16_t *in, volatile uint16_t *out) {
   /* Each column spread up and down (spread_column), three at a time: the
    * one before, this one and the next, ORed into this one's output. */
+  static int s_last_first = 0, s_last_last = 127;
   uint16_t cols[3][8];
   uint16_t *prev = cols[0], *cur = cols[1], *next = cols[2];
+  int first = 128, last = -1;
+
+  /* The columns this frame's bits will cover (a column's neighbours pick
+   * its bits up), published with the last frame's before the bits go out
+   * (MD_ST_SPOTVIS_X): whichever the ST then copies, old bits or new, or
+   * some of each, lie within it. */
+  for (int x = 0; x < 128; x++) {
+    uint16_t any = 0;
+    for (unsigned k = 0; k < 8; k++) any |= in[x * 8 + k];
+    if (any) {
+      if (first > x - 1) first = x - 1;
+      last = x + 1;
+    }
+  }
+  if (first < 0) first = 0;
+  if (last > 127) last = 127;
+  {
+    const int f = first < s_last_first ? first : s_last_first;
+    const int l = last > s_last_last ? last : s_last_last;
+    s_last_first = first;
+    s_last_last = last;
+    status_set(MD_ST_SPOTVIS_X,
+               (uint16_t)(f <= l ? MD_SVX(f, l) : MD_SVX(127, 0)));
+    __dmb();
+  }
+
   memset(prev, 0, sizeof(cols[0]));
   spread_column(in, cur);
   for (unsigned x = 0; x < 128; x++) {
@@ -189,6 +217,7 @@ static void cmd_hello(const uint16_t *w, uint32_t n) {
   md_get_bytes((uint8_t *)name, b + MD_HELLO_NAME, MD_HELLO_NAME_WORDS * 2);
   name[sizeof(name) - 1] = 0;
 
+  md_music_command(MD_MUSIC_STOP, 0, false, 0); /* the WAD reopens */
   if (!s_sd_ok) {
     err = MD_ERR_NO_SD;
   } else {
@@ -196,6 +225,8 @@ static void cmd_hello(const uint16_t *w, uint32_t n) {
                            md_get32(b + MD_HELLO_WADSIZE),
                            md_get32(b + MD_HELLO_DIROFS));
   }
+  /* Music comes from the WAD, so only with it (and RAM for it). */
+  status_set(MD_ST_CAPS, md_pack_wad_ok() && md_music_ok() ? MD_CAP_MUSIC : 0);
   /* A new session: the old errors are history. */
   s_errors = 0;
   status_set(MD_ST_ERRORS, 0);
@@ -219,6 +250,7 @@ static void cmd_hello(const uint16_t *w, uint32_t n) {
 }
 
 static void pack_progress(unsigned percent) {
+  md_music_service(); /* the song goes on while the pack is built */
   status_set(MD_ST_PROGRESS, (uint16_t)percent);
 }
 
@@ -424,6 +456,13 @@ static void cmd_test(const uint16_t *w, uint32_t n) {
   publish_frame(buf, seq, sx, sy, width, height, t1 - t0, t2 - t1);
 }
 
+static void cmd_music(const uint16_t *w, uint32_t n) {
+  if (n < 4) return;
+  const uint32_t d3 = md_get32(w), d4 = md_get32(w + 2);
+  md_music_command((unsigned)(d3 >> 16), (int)(d3 & 0xFFFFu),
+                   ((d4 >> 8) & 0xFFu) != 0, (unsigned)(d4 & 0xFFu));
+}
+
 static void cmd_echo(const uint16_t *w, uint32_t n) {
   static uint16_t s_ok, s_bad;
   if (n < 6) return;
@@ -445,7 +484,6 @@ static void dispatch(const md_cmd_t *c) {
   const uint16_t *w = md_cmd_words(c);
   const uint32_t n = md_cmd_word_count(c);
 
-  status_set(MD_ST_LAST_CMD, c->command_id);
   switch (c->command_id) {
     case MD_CMD_HELLO:
       cmd_hello(w, n);
@@ -473,6 +511,9 @@ static void dispatch(const md_cmd_t *c) {
     case MD_CMD_TEST:
       cmd_test(w, n);
       break;
+    case MD_CMD_MUSIC:
+      cmd_music(w, n);
+      break;
     case MD_CMD_ECHO:
       cmd_echo(w, n);
       break;
@@ -480,6 +521,10 @@ static void dispatch(const md_cmd_t *c) {
       add_error(MD_ERR_BAD_CMD);
       break;
   }
+  /* Only once it has run: the ST waits for HELLO here, then reads what
+   * it set (the result, the errors, the capabilities). */
+  __dmb();
+  status_set(MD_ST_LAST_CMD, c->command_id);
 }
 
 /* ------------------------------------------------------------------ */
@@ -505,6 +550,7 @@ void md_main_init(uintptr_t rom_base, const char *folder, bool sd_ok) {
   md_video_set_palette(s_chunky, 0, s_chunky + 1024);
   publish_palette();
   md_pack_init();
+  md_music_init(rom_base);
 }
 
 void md_main_ready(void) {
@@ -521,6 +567,7 @@ bool md_main_poll(void) {
   static uint16_t heartbeat;
   status_set(MD_ST_HEARTBEAT, ++heartbeat);
   publish_counters(); /* checksum errors happen without a command */
+  md_music_service(); /* a few hundred bytes a second, from the WAD */
   md_cmd_t *c = md_proto_peek();
   if (!c) {
     /* Idle: load what the last frame had to go without. */

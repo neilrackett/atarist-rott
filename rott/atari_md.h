@@ -88,6 +88,44 @@ void ATARI_MD_ViewToChunky(unsigned char *chunky);
 /* The automap is opening: fold what the MD has seen into mapseen[][]. */
 void ATARI_MD_SyncMapSeen(void);
 
+/* For the Help key's overlay. The first seven are over the last second or
+ * so; the rest are counts since the level began. */
+typedef struct {
+  int fps10;     /* frames a second x10                               */
+  int tics10;    /* game logic tics run each frame x10                 */
+  int logic_ms;  /* running them each frame                            */
+  int wait_ms;   /* the ST's wait for the MD each frame                */
+  int cmd_ms;    /* sending the frame command each frame               */
+  int render_ms; /* the MD's render of its frame                       */
+  int c2p_ms;    /* the MD's dither + c2p of it                        */
+  int sd_loads;  /* lumps the MD loaded from the SD card during play   */
+  int evicts;    /* demand-loaded lumps it dropped for room            */
+  int retries;   /* commands the ST sent again after a timeout         */
+  int dups;      /* frames the MD rendered beyond those the ST sent    */
+  int drops;     /* commands the MD dropped, its queue full            */
+  int chkerrs;   /* commands that arrived with a bad checksum          */
+} atari_md_stats_t;
+void ATARI_MD_GetStats(atari_md_stats_t *s);
+
+/* Once, after the Accelerator gave up: the status bars want drawing again
+ * (the play loop does it, between frames). */
+int ATARI_MD_TakeHudRedraw(void);
+
+/* Did the MD see the tile at (x, y), or one next to it, last frame? */
+int ATARI_MD_SpotvisNear(int x, int y);
+
+/* Music on the MD (its firmware says MD_CAP_MUSIC): an MD_MUSIC_* command
+ * (1 if sent), whether its song is playing, and the VBL's copy of its YM
+ * registers to the chip (supervisor). */
+int ATARI_MD_MusicAvailable(void);
+int ATARI_MD_Music(int action, int lump, int loop, int volume);
+int ATARI_MD_MusicPlaying(void);
+void ATARI_MD_MusicVbl(void);
+
+/* The Accelerator gave up (not just atari_md_active cleared for a moment,
+ * as it is while "Preparing level" is drawn by the ST). */
+int ATARI_MD_Gone(void);
+
 #if defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
 /* Test runs: after frame `frame` is on screen, save it as SHOTnnn.PI1 if
  * it is one of the frames compared between MD and ST runs. */
@@ -99,6 +137,11 @@ void ATARI_MD_AutotestShot(int frame);
 #define ATARI_MD_Active() 0
 #define MD_TILE_TOUCH(x, y) ((void)0)
 #define MD_MASKED_TOUCH() ((void)0)
+#define ATARI_MD_MusicAvailable() 0
+#define ATARI_MD_Music(action, lump, loop, volume) 0
+#define ATARI_MD_MusicPlaying() 0
+#define ATARI_MD_MusicVbl() ((void)0)
+#define ATARI_MD_Gone() 1
 
 #endif
 

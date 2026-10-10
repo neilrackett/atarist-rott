@@ -3,6 +3,7 @@
  * Author: Diego Parrilla Santamaría
  * Date: August 2023 - January 20205, February 2026
  * Copyright: 2023-2026 - GOODDATA LABS SL
+ * Modified: 2026 Neil Rackett, for the ROTT Accelerator
  * Description: Parse the protocol used to communicate with the ROM
  */
 

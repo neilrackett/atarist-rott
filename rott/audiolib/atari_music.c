@@ -2,18 +2,43 @@
  * Copyright (C) 2026 Neil Rackett
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
-#include <stdio.h>
 #include <stddef.h>
 #include <stdbool.h>
+#if defined(YMMUSIC_MD)
+/* Built into the ROTT Accelerator's firmware too (sidecart/rp/src/
+ * md_music.c): the same player, its YM writes kept in ymmusic_regs for the
+ * ST to copy, its MIDI tracks streamed through small windows
+ * (YMMUSIC_TRACK_READY, ymmusic_md_rewind). Only MIDI songs come that way. */
+#define SHORT(x) (x)
+#else
+#include <stdio.h>
 #include "i_swap.h"
+#endif
 #include "atari_music.h"
 
-extern int snd_MusicVolume;
+// Music volume, 0-255 (MUSIC_SetVolume).
+int ymmusic_master = 196;
+
+// A linear amplitude 0-127 as a YM2149 level 0-15. The YM's levels are
+// about 3dB apart, so 15 + 20 log10(a / 127) / 3, rounded: subtracting
+// from the level instead (as this did) put the music 24dB down at the
+// default volume, and a quiet note at nothing at all.
+static const unsigned char ymmusic_levels[128] = {
+    0, 1, 3, 4, 5, 6, 6, 7, 7, 7, 8, 8, 8, 8, 9, 9,
+    9, 9, 9, 9, 10, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11,
+    11, 11, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
+    12, 12, 12, 12, 12, 12, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
+    13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 14, 14, 14, 14,
+    14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
+    14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15
+};
 
 typedef struct
 {
-    // Points to an array of data points.
-    char *data;
+    // Points to an array of data points (signed: char is unsigned on ARM,
+    // where the ROTT Accelerator runs this too).
+    signed char *data;
     // Indexes into array which mark certain points in time.
     unsigned char sustain_begin, release_begin, last;
 } envelope_t;
@@ -42,6 +67,8 @@ typedef struct
     unsigned char ymidx;
     // Whether the note has been released
     unsigned char released;
+    // MIDI note velocity 0..127 (127 for MUS, whose notes set the channel's volume)
+    unsigned char velocity;
     // Instrument playing
     instrument_t *instrument;
 } ymmusic_voice_t;
@@ -62,7 +89,7 @@ typedef struct
     .release_begin = release,                           \
     .last = sizeof(dataname)-1}
 
-static char overdriven_guitar_volume_envelope_data[] =
+static signed char overdriven_guitar_volume_envelope_data[] =
     {-70, -40, -10, 0, -1, -1, -2, -2, -3, -3, -4, -4, -5, -5, -6, -6, -7, -7, -8, -8, -9, -9, -10, -10};
 static envelope_t overdriven_guitar_volume_envelope = ENVELOPE(overdriven_guitar_volume_envelope_data, 3, 5);
 static instrument_t overdriven_guitar = {
@@ -70,9 +97,9 @@ static instrument_t overdriven_guitar = {
     .volume_envelope = &overdriven_guitar_volume_envelope,
 };
 
-static char distortion_guitar_volume_envelope_data[] =
+static signed char distortion_guitar_volume_envelope_data[] =
     {-20, 60, 10, 0, 8, -1, -1, -2, -3, -3, -4, -4, -5, -5, -6, -6, -7, -7, -8, -8, -9, -9, -10, -10};
-static char distortion_guitar_pitch_envelope_data[] =
+static signed char distortion_guitar_pitch_envelope_data[] =
     {80, 40, 20, 0, 20, 0};
 static envelope_t distortion_guitar_volume_envelope = ENVELOPE(distortion_guitar_volume_envelope_data, 3, 5);
 static envelope_t distortion_guitar_pitch_envelope = ENVELOPE(distortion_guitar_pitch_envelope_data, 3, 5);
@@ -82,7 +109,7 @@ static instrument_t distortion_guitar = {
     .pitch_envelope = &distortion_guitar_pitch_envelope,
 };
 
-static char dummy_instrument_volume_envelope_data[] =
+static signed char dummy_instrument_volume_envelope_data[] =
     {-20, 0, -16, -32, -64};
 static envelope_t dummy_instrument_volume_envelope = ENVELOPE(dummy_instrument_volume_envelope_data, 1, 2);
 static instrument_t dummy_instrument = {
@@ -90,9 +117,9 @@ static instrument_t dummy_instrument = {
     .volume_envelope = &dummy_instrument_volume_envelope,
 };
 
-static char bass_drum_volume_envelope_data[] =
+static signed char bass_drum_volume_envelope_data[] =
     {0, 0, 0, 0, 0, -60, -80, -100, -120};
-static char bass_drum_note_envelope_data[] =
+static signed char bass_drum_note_envelope_data[] =
     {0, -4, -8, -18, -26, -32, -35, -35, -36};
 static envelope_t bass_drum_volume_envelope = ENVELOPE(bass_drum_volume_envelope_data, 16, 16);
 static envelope_t bass_drum_note_envelope = ENVELOPE(bass_drum_note_envelope_data, 16, 16);
@@ -104,11 +131,11 @@ static instrument_t bass_drum = {
     .overrides_note = 1,
 };
 
-static char snare_volume_envelope_data[] =
+static signed char snare_volume_envelope_data[] =
     {120, 20, 10, 4, 0, -4, -8, -12, -16, -20, -24, -28, -32, -34, -36, -38, -40, -41, -42, -43, -44, -45, -46, -47,
      -48, -49, -50, -51, -52, -53, -54, -55, -56, -57, -58, -59, -60, -61, -62, -63};
 static envelope_t snare_volume_envelope = ENVELOPE(snare_volume_envelope_data, 127, 127);
-static char electric_snare_note_envelope_data[] =
+static signed char electric_snare_note_envelope_data[] =
     {+48, +0, -16, -10, -30, -28, -37, -33, -36};
 static envelope_t electric_snare_note_envelope = ENVELOPE(electric_snare_note_envelope_data, 127, 127);
 static instrument_t electric_snare = {
@@ -120,7 +147,7 @@ static instrument_t electric_snare = {
     .enables_noise = 1,
 };
 
-static char dummy_percussion_volume_envelope_data[] =
+static signed char dummy_percussion_volume_envelope_data[] =
     {40, -60, -98, -120};
 static envelope_t dummy_percussion_volume_envelope = ENVELOPE(dummy_percussion_volume_envelope_data, 127, 127);
 static instrument_t dummy_percussion = {
@@ -158,34 +185,91 @@ static int ymmusic_mode = 0; /* 0=none, 1=MUS, 2=MIDI */
 #define YMMUSIC_NUMVOICES (sizeof(ymmusic_voices) / sizeof(ymmusic_voice_t))
 #define YMMUSIC_NUMCHANNELS (sizeof(ymmusic_channels) / sizeof(ymmusic_channel_t))
 
-#define YMMUSIC_MAX_MIDI_TRACKS 32
-typedef struct
-{
-    unsigned char *start;
-    unsigned char *ptr;
-    unsigned char *end;
-    unsigned long delta;
-    unsigned char running_status;
-    unsigned char active;
-} ymmusic_midi_track_t;
+#define YMMUSIC_MIDI_ENDED 0xFFFFFFFFUL
 
 static ymmusic_midi_track_t ymmusic_midi_tracks[YMMUSIC_MAX_MIDI_TRACKS];
 static int ymmusic_midi_num_tracks = 0;
 static unsigned short ymmusic_midi_division = 96;
 static unsigned long ymmusic_midi_tempo_us = 500000; /* us per quarter note */
+static unsigned long ymmusic_midi_us_per_tick = 500000 / 96;
 static unsigned long ymmusic_midi_us_accum = 0;
+static unsigned long ymmusic_midi_now = 0;  /* song ticks so far */
+static unsigned long ymmusic_midi_next = 0; /* the earliest track's next event */
+static int ymmusic_midi_active = 0;         /* tracks still going */
 
 // Incremented by interrupt if any request is processed.
 static unsigned short ymmusic_ack_nr = 0;
 
-// YM2149 sound chip access
-static volatile unsigned char *pPsgSndCtrl = (void *)0xff8800;
-static volatile unsigned char *pPsgSndData = (void *)0xff8802;
+// YM2149 sound chip access, in supervisor mode only (the VBL, or Supexec).
+// Interrupts are masked between selecting a register and using it: TOS's
+// Timer C plays Dosound sequences on the same chip and outranks the VBL,
+// so landing in between would send the value to the register it selected.
+// (As STDL's ym.c does: https://github.com/neilrackett/atarist-stdl)
+#if defined(YMMUSIC_MD)
+unsigned char ymmusic_regs[14] = {0, 0, 0, 0, 0, 0, 0, 0x3f};
+
+static __inline__ unsigned long ym_mulu(unsigned short a, unsigned short b)
+{
+    return (unsigned long)a * b;
+}
+#else
+#define YM_SELECT (*(volatile unsigned char *)0xFFFF8800UL)
+#define YM_DATA (*(volatile unsigned char *)0xFFFF8802UL)
+
+// 16 x 16 bits in one mulu.w: an int multiply is a __mulsi3 call on a 68000.
+static __inline__ unsigned long ym_mulu(unsigned short a, unsigned short b)
+{
+    unsigned long r = a;
+
+    __asm__("mulu.w %1,%0" : "+d"(r) : "d"(b));
+    return r;
+}
+#endif
+
+// What was last written to each voice's period and volume, so a step only
+// writes the registers that change. All ones: unknown, write next time.
+static unsigned short ym_period_shadow[3] = {0xffff, 0xffff, 0xffff};
+static unsigned char ym_volume_shadow[3] = {0xff, 0xff, 0xff};
+
+#if defined(YMMUSIC_MD)
+static void ym_write(unsigned char reg, unsigned char value)
+{
+    ymmusic_regs[reg] = value;
+}
+
+// The mixer's tone and noise bits; the ST keeps its port bits as they are.
+static void ym_mixer(unsigned char clear, unsigned char set)
+{
+    ymmusic_regs[7] = (unsigned char)(((ymmusic_regs[7] & ~clear) | set) & 0x3f);
+}
+#else
+static void ym_write(unsigned char reg, unsigned char value)
+{
+    unsigned short sr;
+
+    __asm__ volatile("move.w %%sr,%0\n\tori.w #0x0700,%%sr" : "=d"(sr) : : "cc");
+    YM_SELECT = reg;
+    YM_DATA = value;
+    __asm__ volatile("move.w %0,%%sr" : : "d"(sr) : "cc");
+}
+
+// The mixer (register 7): set and clear tone/noise bits, keeping the I/O
+// port direction bits TOS relies on (port A drives the floppy select).
+static void ym_mixer(unsigned char clear, unsigned char set)
+{
+    unsigned short sr;
+
+    __asm__ volatile("move.w %%sr,%0\n\tori.w #0x0700,%%sr" : "=d"(sr) : : "cc");
+    YM_SELECT = 7;
+    YM_DATA = (unsigned char)((YM_SELECT & ~clear) | set);
+    __asm__ volatile("move.w %0,%%sr" : : "d"(sr) : "cc");
+}
+#endif
 
 // Divisor table for MUS notes * 4 bit precision for pitch bend
 // [note 0..127][pitch bend 0..15]
 // This data was generated using the 'ym_table.c' tool
-static short ymmusic_divisors[128][16] = {
+static const short ymmusic_divisors[128][16] = {
   { 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095},
   { 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095},
   { 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095},
@@ -349,16 +433,21 @@ static unsigned long ymmusic_read_var(unsigned char **pp, unsigned char *end)
 static void ymmusic_midi_reset_tracks(void)
 {
     int i;
-    for (i = 0; i < ymmusic_midi_num_tracks; ++i)
+
+    ymmusic_midi_active = 0;    for (i = 0; i < ymmusic_midi_num_tracks; ++i)
     {
         ymmusic_midi_track_t *t = &ymmusic_midi_tracks[i];
         t->ptr = t->start;
         t->running_status = 0;
         t->active = (t->start < t->end) ? 1 : 0;
-        t->delta = t->active ? ymmusic_read_var(&t->ptr, t->end) : 0;
+        t->next = t->active ? ymmusic_read_var(&t->ptr, t->end) : YMMUSIC_MIDI_ENDED;
+        ymmusic_midi_active += t->active;
     }
     ymmusic_midi_tempo_us = 500000;
+    ymmusic_midi_us_per_tick = ymmusic_midi_tempo_us / ymmusic_midi_division;
     ymmusic_midi_us_accum = 0;
+    ymmusic_midi_now = 0;
+    ymmusic_midi_next = 0; /* the first step finds it */
 }
 
 static int ymmusic_midi_init(unsigned char *data)
@@ -414,15 +503,25 @@ static int ymmusic_midi_init(unsigned char *data)
     return 1;
 }
 
-static int ymmusic_midi_any_active(void)
+// A track has run out: off, and one fewer going.
+static void ymmusic_midi_end_track(ymmusic_midi_track_t *t)
 {
-    int i;
-    for (i = 0; i < ymmusic_midi_num_tracks; ++i)
+    if (t->active)
     {
-        if (ymmusic_midi_tracks[i].active)
-            return 1;
+        t->active = 0;
+        t->next = YMMUSIC_MIDI_ENDED;
+        --ymmusic_midi_active;
     }
-    return 0;
+}
+
+// MIDI keeps its drums on channel 10 (9 from 0); the player came from MUS,
+// which keeps them on 15, and picks percussion instruments there. Swap the
+// two so the drums sound as drums.
+static unsigned char ymmusic_midi_channel(unsigned char status)
+{
+    unsigned char channel = status & 0x0F;
+
+    return (channel == 9) ? 15 : (channel == 15) ? 9 : channel;
 }
 
 static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
@@ -432,7 +531,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
 
     if (!t->active || t->ptr >= t->end)
     {
-        t->active = 0;
+        ymmusic_midi_end_track(t);
         return;
     }
 
@@ -441,7 +540,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
     {
         if (t->running_status == 0)
         {
-            t->active = 0;
+            ymmusic_midi_end_track(t);
             return;
         }
         status = t->running_status;
@@ -458,7 +557,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
     {
     case 0x80:
     {
-        unsigned char channel = status & 0x0F;
+        unsigned char channel = ymmusic_midi_channel(status);
         unsigned char note = (t->ptr < t->end) ? *t->ptr++ : 0;
         if (t->ptr < t->end)
             ++t->ptr; /* velocity */
@@ -467,7 +566,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
     }
     case 0x90:
     {
-        unsigned char channel = status & 0x0F;
+        unsigned char channel = ymmusic_midi_channel(status);
         unsigned char note = (t->ptr < t->end) ? *t->ptr++ : 0;
         unsigned char vel = (t->ptr < t->end) ? *t->ptr++ : 0;
         if (vel == 0)
@@ -479,7 +578,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
     case 0xA0:
     case 0xB0:
     {
-        unsigned char channel = status & 0x0F;
+        unsigned char channel = ymmusic_midi_channel(status);
         unsigned char c1 = (t->ptr < t->end) ? *t->ptr++ : 0;
         unsigned char c2 = (t->ptr < t->end) ? *t->ptr++ : 0;
         if ((status & 0xF0) == 0xB0)
@@ -495,7 +594,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
     }
     case 0xC0:
     {
-        unsigned char channel = status & 0x0F;
+        unsigned char channel = ymmusic_midi_channel(status);
         unsigned char patch = (t->ptr < t->end) ? *t->ptr++ : 0;
         ymmusic_controller(channel, 0, patch);
         break;
@@ -506,7 +605,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
         break;
     case 0xE0:
     {
-        unsigned char channel = status & 0x0F;
+        unsigned char channel = ymmusic_midi_channel(status);
         unsigned char lsb = (t->ptr < t->end) ? *t->ptr++ : 0;
         unsigned char msb = (t->ptr < t->end) ? *t->ptr++ : 0;
         unsigned short bend = (unsigned short)(((unsigned short)msb << 7) | (lsb & 0x7F));
@@ -524,7 +623,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
 
             if (type == 0x2F)
             {
-                t->active = 0;
+                ymmusic_midi_end_track(t);
                 t->ptr = t->end;
                 return;
             }
@@ -535,6 +634,10 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
                                         (unsigned long)t->ptr[2];
                 if (ymmusic_midi_tempo_us == 0)
                     ymmusic_midi_tempo_us = 500000;
+                // the division happens here, not on every step
+                ymmusic_midi_us_per_tick = ymmusic_midi_tempo_us / ymmusic_midi_division;
+                if (ymmusic_midi_us_per_tick == 0)
+                    ymmusic_midi_us_per_tick = 1;
             }
 
             t->ptr = meta_end;
@@ -552,38 +655,28 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
 
     if (t->ptr >= t->end)
     {
-        t->active = 0;
+        ymmusic_midi_end_track(t);
         return;
     }
 
-    t->delta = ymmusic_read_var(&t->ptr, t->end);
+    t->next += ymmusic_read_var(&t->ptr, t->end);
 }
 
-static void ymmusic_midi_tick(void)
-{
-    int i;
-    for (i = 0; i < ymmusic_midi_num_tracks; ++i)
-    {
-        ymmusic_midi_track_t *t = &ymmusic_midi_tracks[i];
-        if (!t->active)
-            continue;
-
-        if (t->delta > 0)
-            --t->delta;
-
-        while (t->active && t->delta == 0)
-            ymmusic_midi_process_track_event(t);
-    }
-}
-
+// One 50Hz step: move the song clock on by 20ms worth of MIDI ticks, then
+// play every event now due, earliest first across the tracks. This used to
+// step tick by tick, counting each track's delta down every tick, which on
+// a song of a dozen tracks took 27,000 cycles a step: 8% of a 16MHz Mega
+// STE. Now a step with nothing due is one comparison a track.
 static void ymmusic_midi_update(void)
 {
-    unsigned long us_per_tick;
-
-    if (!ymmusic_midi_any_active())
+    if (ymmusic_midi_active == 0)
     {
         if (ymmusic_state & YMMUSIC_LOOP)
         {
+#if defined(YMMUSIC_MD)
+            if (!ymmusic_md_rewind())
+                return; /* the windows go back to the tracks' starts first */
+#endif
             ymmusic_midi_reset_tracks();
         }
         else
@@ -593,15 +686,56 @@ static void ymmusic_midi_update(void)
         }
     }
 
-    us_per_tick = (unsigned long)ymmusic_midi_tempo_us / (unsigned long)ymmusic_midi_division;
-    if (us_per_tick == 0)
-        us_per_tick = 1;
-
     ymmusic_midi_us_accum += 20000; /* 50 Hz service cadence */
-    while (ymmusic_midi_us_accum >= us_per_tick)
+    while (ymmusic_midi_us_accum >= ymmusic_midi_us_per_tick)
     {
-        ymmusic_midi_us_accum -= us_per_tick;
-        ymmusic_midi_tick();
+        ymmusic_midi_us_accum -= ymmusic_midi_us_per_tick;
+        ++ymmusic_midi_now;
+    }
+
+    // Nothing due yet: the usual step, and no scan of the tracks at all.
+    // Otherwise play the earliest track's event, find the earliest again,
+    // and so on until the earliest is in the future.
+    while (ymmusic_midi_active && ymmusic_midi_next <= ymmusic_midi_now)
+    {
+        ymmusic_midi_track_t *t = ymmusic_midi_tracks;
+        ymmusic_midi_track_t *end = t + ymmusic_midi_num_tracks;
+        ymmusic_midi_track_t *due = NULL;
+        unsigned long earliest = YMMUSIC_MIDI_ENDED;
+        unsigned long second = YMMUSIC_MIDI_ENDED;
+
+        // The earliest track (the first, on a tie) and the time after it.
+        // One long a track: an ended track's is all ones, never earliest.
+        for (; t < end; ++t)
+        {
+            unsigned long next = t->next;
+
+            if (next < earliest)
+            {
+                second = earliest;
+                earliest = next;
+                due = t;
+            }
+            else if (next < second)
+            {
+                second = next;
+            }
+        }
+        if (due == NULL)
+            break;
+        ymmusic_midi_next = earliest;
+        if (earliest > ymmusic_midi_now || !YMMUSIC_TRACK_READY(due))
+            break;
+        // Its events, while none of another track's comes first (on a tie
+        // the scan decides, as the first track's goes first)
+        do
+        {
+            ymmusic_midi_process_track_event(due);
+        } while (due->next <= ymmusic_midi_now && due->next < second &&
+                 YMMUSIC_TRACK_READY(due));
+        // The earliest now, with no scan (`second` is the earliest of the
+        // others): one scan less a step, as the last one only found this.
+        ymmusic_midi_next = (due->next < second) ? due->next : second;
     }
 }
 
@@ -610,8 +744,12 @@ static void ymmusic_reset()
     int i;
 
     // Initialize mixer: disable all noise and tone
-    *pPsgSndCtrl = 7;
-    *pPsgSndData = (*pPsgSndCtrl & 0b11000000) | 0b00111111;
+    ym_mixer(0, 0x3f);
+    for (i = 0; i < 3; i++)
+    {
+        ym_period_shadow[i] = 0xffff;
+        ym_volume_shadow[i] = 0xff;
+    }
 
     ymmusic_ptr = NULL;
     ymmusic_end = NULL;
@@ -620,6 +758,8 @@ static void ymmusic_reset()
     ymmusic_wait_remainder = 0;
     ymmusic_midi_num_tracks = 0;
     ymmusic_midi_us_accum = 0;
+    ymmusic_midi_now = 0;
+    ymmusic_midi_active = 0;
 
     for (i = 0; i < YMMUSIC_NUMVOICES; i++)
     {
@@ -638,7 +778,7 @@ static void ymmusic_reset()
         ymmusic_midi_tracks[i].start = NULL;
         ymmusic_midi_tracks[i].ptr = NULL;
         ymmusic_midi_tracks[i].end = NULL;
-        ymmusic_midi_tracks[i].delta = 0;
+        ymmusic_midi_tracks[i].next = YMMUSIC_MIDI_ENDED;
         ymmusic_midi_tracks[i].running_status = 0;
         ymmusic_midi_tracks[i].active = 0;
     }
@@ -647,6 +787,69 @@ static void ymmusic_reset()
 void ymmusic_init()
 {
     ymmusic_reset();
+}
+
+#if defined(YMMUSIC_MD)
+void ymmusic_md_stop(void)
+{
+    ymmusic_state = 0;
+    ymmusic_silence();
+    ymmusic_reset();
+}
+
+ymmusic_midi_track_t *ymmusic_md_track(int i)
+{
+    return &ymmusic_midi_tracks[i];
+}
+
+void ymmusic_md_begin(unsigned short division, int tracks, int loop)
+{
+    ymmusic_midi_division = division ? division : 96;
+    ymmusic_midi_num_tracks = tracks;
+    ymmusic_mode = 2;
+    /* MIDI mode keeps ptr non-null as an active marker */
+    ymmusic_data = ymmusic_ptr = (unsigned char *)ymmusic_midi_tracks;
+    ymmusic_state = (unsigned short)(YMMUSIC_PLAY | (loop ? YMMUSIC_LOOP : 0));
+    ymmusic_midi_reset_tracks();
+}
+
+void ymmusic_md_pause(int paused)
+{
+    if (paused)
+    {
+        ymmusic_state &= ~YMMUSIC_PLAY;
+        ymmusic_silence(); /* no step will now, as none is due */
+    }
+    else if (ymmusic_ptr)
+        ymmusic_state |= YMMUSIC_PLAY;
+}
+
+int ymmusic_md_playing(void)
+{
+    return ymmusic_ptr != NULL && (ymmusic_state & YMMUSIC_PLAY);
+}
+#endif
+
+// A command not yet taken, or a song playing: worth a step.
+int ymmusic_active()
+{
+    return ymmusic_cmd_nr_end != ymmusic_ack_nr || (ymmusic_state & YMMUSIC_PLAY);
+}
+
+// Every voice silent and off, keeping the song and its place.
+void ymmusic_silence()
+{
+    int i;
+
+    for (i = 0; i < 3; i++)
+    {
+        ym_write(8 + i, 0);
+        ym_volume_shadow[i] = 0;
+        ym_period_shadow[i] = 0xffff;
+        ymmusic_voices[i].ticks = 0xffff;
+        ymmusic_voices[i].channel = 0xff;
+    }
+    ym_mixer(0, 0x3f);
 }
 
 #define FIXED_CHANNELS 0
@@ -710,9 +913,19 @@ static void ymmusic_play_note(unsigned char channel, unsigned char note, unsigne
     // We have found a voice.
 found:
 
-    if (use_volume)
+    if (ymmusic_mode == 2)
     {
-        ymmusic_channels[channel].volume = volume;
+        // MIDI: the velocity belongs to the note; the channel's volume is
+        // controller 7's
+        voice->velocity = volume;
+    }
+    else
+    {
+        if (use_volume)
+        {
+            ymmusic_channels[channel].volume = volume;
+        }
+        voice->velocity = 127;
     }
     voice->channel = channel;
     voice->note = note;
@@ -781,7 +994,7 @@ static void ymmusic_controller(unsigned char channel, unsigned char control, uns
 }
 
 // Retrieves the value belonging to the current tick from an envelope.
-static char ymmusic_envelope_value(envelope_t *env, unsigned short ticks, unsigned char released) {
+static signed char ymmusic_envelope_value(envelope_t *env, unsigned short ticks, unsigned char released) {
     if (released) {
         // In release phase
         ticks += env->release_begin;
@@ -804,16 +1017,19 @@ static char ymmusic_envelope_value(envelope_t *env, unsigned short ticks, unsign
     return env->data[ticks];
 }
 
-// Calculates the volume of a voice at the current tick.
+// Calculates the volume of a voice at the current tick, as a YM level 0..15:
+// the channel's volume times the note's velocity, the instrument's envelope
+// on that, then the music volume.
 static unsigned char ymmusic_voice_volume(ymmusic_voice_t *voice)
 {
-    unsigned char volume = ymmusic_channels[voice->channel].volume;
+    short volume = (short)(ym_mulu(ymmusic_channels[voice->channel].volume, voice->velocity) >> 7);
     if (voice->instrument && voice->instrument->volume_envelope) {
         envelope_t *env = voice->instrument->volume_envelope;
         volume += ymmusic_envelope_value(env, voice->ticks, voice->released);
     }
+    if (volume < 0) volume = 0;
     if (volume > 127) volume = 127;
-    return volume;
+    return ymmusic_levels[ym_mulu(volume, ymmusic_master) >> 8];
 }
 
 // Calculates the note of a voice at the current tick, in 128th of a note
@@ -858,6 +1074,7 @@ static int ymmusic_voice_finished(ymmusic_voice_t *voice)
     }
 }
 
+#if !defined(YMMUSIC_MD)
 // Debug function to dump a human-readable transcript of the MUS file.
 static void ymmusic_dump(unsigned char *data, FILE *f)
 {
@@ -978,6 +1195,7 @@ static void ymmusic_dump_file(unsigned char *data)
     ymmusic_dump(data, f);
     fclose(f);
 }
+#endif
 
 // Called cyclically to drive the internal playback state and to push commands to YM-2149 hardware.
 void ymmusic_update()
@@ -1027,10 +1245,10 @@ void ymmusic_update()
         return;
     }
 
-    // Not playing? Do nothing.
+    // Not playing (paused)? Silence, but keep the place to carry on from.
     if (!(ymmusic_state & YMMUSIC_PLAY))
     {
-        ymmusic_reset();
+        ymmusic_silence();
         return;
     }
 
@@ -1051,44 +1269,33 @@ void ymmusic_update()
 
             short divisor = ymmusic_divisors[note >> 7][(note >> 3) & 15];
 
-            // Push note to soundchip
-            *pPsgSndCtrl = 0 + 2 * voice->ymidx;
-            *pPsgSndData = divisor & 0xff;
-            *pPsgSndCtrl = 1 + 2 * voice->ymidx;
-            *pPsgSndData = divisor >> 8;
+            // Push note to soundchip, if it changed
+            if (ym_period_shadow[voice->ymidx] != (unsigned short)divisor)
+            {
+                ym_period_shadow[voice->ymidx] = divisor;
+                ym_write(0 + 2 * voice->ymidx, divisor & 0xff);
+                ym_write(1 + 2 * voice->ymidx, divisor >> 8);
+            }
 
-            // Amplitude
-            unsigned char new_volume = (ymmusic_voice_volume(voice) >> 3) + snd_MusicVolume;
-            if (new_volume > 15)
+            // Amplitude, if it changed
+            unsigned char new_volume = ymmusic_voice_volume(voice);
+
+            if (ym_volume_shadow[voice->ymidx] != new_volume)
             {
-                new_volume -= 15;
-            }
-            else
-            {
-                new_volume = 0;
-            }
-            
-            // Push amplitude to soundchip
-            *pPsgSndCtrl = 8 + voice->ymidx;
-            if (*pPsgSndCtrl != new_volume)
-            {
-                *pPsgSndData = new_volume;
+                ym_volume_shadow[voice->ymidx] = new_volume;
+                ym_write(8 + voice->ymidx, new_volume);
             }
 
             // Enable mixer
             if (voice->ticks == 0 && !voice->released)
             {
-                // Note just pressed? Enable mixer for channel.
-                *pPsgSndCtrl = 7;
-                // Enable voice
-                unsigned char data = *pPsgSndCtrl & ~(1 << voice->ymidx);
-                // Enable or disable noise
+                // Note just pressed? Enable the voice's tone, and its
+                // noise if the instrument has it.
                 if (voice->instrument && voice->instrument->enables_noise) {
-                    data &=  ~(8 << voice->ymidx);
+                    ym_mixer(9 << voice->ymidx, 0);
                 } else {
-                    data |= 8 << voice->ymidx;
+                    ym_mixer(1 << voice->ymidx, 8 << voice->ymidx);
                 }
-                *pPsgSndData = data;
             } 
 
             voice->ticks++;
@@ -1096,10 +1303,8 @@ void ymmusic_update()
 
         if (voice->ticks == 0xffff)
         {
-            // Reaching end? Disable mixer for channel.
-            *pPsgSndCtrl = 7;
-            // 9 disables both voice and noise generator
-            *pPsgSndData = *pPsgSndCtrl | (9 << voice->ymidx);
+            // Reaching end? Disable both tone and noise for the voice.
+            ym_mixer(0, 9 << voice->ymidx);
         }
     }
 
