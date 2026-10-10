@@ -23,11 +23,16 @@ Build + Artifacts
 - CI (`.github/workflows`): pull requests to `main` build the three games
   and the firmware; anything landing on `main` is also tagged with the next
   `v1.4.0-atarist.N` (REminiscence style: ROTT 1.4, then a count; a tag put
-  on the commit by hand wins), moves the `latest` tag and replaces the
-  `.TOS` files, `<uuid>.uf2` and `<uuid>.json` on the `latest` release
-  (needs the `APP_UUID_KEY` secret). The firmware ships
-  `sidecart/version.txt` (v1.4.0) as it is, so bump it by hand when it
-  changes.
+  on the commit by hand wins), replaces the `.TOS` files on the `latest`
+  release and then moves the `latest` tag. The firmware (`<uuid>.uf2` and
+  `<uuid>.json`, needs the `APP_UUID_KEY` secret) is only rebuilt and
+  replaced when something it's built from has changed since the commit
+  `latest` marks: `sidecart/` apart from its documentation, or
+  `rott/atari_tables.*`. A manual run of the workflow can force it, which
+  is also the fix if `latest` gets moved by hand. Documentation-only
+  changes (`.md` files, `doc/`, `COPYING`, `LICENSE`) run neither workflow.
+  The firmware ships `sidecart/version.txt` as it is, so bump it by hand
+  when it changes.
 
 Current Makefile Defaults
 
