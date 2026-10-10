@@ -43,6 +43,7 @@ To achieve this, optimisations include:
 - Skip precache, fades, fizzle, advanced lighting
 - Low-memory mode always on
 - Using lower-precision numbers for internal calculations
+- Distant moving walls, elevator disks and idle enemies out of sight are updated less often
 - And more!
 
 | Model    | Music | SFX | Typical FPS |
@@ -57,7 +58,7 @@ FPS based on running ROTT with automatic detail selection enabled.
 
 Music plays ROTT's MIDI songs on the ST's own sound chip, so it works on any ST. Set `MusicMode` to `0` in `SOUND.ROT` to turn it off, or `MusicVolume` (0-255) to change its volume.
 
-Sound effects use the STE's DMA sound, so they need an STE or Mega STE (an ST just plays without them). Set `FXMode` to `0` in `SOUND.ROT` to turn them off. `NumVoices` sets how many play at once, from 1 to 8; each one costs CPU time while it plays (about 5% of a Mega STE for one), and nothing when it's quiet. The default, `0`, plays one at a time, or two with the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device).
+Sound effects use the STE's DMA sound, so they need an STE or Mega STE (an ST just plays without them). Set `FXMode` to `0` in `SOUND.ROT` to turn them off. `NumVoices` sets how many play at once, from 1 to 8; each one costs CPU time while it plays (about 5% of a Mega STE for one), and nothing when it's quiet. The default, `0`, plays one at a time, or two with the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device). On an 8MHz ST they're mixed at 6258Hz rather than 12517Hz, for half the CPU time: set `FXRate` to `12517` for the full rate.
 
 ## Rise of the Triad (SDL)
 

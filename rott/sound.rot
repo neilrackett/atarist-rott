@@ -33,6 +33,13 @@ FXVolume         254
 NumVoices          0
 
 ;
+; Sound effects mixing rate (Hz): 6258 costs half the CPU time of 12517,
+; for duller sound
+; 0 - Automatic: 6258 on an 8MHz CPU, 12517 on a Mega STE at 16MHz
+; 6258 or 12517
+FXRate             0
+
+;
 ; Stereo or Mono
 ; 1 - Mono
 ; 2 - Stereo

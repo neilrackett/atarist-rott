@@ -1106,6 +1106,10 @@ static boolean AtariSoundValue (const char *line, const char *line_end,
 }
 #endif
 
+#if defined(ATARI_NATIVE)
+int AtariFXRate = 0; /* see atari_sfx.h */
+#endif
+
 void ReadAtariSoundToggles (void)
 {
 #if defined(ATARI_NATIVE)
@@ -1118,6 +1122,7 @@ void ReadAtariSoundToggles (void)
    int parsed_voices = 0; // automatic: see atari_sfx.c
    int parsed_fx_volume = FXvolume;
    int parsed_music_volume = MUvolume;
+   int parsed_fx_rate = 0;
 
    GetPathFromEnvironment(filename, ApogeePath, SoundName);
    if (stat(filename, &st) == 0)
@@ -1154,6 +1159,8 @@ void ReadAtariSoundToggles (void)
                   parsed_fx_volume = (v < 0) ? 0 : (v > 255 ? 255 : (int)v);
                else if (AtariSoundValue(line, line_end, "MusicVolume", &v))
                   parsed_music_volume = (v < 0) ? 0 : (v > 255 ? 255 : (int)v);
+               else if (AtariSoundValue(line, line_end, "FXRate", &v))
+                  parsed_fx_rate = (v < 0) ? 0 : (int)v;
                }
 
             while (p < end && (*p == '\n' || *p == '\r'))
@@ -1169,6 +1176,7 @@ void ReadAtariSoundToggles (void)
    NumVoices = parsed_voices;
    FXvolume = parsed_fx_volume;
    MUvolume = parsed_music_volume;
+   AtariFXRate = parsed_fx_rate;
 #endif
 }
 

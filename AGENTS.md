@@ -103,12 +103,21 @@ Performance Notes
   Per-object costs that run every tic (actor list walks, elevator disks,
   moving walls) are the ones that matter; `ATARI_LOGIC_CHECK` proves a
   change exact. Already done that way (rt_actor.c): the active-actor loop
-  is `ATARI_DoActiveActors`, with elevator disks through `DoElevDiskInline`
+  is `ATARI_DoActiveActors`, with elevator disks through `DoElevDiskSteps`
   (keep it in step with `DoActor`); area walks skip by hand
   (`NextInRangeXY`). `I_GetTime()`/`GetTicCount()` are macros on the
   native build (i_timer.h, isr.h). Check new code for libgcc arithmetic
   (`__mulsi3`, `__divsi3`, 64-bit, soft float) with STDL's
   `tools/libcalls.sh` on the objects: about 350-3000 cycles a call.
+- `ATARI_LOD=1` (default): game logic level of detail, not exact (logic-
+  check builds default to 0, which stays exact). Moving walls more than 5
+  tiles from the player and elevator disks more than 3 move 4 tics at a
+  time (`WallMovingSteps`, `ElevDiskThinkSteps`); ordinary enemies that
+  are idle, more than 8 tiles away and out of sight join the actor
+  throttle (`ATARI_IdleOutOfSight`); disks go last in their area's actor
+  list, so walks that can't meet one stop there (`firstareadisk`,
+  `ATARI_DiskNear`). E1L1 at 8MHz: 4.8 -> 14 fps over a profile window,
+  3.2 -> 6.1 fps at the overlay test spot. Distances in rt_actor.h.
 - Mega STE speed (`rott/atari_megaste.c`): set only bits 0-1 of
   `$FFFF8E21`, read-modify-write, as STDL does; a bare `0x03` clears bits
   the control panel sets, and Hatari can't show the difference.

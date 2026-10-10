@@ -256,6 +256,9 @@ typedef struct objstruct
 		  struct objstruct         *next, *prev;
 		  struct objstruct         *nextactive, *prevactive;
 		  struct objstruct         *nextinarea, *previnarea;
+#if defined(ATARI_NATIVE)
+		  byte                     atari_lodtics; // tics owed (ATARI_LOD)
+#endif
 
 } objtype;
 
@@ -372,6 +375,21 @@ void     DoActor(objtype*);
 #if defined(ATARI_NATIVE)
 void     DoElevDisk(objtype*);
 void     ATARI_DoActiveActors(unsigned int actor_div, unsigned int actor_time_phase);
+#if ATARI_LOD
+// Game logic level of detail: moving walls and elevator disks more than
+// ATARI_LOD_DIST tiles from the player (either way) move ATARI_LOD_TICS
+// tics at a time. Uses `player` (rt_playr.h).
+#define  ATARI_LOD_DIST 5      /* moving walls, which can crush */
+#define  ATARI_LOD_DISK_DIST 3 /* elevator disks */
+#define  ATARI_LOD_TICS 4
+#define  ATARI_LodFarAt(tx, ty, dist)                                          \
+   (((unsigned int)((int)(tx) - (int)player->tilex + (dist)) >                \
+     2 * (dist)) ||                                                            \
+    ((unsigned int)((int)(ty) - (int)player->tiley + (dist)) >                \
+     2 * (dist)))
+#define  ATARI_LodFar(tx, ty) ATARI_LodFarAt(tx, ty, ATARI_LOD_DIST)
+#define  ATARI_LOD_ACTOR_DIST 8 /* idle enemies out of sight */
+#endif
 // DoActor, with elevator disks (dozens a level, every tic) the short way.
 #define  ATARI_DoActor(ob)                                         \
    (((ob)->state == &s_elevdisk) && ((ob)->obclass == diskobj) ?   \

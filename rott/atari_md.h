@@ -111,6 +111,9 @@ void ATARI_MD_GetStats(atari_md_stats_t *s);
  * (the play loop does it, between frames). */
 int ATARI_MD_TakeHudRedraw(void);
 
+/* Did the MD see the tile at (x, y), or one next to it, last frame? */
+int ATARI_MD_SpotvisNear(int x, int y);
+
 #if defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
 /* Test runs: after frame `frame` is on screen, save it as SHOTnnn.PI1 if
  * it is one of the frames compared between MD and ST runs. */

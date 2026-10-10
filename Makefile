@@ -47,6 +47,14 @@ ATARI_LOGIC_CHECK ?= 0 # Test runs: N tics a frame, scripted, state hashes
 
 ATARI_ACTOR_BUDGET ?= 0 # Max actor updates
 ATARI_ACTOR_THROTTLE_DIV ?= 3 # Actor update divisor
+# Game logic level of detail: moving walls and elevator disks far from the
+# player step several tics at once, and disks go last in their areas'
+# actor lists. Close to the original but not exact, so logic-check builds
+# leave it off unless asked.
+ifneq ($(strip $(ATARI_LOGIC_CHECK)),0)
+ATARI_LOD ?= 0
+endif
+ATARI_LOD ?= 1 # Far walls and disks every few tics
 ATARI_C2P_DIRTY_TILES ?= 1 # Update only dirty tiles
 ATARI_C2P_DIRTY_TILE_THRESHOLD ?= 200 # Dirty-tile cutoff
 ATARI_C2P_FAST_COPY ?= 1 # Use fast C2P copy
@@ -112,6 +120,7 @@ ATARI_CFLAGS ?= -O3 -fomit-frame-pointer -s -std=gnu99 -m68000 \
 	-DATARI_MD_RENDER=$(ATARI_MD_RENDER) -DATARI_MD_PIPELINE=$(ATARI_MD_PIPELINE) \
 	-DATARI_MD_BLIT=$(ATARI_MD_BLIT) \
 	-DATARI_MD_AUTOTEST=$(ATARI_MD_AUTOTEST) -DATARI_LOGIC_CHECK=$(ATARI_LOGIC_CHECK) \
+	-DATARI_LOD=$(ATARI_LOD) \
 	-DATARI_MD_AUTOTEST_DIE=$(ATARI_MD_AUTOTEST_DIE)
 ATARI_LDFLAGS ?= -s -nostdlib -L/freemint/libcmini/lib /freemint/libcmini/lib/crt0.o -m68000
 ATARI_LIBS ?= -lcmini -lgcc
@@ -370,7 +379,10 @@ $(ATARI_FLAGS_STAMP): FORCE | $(OBJDIR)
 
 $(OBJDIR)/%.o: %.c $(ATARI_FLAGS_STAMP)
 	mkdir -p $(dir $@)
-	$(ATARI_CC) $(ATARI_CFLAGS) $(ATARI_INCLUDES) -c $< -o $@
+	$(ATARI_CC) $(ATARI_CFLAGS) $(ATARI_INCLUDES) -MMD -MP -c $< -o $@
+
+# Headers too: an object rebuilds when one it includes changes.
+-include $(ATARI_OBJECTS:.o=.d)
 
 $(OBJDIR)/%.o: %.S $(ATARI_FLAGS_STAMP)
 	mkdir -p $(dir $@)

@@ -121,6 +121,9 @@ typedef struct pwallstruct
 		  enum      {pw_npushed,pw_pushing,pw_pushed,pw_moving}       action;
 		  int       state;
         byte      flags;
+#if defined(ATARI_NATIVE)
+        byte      atari_lodtics; // tics owed (ATARI_LOD)
+#endif
 } pwallobj_t;
 
 typedef struct tplate

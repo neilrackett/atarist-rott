@@ -13,8 +13,12 @@
 int ATARI_SFX_HasDMA(void);
 
 /* How many sounds play at once for NumVoices in sound.rot: 1-8 as set,
- * or 0 for automatic (4 with the ROTT Accelerator, 1 without). */
+ * or 0 for automatic (2 with the ROTT Accelerator, 1 without). */
 int ATARI_SFX_Voices(int numvoices);
+
+/* FXRate in sound.rot (rt_cfg.c): 0 automatic (half the rate, and half the
+ * mixing, on a CPU that measures as 8MHz), or the rate wanted in Hz. */
+extern int AtariFXRate;
 
 /* Once a frame: tells rt_sound.c about sounds that have ended, so their
  * lumps can be purged again. The FX_ calls do it too. */

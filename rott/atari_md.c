@@ -729,6 +729,8 @@ static int spotvis_near(int x, int y) {
   return (md_spotvis[MD_BITSET_WORD(x, y)] >> MD_BITSET_BIT(y)) & 1;
 }
 
+int ATARI_MD_SpotvisNear(int x, int y) { return spotvis_near(x, y); }
+
 static int near_player(int tx, int ty) {
   int dx = tx - player->tilex;
   int dy = ty - player->tiley;

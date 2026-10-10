@@ -11,8 +11,9 @@
  * native build (ROTT_ST.TOS): the FX_ calls rt_sound.c makes, in place of
  * the DOS sound library's fx_man.c, multivoc.c and its DMA driver.
  *
- * The DMA loops over a small mono ring at 12517Hz, and a VBL routine mixes
- * forward in quarter-ring blocks (20ms each) up to, but not into, the
+ * The DMA loops over a small mono ring at 12517Hz (6258Hz on a CPU that
+ * measures as 8MHz, or as FXRate in sound.rot says), and a VBL routine mixes
+ * forward in quarter-ring blocks (20ms each, 41 at 6258Hz) up to, but not into, the
  * quarter the hardware is playing, as STDL's voice mixer does. So sound
  * keeps going however long a frame takes, and a voice costs CPU only while
  * it plays: a byte fetch, a volume table fetch and a store (or an add) per
@@ -44,6 +45,7 @@
 #include "fx_man.h"
 #include "pitch.h"
 #include "atari_md.h"
+#include "atari_megaste.h"
 #include "atari_sfx.h"
 #include "atari_vbl.h"
 
@@ -61,10 +63,17 @@
 #define MW_DATA     (*(volatile uint16_t *)0xFFFF8922UL)
 #define MW_MASK     (*(volatile uint16_t *)0xFFFF8924UL)
 
-#define SFX_RATE     12517
-#define SFX_MODE     (0x80 | 1)         /* mono, 12517Hz */
-#define RING_FRAMES  1024               /* 82ms at 12517Hz */
-#define BLOCK_FRAMES (RING_FRAMES / 4)  /* a VBL's worth; a multiple of 4 */
+/* Mono at 12517Hz, or 6258Hz on a CPU that measures as 8MHz (FX_Init):
+ * half the mixing there, for duller sound. */
+#define SFX_RATE_FULL 12517
+#define SFX_RATE_HALF 6258
+#define RING_FRAMES  1024               /* 82ms at 12517Hz, 164 at 6258 */
+#define BLOCK_FRAMES (RING_FRAMES / 4)  /* a VBL's worth at 12517Hz; a multiple of 4 */
+/* speed probe passes (atari_megaste.c) from which the full rate is used:
+ * about 7400 at 8MHz, 15100 on a Mega STE at 16MHz with the cache */
+#define SFX_FULL_RATE_PASSES 11000
+static uint32_t sfx_rate = SFX_RATE_FULL;
+static uint8_t sfx_mode = 0x80 | 1;     /* mono; 1 12517Hz, 0 6258Hz */
 #define MAX_VOICES   8
 #define VOL_LEVELS   65                 /* 0-64 */
 
@@ -488,7 +497,7 @@ static long dma_start_super(void)
     * playback starts, and writing them under a running DMA can be picked
     * up mid-frame */
    DMA_CTRL = 0;
-   DMA_MODE = SFX_MODE;
+   DMA_MODE = sfx_mode;
    DMA_START_H = (uint8_t)(start >> 16);
    DMA_START_M = (uint8_t)(start >> 8);
    DMA_START_L = (uint8_t)start;
@@ -643,7 +652,7 @@ static int decode(const char *ptr, sfx_sound_t *s)
 /* 16.16 frames of the sound per frame of the ring */
 static uint32_t sfx_step(uint32_t rate, int pitchoffset)
 {
-   uint32_t step = (rate << 16) / SFX_RATE;
+   uint32_t step = (rate << 16) / sfx_rate;
 
    if (pitchoffset != 0)
       step = (step * (PITCH_GetScale(pitchoffset) >> 4)) >> 12;
@@ -864,6 +873,21 @@ int FX_Init(int SoundCard, int numvoices, int numchannels, int samplebits,
    }
    memset(&mx, 0, sizeof(mx));
    mx.voices = (numvoices < 1) ? 1 : (numvoices > MAX_VOICES ? MAX_VOICES : numvoices);
+
+   /* The rate: FXRate in sound.rot, or measured (the Mega STE switched to
+    * 16MHz first, as it would be by now in play). */
+   if (AtariFXRate > 0)
+      sfx_rate = (AtariFXRate < (SFX_RATE_HALF + SFX_RATE_FULL) / 2) ?
+                 SFX_RATE_HALF : SFX_RATE_FULL;
+   else
+   {
+      if (is_megaste())
+         megaste_enable_16mhz_cache();
+      cpu_speed_measure();
+      sfx_rate = (cpu_speed_passes >= SFX_FULL_RATE_PASSES) ?
+                 SFX_RATE_FULL : SFX_RATE_HALF;
+   }
+   sfx_mode = (uint8_t)(0x80 | (sfx_rate == SFX_RATE_FULL ? 1 : 0));
 
    /* guard bytes past the ring, all cleared: a real STE clicked once a
     * loop on a silent ring with uninitialised bytes after it, so whatever

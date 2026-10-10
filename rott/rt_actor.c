@@ -103,6 +103,14 @@ objtype           *FIRSTACTOR,*LASTACTOR;
 objtype           *FIRSTFREE,*LASTFREE;
 objtype           *lastactive,*firstactive,**objlist;
 objtype           *firstareaactor[NUMAREAS+1],*lastareaactor[NUMAREAS+1];
+#if defined(ATARI_NATIVE) && ATARI_LOD
+/* ATARI_LOD: disks go last in their area's list, from here on, so walks
+ * that never act on a disk can stop there. */
+objtype           *firstareadisk[NUMAREAS+1];
+static int        atari_actorlist_serial; /* InitActorList calls */
+static int        atari_disktiles_serial = -1; /* found for that call */
+static void       ATARI_FindDiskTiles(void);
+#endif
 int               objcount;
 
 byte              RANDOMACTORTYPE[10];
@@ -863,6 +871,24 @@ void MakeLastInArea(objtype *ob)
 	 //AddEndGameCommand ();
 	 return;
 	 }
+#if defined(ATARI_NATIVE) && ATARI_LOD
+  // Anything but a disk goes in before the area's disks.
+  if ((ob->obclass != diskobj) && firstareadisk[ob->areanumber])
+	 {
+	 objtype *disk = firstareadisk[ob->areanumber];
+
+	 ob->nextinarea = disk;
+	 ob->previnarea = disk->previnarea;
+	 if (disk->previnarea)
+		disk->previnarea->nextinarea = ob;
+	 else
+		firstareaactor[ob->areanumber] = ob;
+	 disk->previnarea = ob;
+	 return;
+	 }
+  if ((ob->obclass == diskobj) && !firstareadisk[ob->areanumber])
+	 firstareadisk[ob->areanumber] = ob;
+#endif
   if (!firstareaactor[ob->areanumber])
 	 firstareaactor[ob->areanumber]	= ob;
   else
@@ -883,6 +909,10 @@ void RemoveFromArea(objtype*ob)
 	 return;
 	 }
 
+#if defined(ATARI_NATIVE) && ATARI_LOD
+  if (ob == firstareadisk[ob->areanumber]) // the next is a disk or none
+		firstareadisk[ob->areanumber] = ob->nextinarea;
+#endif
   if (ob == lastareaactor[ob->areanumber])     // remove from master list
 		lastareaactor[ob->areanumber] = ob->previnarea;
   else
@@ -1063,7 +1093,7 @@ void CheckBounds(objtype*ob)
 =====================
 */
 
-// ATARI_NATIVE: DoElevDiskInline does this for elevator disks, with the
+// ATARI_NATIVE: DoElevDiskSteps does this for elevator disks, with the
 // steps that can't apply to them left out: keep the two in step.
 void DoActor (objtype *ob)
    {
@@ -1246,6 +1276,10 @@ void InitActorList (void)
 	firstactive = lastactive = NULL;
 	memset(firstareaactor,0,sizeof(firstareaactor));
 	memset(lastareaactor,0,sizeof(lastareaactor));
+#if defined(ATARI_NATIVE) && ATARI_LOD
+	memset(firstareadisk,0,sizeof(firstareadisk));
+	atari_actorlist_serial++; /* the disk tiles want finding again */
+#endif
    NUMSPAWNLOCATIONS = 0;
 
 
@@ -1870,12 +1904,120 @@ void T_ElevDisk(objtype*ob)
  * sounds and REDTIME are for other classes, it is not the player), and
  * NewState to the state it is in (its next, with no tics) written out:
  * T_ElevDisk never changes the state. */
-static __inline__ __attribute__((always_inline)) void DoElevDiskInline(objtype *ob)
+#if ATARI_LOD
+/* ElevDiskThink for steps tics at once, for ATARI_LOD's far disks: a
+ * rider, or a slave catching its master up, only looked for once; the
+ * travel itself tic by tic (a wait at either end counted off at once). */
+static void ElevDiskThinkSteps(objtype *ob, int steps)
+   {
+   objtype *temp = (objtype*)(actorat[ob->tilex][ob->tiley]);
+   objtype *master;
+
+   if (!(ob->flags & FL_MASTER))
+      {
+      master = (objtype*)(ob->target);
+      if (!master)
+         Error("disk without master !");
+      if (M_ISACTOR(temp) && (temp != ob) && (!(temp->flags & FL_DYING)))
+         {
+         int dz = abs(ob->z - temp->z),
+             dx = abs(ob->x - temp->x),
+             dy = abs(ob->y - temp->y);
+
+         if ((dx < 0x7000) && (dy < 0x7000) && (dz < 68) && (temp->z > ob->z))
+            {
+            ob->flags &= ~FL_SYNCED;
+            return;
+            }
+         }
+      if (!(ob->flags & FL_SYNCED))
+         {
+         int dz = abs(master->z - ob->z);
+
+         if ((dz > 0) && (dz < 8))
+            {
+            SetElevatorDiskVariables(ob,master->z,master->momentumz,master->temp1,
+                                     master->temp3,master->dirchoosetime);
+            ob->flags |= FL_SYNCED;
+            }
+         return;
+         }
+      }
+
+   while (steps > 0)
+      {
+      if (ob->dirchoosetime > 0)
+         {
+         int wait = (ob->dirchoosetime < steps) ? ob->dirchoosetime : steps;
+
+         ob->dirchoosetime -= wait;
+         steps -= wait;
+         continue;
+         }
+      steps--;
+      if (ob->temp1) // moving
+         {
+         ob->z += (ob->momentumz >> 16);
+         if (ob->momentumz > 0) // down
+            {
+            if (ob->z >= nominalheight + 40 + DISKMOMZ)
+               SetElevatorDiskVariables(ob,ob->z - (ob->momentumz>>16),0,0,0,35);
+            }
+         else
+            {
+            if (ob->z < ob->temp2) // temp2 has max height
+               SetElevatorDiskVariables(ob,ob->z - (ob->momentumz>>16),0,0,1,35);
+            }
+         }
+      else
+         {
+         if (ob->temp3)
+            ob->momentumz = (DISKMOMZ << 16);
+         else
+            ob->momentumz = -(DISKMOMZ << 16);
+         ob->temp1 = 1;
+         }
+      }
+   }
+
+/* An ordinary enemy, not attacking, far from the player and on a tile the
+ * player didn't see last frame (nor next to one): ATARI_LOD lets it act
+ * one tic in a few, as the throttle does outside the player's areas. */
+static int ATARI_IdleOutOfSight(const objtype *ob)
+   {
+   int x, y;
+
+   if ((ob->obclass < lowguardobj) || (ob->obclass > dfiremonkobj) ||
+       (ob->flags & FL_ATTACKMODE) ||
+       !ATARI_LodFarAt(ob->tilex, ob->tiley, ATARI_LOD_ACTOR_DIST))
+      return 0;
+   x = ob->tilex;
+   y = ob->tiley;
+#if ATARI_MD_RENDER
+   if (ATARI_MD_Active())
+      return !ATARI_MD_SpotvisNear(x, y);
+#endif
+   if ((x < 1) || (y < 1) || (x >= MAPSIZE - 1) || (y >= MAPSIZE - 1))
+      return 0;
+   return !(spotvis[x-1][y-1] | spotvis[x][y-1] | spotvis[x+1][y-1] |
+            spotvis[x-1][y]   | spotvis[x][y]   | spotvis[x+1][y]   |
+            spotvis[x-1][y+1] | spotvis[x][y+1] | spotvis[x+1][y+1]);
+   }
+#endif
+
+static __inline__ __attribute__((always_inline)) void DoElevDiskSteps(objtype *ob,
+                                                                  int steps)
    {
    int door;
 
    M_CheckDoor(ob);
-   ElevDiskThink(ob);
+#if ATARI_LOD
+   // More than one step: ATARI_LOD's far disks, a few tics at a time.
+   if (steps > 1)
+      ElevDiskThinkSteps(ob, steps);
+   else
+#endif
+      ElevDiskThink(ob);
    if (ob->ticcount)
       ob->ticcount --;
    else
@@ -1896,7 +2038,7 @@ static __inline__ __attribute__((always_inline)) void DoElevDiskInline(objtype *
 
 void DoElevDisk(objtype *ob)
    {
-   DoElevDiskInline(ob);
+   DoElevDiskSteps(ob, 1);
    }
 
 /* One tic of UpdateGameObjects' actor loop (the build without an actor
@@ -1908,13 +2050,21 @@ void ATARI_DoActiveActors(unsigned int actor_div, unsigned int actor_time_phase)
    {
    objtype *ob, *temp;
 
+#if ATARI_LOD
+   if (atari_disktiles_serial != atari_actorlist_serial)
+      ATARI_FindDiskTiles(); /* a new level, or a loaded game */
+#endif
    for (ob = firstactive; ob;)
       {
       temp = ob->nextactive;
       if ((actor_div > 1) &&
           (ob->obclass != playerobj) &&
           ((ob->flags & FL_KEYACTOR) == 0) &&
-          !areabyplayer[ob->areanumber])
+          (!areabyplayer[ob->areanumber]
+#if ATARI_LOD
+           || ATARI_IdleOutOfSight(ob)
+#endif
+          ))
          {
          // At most a few hundred: a 16-bit divide, not __umodsi3.
          unsigned int phase = (unsigned short)((unsigned short)ob->tilex +
@@ -1928,7 +2078,32 @@ void ATARI_DoActiveActors(unsigned int actor_div, unsigned int actor_time_phase)
             }
          }
       if ((ob->state == &s_elevdisk) && (ob->obclass == diskobj))
-         DoElevDiskInline(ob);
+         {
+         int steps = 1;
+#if ATARI_LOD
+         // Far from the player a disk moves ATARI_LOD_TICS tics at a time
+         // (its think that many times, the rest once); back in range it
+         // catches up first. Not a slave still to catch its master up: it
+         // does nothing else, and only one tic or two in a pass will do.
+         if ((ob->flags & (FL_SYNCED|FL_MASTER)) &&
+             ATARI_LodFarAt(ob->tilex, ob->tiley, ATARI_LOD_DISK_DIST))
+            {
+            if (++ob->atari_lodtics < ATARI_LOD_TICS)
+               {
+               ob = temp;
+               continue;
+               }
+            steps = ob->atari_lodtics;
+            ob->atari_lodtics = 0;
+            }
+         else if (ob->atari_lodtics)
+            {
+            steps = ob->atari_lodtics + 1;
+            ob->atari_lodtics = 0;
+            }
+#endif
+         DoElevDiskSteps(ob, steps);
+         }
       else
          DoActor(ob);
       ob = temp;
@@ -6424,40 +6599,106 @@ void BattleCrushCheck(objtype *ob,objtype *listrover)                           
 
 
 #if defined(ATARI_NATIVE)
-/* The first actor from p on (along nextinarea) within range of a point in
- * both x and y: (unsigned)(bias - x) <= span, bias the point plus the
- * range and span twice it, the test CheckOtherActors and PushWallMove
- * make (testing y that early changes nothing where their tests in between
- * only continue). Most of an area is out of range and only skipped, so
- * that part by hand: 68 cycles an actor out of range in x, the span in a
- * register and the next pointer's own load as the end test, where gcc
- * made 90. It reads the actors, hence "memory". */
-static __inline__ objtype *NextInRangeXY(objtype *p, int xbias, int ybias,
-                                         unsigned int span)
+/* The first actor from p on (along nextinarea), before end, within range
+ * of a point in both x and y: (unsigned)(bias - x) <= span, bias the point
+ * plus the range and span twice it, the test CheckOtherActors and
+ * PushWallMove make (testing y that early changes nothing where their
+ * tests in between only continue); end if none. end is NULL, or (with
+ * ATARI_LOD) the area's first disk, where a walk that can't act on one
+ * stops. Most of an area is out of range and only skipped, so that part
+ * by hand: 70 cycles an actor out of range in x, where gcc made 90. It
+ * reads the actors, hence "memory". */
+static __inline__ objtype *NextInRangeXY(objtype *p, objtype *end, int xbias,
+                                         int ybias, unsigned int span)
    {
    __asm__ volatile(
-      "move.l  %0,%%d0\n\t"
+      "cmpa.l  %1,%0\n\t"
       "beq.s   3f\n"
       "1:\n\t"
-      "move.l  %1,%%d0\n\t"
-      "sub.l   %c4(%0),%%d0\n\t"
-      "cmp.l   %3,%%d0\n\t"
-      "bhi.s   2f\n\t"
       "move.l  %2,%%d0\n\t"
       "sub.l   %c5(%0),%%d0\n\t"
-      "cmp.l   %3,%%d0\n\t"
+      "cmp.l   %4,%%d0\n\t"
+      "bhi.s   2f\n\t"
+      "move.l  %3,%%d0\n\t"
+      "sub.l   %c6(%0),%%d0\n\t"
+      "cmp.l   %4,%%d0\n\t"
       "bls.s   3f\n"
       "2:\n\t"
-      "move.l  %c6(%0),%%d0\n\t"
-      "movea.l %%d0,%0\n\t"
+      "movea.l %c7(%0),%0\n\t"
+      "cmpa.l  %1,%0\n\t"
       "bne.s   1b\n"
       "3:"
       : "+a"(p)
-      : "d"(xbias), "d"(ybias), "d"(span), "i"(offsetof(objtype, x)),
+      : "a"(end), "d"(xbias), "d"(ybias), "d"(span), "i"(offsetof(objtype, x)),
         "i"(offsetof(objtype, y)), "i"(offsetof(objtype, nextinarea))
       : "d0", "cc", "memory");
    return p;
    }
+
+#if ATARI_LOD
+/* Where the disks are, found at the first tic after each InitActorList
+ * (the level is whole by then): the tiles with an elevator disk (which
+ * never moves sideways) or next to one, and the other disks (path disks,
+ * which do: a few a level, E1L1 has 7 to 51 elevator disks), to look at
+ * each time. More of those than fit turns the skipping off. */
+#define ATARI_MAXPATHDISKS 16
+static byte atari_disktiles[MAPSIZE][MAPSIZE / 8];
+static objtype *atari_pathdisk[ATARI_MAXPATHDISKS];
+static int atari_npathdisks; /* ATARI_MAXPATHDISKS + 1: too many */
+
+static void ATARI_FindDiskTiles(void)
+   {
+   objtype *ob;
+
+   atari_disktiles_serial = atari_actorlist_serial;
+   memset(atari_disktiles, 0, sizeof(atari_disktiles));
+   atari_npathdisks = 0;
+   for (ob = FIRSTACTOR; ob; ob = ob->next)
+      {
+      if ((ob->obclass != diskobj) || (ob->flags & FL_MASTER))
+         continue; /* masters: in no area list on a new level (in one after
+                      a load, but they never block) */
+      if (ob->state == &s_elevdisk)
+         {
+         int tx, ty;
+
+         for (tx = ob->tilex - 1; tx <= ob->tilex + 1; tx++)
+            for (ty = ob->tiley - 1; ty <= ob->tiley + 1; ty++)
+               if ((tx >= 0) && (tx < MAPSIZE) && (ty >= 0) && (ty < MAPSIZE))
+                  atari_disktiles[tx][ty >> 3] |= (byte)(1 << (ty & 7));
+         }
+      else if (atari_npathdisks < ATARI_MAXPATHDISKS)
+         atari_pathdisk[atari_npathdisks++] = ob;
+      else
+         atari_npathdisks = ATARI_MAXPATHDISKS + 1;
+      }
+   }
+
+/* Could a disk be within r (under a tile) of (x, y) in both x and y? An
+ * elevator disk only if it is on the point's tile or next to it (its x and
+ * y are inside its own tile): one look; a path disk if it is within r.
+ * Until the disks are found, say yes. */
+static int ATARI_DiskNear(int x, int y, int r)
+   {
+   const unsigned int span = (unsigned int)r << 1;
+   const int xbias = x + r, ybias = y + r;
+   objtype **disk, **end;
+
+   if ((atari_disktiles_serial != atari_actorlist_serial) ||
+       (atari_npathdisks > ATARI_MAXPATHDISKS))
+      return 1;
+   if (atari_disktiles[x >> 16][(y >> 16) >> 3] & (1 << ((y >> 16) & 7)))
+      return 1;
+   for (disk = atari_pathdisk, end = disk + atari_npathdisks; disk < end; disk++)
+      if (((unsigned int)(xbias - (*disk)->x) <= span) &&
+          ((unsigned int)(ybias - (*disk)->y) <= span))
+         return 1;
+   return 0;
+   }
+#define ATARI_AREA_DISKS(area) (firstareadisk[area])
+#else
+#define ATARI_AREA_DISKS(area) ((objtype *)NULL)
+#endif
 
 #endif
 movement_status CheckOtherActors(objtype*ob,int tryx,int tryy,int tryz)
@@ -6477,6 +6718,10 @@ movement_status CheckOtherActors(objtype*ob,int tryx,int tryy,int tryz)
 #if defined(ATARI_NATIVE)
    int nearbias, nearybias;
    unsigned int nearspan;
+   objtype *walkend;
+#if ATARI_LOD
+   int disksnear;
+#endif
 #endif
 
    ocl = ob->obclass;
@@ -6538,6 +6783,12 @@ movement_status CheckOtherActors(objtype*ob,int tryx,int tryy,int tryz)
    nearbias = tryx + (oldrad + 0x3000);
    nearybias = tryy + (oldrad + 0x3000);
    nearspan = (unsigned int)(oldrad + 0x3000) << 1;
+#if ATARI_LOD
+   // With no disk near, each area's walk stops at its disks (ATARI_LOD:
+   // they are last): most of an area on some levels. The disks then come
+   // after the other actors rather than in among them.
+   disksnear = ATARI_DiskNear(tryx, tryy, oldrad + 0x3000);
+#endif
 #endif
 
  actors:
@@ -6545,9 +6796,14 @@ movement_status CheckOtherActors(objtype*ob,int tryx,int tryy,int tryz)
    // Too far away in x or y whatever its class (the tests below only
    // widen actrad by 0x3000, and only continue until the y test): most
    // of the list, skipped by hand.
-   for(listrover=NextInRangeXY(firstareaactor[area],nearbias,nearybias,nearspan);
-       listrover;
-       listrover=NextInRangeXY(listrover->nextinarea,nearbias,nearybias,nearspan))
+#if ATARI_LOD
+   walkend = disksnear ? NULL : ATARI_AREA_DISKS(area);
+#else
+   walkend = NULL;
+#endif
+   for(listrover=NextInRangeXY(firstareaactor[area],walkend,nearbias,nearybias,nearspan);
+       listrover != walkend;
+       listrover=NextInRangeXY(listrover->nextinarea,walkend,nearbias,nearybias,nearspan))
 #else
    for(listrover=firstareaactor[area];listrover;listrover=listrover->nextinarea)
 #endif
@@ -7402,26 +7658,31 @@ boolean ActorTryMove(objtype*ob,int tryx, int tryy, int tryz)
 
 
 #if defined(ATARI_NATIVE)
-static __attribute__((noinline)) void PushWallMoveNear(int num, objtype *first);
+static __attribute__((noinline)) void PushWallMoveNear(int num, objtype *first,
+                                                       objtype *end);
 
 /* Most tics no actor is anywhere near a moving wall: find the first that
- * is, and only then the real work (with its eleven registers to save). */
+ * is, and only then the real work (with its eleven registers to save).
+ * Disks are never shootable, so (ATARI_LOD, disks last) the walk stops at
+ * them. */
 void PushWallMove(int num)
 {
  pwallobj_t *pwall = pwallobjlist[num];
  const int actrad = PWALLRAD + 0x5000;
  const int tryx = pwall->x + pwall->momentumx;
  const int tryy = pwall->y + pwall->momentumy;
- objtype *first = NextInRangeXY(firstareaactor[AREANUMBER(tryx >> 16, tryy >> 16)],
+ const int area = AREANUMBER(tryx >> 16, tryy >> 16);
+ objtype *end = ATARI_AREA_DISKS(area);
+ objtype *first = NextInRangeXY(firstareaactor[area], end,
                                 tryx + actrad, tryy + actrad,
                                 (unsigned int)actrad << 1);
 
- if (first)
-    PushWallMoveNear(num, first);
+ if (first != end)
+    PushWallMoveNear(num, first, end);
 }
 
-/* PushWallMove from the first actor near enough in x and y on */
-static void PushWallMoveNear(int num, objtype *first)
+/* PushWallMove from the first actor near enough in x and y on, to end */
+static void PushWallMoveNear(int num, objtype *first, objtype *end)
 #else
 void PushWallMove(int num)
 #endif
@@ -7461,8 +7722,8 @@ void PushWallMove(int num)
  // Out of range first, skipped by hand (NextInRangeXY): most actors.
  // The y test is moved up past ones that only continue.
  for(temp=first;
-     temp;
-     temp=NextInRangeXY(temp->nextinarea,nearbias,nearybias,nearspan))
+     temp != end;
+     temp=NextInRangeXY(temp->nextinarea,end,nearbias,nearybias,nearspan))
 #else
  for(temp=firstareaactor[areanumber];temp;temp=temp->nextinarea)
 #endif
