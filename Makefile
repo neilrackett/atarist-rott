@@ -7,6 +7,7 @@
 #   make sdl         ROTT_SDL.TOS: ROTT's own renderer through SDL, any ST-compatible
 #   make sdl-030     ROTT_030.TOS: the same for 68030 + 68882 (TT, Falcon)
 #   make sidecart    the ROTT Accelerator firmware (make -C sidecart build)
+#   make shareware   HUNTBGIN.zip: the shareware data the games use, from DATADIR
 #
 # Run on the host, the games build through stcmd (atarist-toolkit-docker);
 # inside stcmd (stcmd make st, ...) they build directly. The firmware builds
@@ -133,11 +134,18 @@ ATARI_SOURCES := $(filter-out $(SRCDIR)/amiga_%.c $(SRCDIR)/dosutil.c $(SRCDIR)/
 ATARI_ASM_SOURCES := $(SRCDIR)/sidecart_stubs.S $(SRCDIR)/atari_md_s.S
 ATARI_OBJECTS := $(addprefix $(OBJDIR)/,$(ATARI_SOURCES:.c=.o) $(ATARI_ASM_SOURCES:.S=.o))
 ATARI_OUTPUT ?= $(BUILDDIR)/ROTT_ST.TOS
+# The shareware data the games use: the WAD, the levels (RTC: Comm-bat),
+# the remote ridicule sounds (the sound effects need its REMOSTRT), and the
+# demos the menu plays.
 RUNTIME_DATA_FILES := \
 	$(DATADIR)/HUNTBGIN.WAD \
 	$(DATADIR)/HUNTBGIN.RTL \
 	$(DATADIR)/HUNTBGIN.RTC \
-	$(DATADIR)/REMOTE1.RTS
+	$(DATADIR)/REMOTE1.RTS \
+	$(DATADIR)/DEMO1_3.DMO \
+	$(DATADIR)/DEMO2_3.DMO \
+	$(DATADIR)/DEMO3_3.DMO \
+	$(DATADIR)/DEMO4_3.DMO
 RUNTIME_CONFIG_FILES := \
 	$(SRCDIR)/battle.rot \
 	$(SRCDIR)/scores.rot
@@ -169,7 +177,19 @@ endif
 sidecart:
 	$(MAKE) -C sidecart build
 
-.PHONY: games st sdl sdl-030 sidecart
+# The shareware data the games use, in one zip to go beside them. Apogee's
+# VENDOR.DOC goes in too: its terms for passing the shareware on ask for
+# the whole release, DOS programs and all, which this is not.
+SHAREWARE_ZIP := $(BUILDDIR)/HUNTBGIN.zip
+SHAREWARE_FILES := $(RUNTIME_DATA_FILES) $(DATADIR)/VENDOR.DOC
+
+shareware: $(SHAREWARE_ZIP)
+
+$(SHAREWARE_ZIP): $(SHAREWARE_FILES) | $(BUILDDIR)
+	$(RM) $@
+	zip -X -j -9 $@ $(SHAREWARE_FILES)
+
+.PHONY: games st sdl sdl-030 sidecart shareware
 .PHONY: FORCE rott-huntbgin rott-darkwar rott-rottcd rott-rottsite rott-dev rott-68882 stage-runtime-files atari-stage-runtime-files
 .SECONDARY: $(ATARI_OBJECTS)
 FORCE:
@@ -269,7 +289,7 @@ sdl-030: sdl-stage-runtime-files $(SDL_030_OUTPUT)
 endif
 
 clean:
-	$(RM) -r $(ATARI_OUTPUT) $(SDL_OUTPUT) $(SDL_030_OUTPUT) $(OBJDIR) $(SDL_OBJDIR) $(SDL_030_OBJDIR)
+	$(RM) -r $(ATARI_OUTPUT) $(SDL_OUTPUT) $(SDL_030_OUTPUT) $(SHAREWARE_ZIP) $(OBJDIR) $(SDL_OBJDIR) $(SDL_030_OBJDIR)
 
 # The game in EmuMD (sidecart/emu/emumd): Hatari with the ROTT Accelerator
 # emulated on the cartridge port. Run on the host, not in stcmd: builds

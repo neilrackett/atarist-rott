@@ -129,6 +129,7 @@ make st          # ROTT_ST.TOS
 make sdl         # ROTT_SDL.TOS
 make sdl-030     # ROTT_030.TOS
 make sidecart    # the ROTT Accelerator firmware
+make shareware   # HUNTBGIN.zip: the shareware data the games use, from tmp/ROTT
 ```
 
 The games are built through `stcmd`, so you can run these from your own shell (or run `stcmd make st` and so on yourself). The firmware needs the Pico toolchain too: see the [ROTT Accelerator readme](sidecart/README.md). Everything goes to `dist/`, along with the config files and, if you put the shareware files in `tmp/ROTT`, the game data, so `dist/` is ready to run in an emulator or copy to your Atari.

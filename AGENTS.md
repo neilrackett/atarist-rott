@@ -15,6 +15,10 @@ Build + Artifacts
   `make sdl` (`ROTT_SDL.TOS`), `make sdl-030` (`ROTT_030.TOS`). From the host
   they go through stcmd (`JOBS=4` by default); inside stcmd they build directly.
 - `make sidecart` builds the firmware, on the host only (Pico toolchain)
+- `make shareware`: `dist/HUNTBGIN.zip`, the shareware files the games use
+  (WAD, RTL, RTC, REMOTE1.RTS, the four demos) plus VENDOR.DOC, from `tmp/ROTT`.
+  VENDOR.DOC's terms want the whole shareware release passed on, so this
+  zip is for our own use, not for handing out.
 - Output: everything in `dist/` (`ROTT_ST.TOS`, the SDL builds, config files,
   the data from `tmp/ROTT`, and the firmware's `<uuid>.uf2`/`.json`)
 - Run it in EmuMD (from the host, not stcmd): `make emu` (builds with stcmd
