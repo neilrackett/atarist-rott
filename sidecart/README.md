@@ -99,7 +99,10 @@ opens the console.
   STE the blitter copies each frame while the CPU goes on with the next
   (`ATARI_MD_BLIT`, on unless a test copy at startup disagrees with the
   CPU); the HUD is converted only where something drew; masked walls are
-  looked at only when one changed (`MD_MASKED_TOUCH`).
+  compared in full only when one changed (`MD_MASKED_TOUCH`), and doors
+  and moving walls only while they move or change state, with a few of
+  the rest checked each frame in turn; an object is sent if one bit of
+  the MD's spotvis (with the tiles around the player added) is set.
 - **Matching builds.** `ROTT_ST.TOS` and the firmware must come from the
   same sources (`MD_PROTOCOL_VERSION`); with a mismatch the ST says so and
   uses its own renderer.

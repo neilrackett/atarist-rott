@@ -719,28 +719,34 @@ void ATARI_MD_Messages(const char *const *lines, int count) {
 }
 
 /* The MD's spotvis of its newest frame, copied out of ROM4 once a frame
- * so the object loop reads RAM with the cache on. */
+ * so the object loop reads RAM with the cache on, with the 5 x 5 tiles
+ * around the player added: an object is sent if its tile's bit is set,
+ * one test where it was a bitset look and a distance check. */
 static unsigned short md_spotvis[MD_BITSET_WORDS];
 
 static void read_spotvis(void) {
+  int x, y;
+
   memcpy(md_spotvis, (const void *)(MD_ROM4_BASE + MD_SPOTVIS_OFFSET),
          MD_BITSET_WORDS * 2);
+  for (x = player->tilex - 2; x <= player->tilex + 2; x++) {
+    if (x < 0 || x >= MAPSIZE) continue;
+    for (y = player->tiley - 2; y <= player->tiley + 2; y++) {
+      if (y >= 0 && y < MAPSIZE)
+        md_spotvis[MD_BITSET_WORD(x, y)] |= (unsigned short)(1u << MD_BITSET_BIT(y));
+    }
+  }
 }
 
-/* Is the tile at (x, y) or one of its eight neighbours marked? The MD
- * publishes each tile with its neighbours' bits already ORed in. */
-static int spotvis_near(int x, int y) {
-  if (x < 1 || y < 1 || x >= MAPSIZE - 1 || y >= MAPSIZE - 1) return 0;
-  return (md_spotvis[MD_BITSET_WORD(x, y)] >> MD_BITSET_BIT(y)) & 1;
-}
+/* Is the tile at (x, y), one of its eight neighbours or the player near?
+ * The MD publishes each tile with its neighbours' bits already ORed in.
+ * Masked to the map, which every object is on. */
+#define SPOTVIS_NEAR(x, y)                                                   \
+  ((md_spotvis[(((unsigned)(x) & (MAPSIZE - 1)) << 3) |                      \
+               (((unsigned)(y) & (MAPSIZE - 1)) >> 4)] >>                    \
+    ((unsigned)(y) & 15)) & 1)
 
-int ATARI_MD_SpotvisNear(int x, int y) { return spotvis_near(x, y); }
-
-static int near_player(int tx, int ty) {
-  int dx = tx - player->tilex;
-  int dy = ty - player->tiley;
-  return dx >= -2 && dx <= 2 && dy >= -2 && dy <= 2;
-}
+int ATARI_MD_SpotvisNear(int x, int y) { return SPOTVIS_NEAR(x, y); }
 
 static unsigned short *obj_item(void) { return pkt_item(MD_REC_OBJS, MD_OBJ_WORDS); }
 
@@ -779,9 +785,8 @@ static void add_objects(void) {
     unsigned short *p;
 
     if (statptr->shapenum == NOTHING) continue;
-    if (!spotvis_near(statptr->tilex, statptr->tiley) &&
-        !near_player(statptr->tilex, statptr->tiley)) {
-      statptr->flags &= ~FL_VISIBLE;
+    if (!SPOTVIS_NEAR(statptr->tilex, statptr->tiley)) {
+      if (statptr->flags & FL_VISIBLE) statptr->flags &= ~FL_VISIBLE;
       continue;
     }
     statptr->flags |= FL_SEEN | FL_VISIBLE;
@@ -824,9 +829,8 @@ static void add_objects(void) {
 
     if (obj == player) continue;
     if (obj->shapenum == NOTHING) continue;
-    if (!spotvis_near(obj->tilex, obj->tiley) &&
-        !near_player(obj->tilex, obj->tiley)) {
-      obj->flags &= ~FL_VISIBLE;
+    if (!SPOTVIS_NEAR(obj->tilex, obj->tiley)) {
+      if (obj->flags & FL_VISIBLE) obj->flags &= ~FL_VISIBLE;
       continue;
     }
     obj->flags |= FL_SEEN | FL_VISIBLE;
@@ -868,6 +872,32 @@ static void add_objects(void) {
   }
 }
 
+/* Does the MD's copy differ? */
+static int door_changed(int i) {
+  const doorobj_t *d = doorobjlist[i];
+  const md_door_shadow_t *s = &md_doors[i];
+  return d->texture != s->texture || d->alttexture != s->alttexture ||
+         (byte)d->action != s->action || d->flags != s->flags;
+}
+
+static int mwall_changed(int i) {
+  const maskedwallobj_t *m = maskobjlist[i];
+  const md_mwall_shadow_t *s = &md_mwalls[i];
+  return m->flags != s->flags || m->toptexture != s->top ||
+         m->midtexture != s->mid || m->bottomtexture != s->bottom;
+}
+
+static int pwall_changed(int i) {
+  const pwallobj_t *w = pwallobjlist[i];
+  const md_pwall_shadow_t *s = &md_pwalls[i];
+  return w->x != s->x || w->y != s->y || w->texture != s->texture ||
+         (byte)w->action != s->action;
+}
+
+#define MD_ROLL 2         /* doors and moving walls compared a frame */
+#define MD_ROLL_MASKED 8  /* masked walls compared a frame */
+static int md_roll_door, md_roll_pwall, md_roll_mwall;
+
 /* World deltas since the last frame, into the packet (flushed as WORLD
  * commands when it fills). */
 static void add_deltas(void) {
@@ -901,31 +931,46 @@ static void add_deltas(void) {
     for (i = old_pwalls; i < pwallnum; i++)
       put_pwall(world_item(MD_REC_PWALL, MD_PWALL_WORDS), i);
   }
+  /* A door or moving wall at rest whose action has not changed has not
+   * changed (its texture and position only move with it), but for the odd
+   * flag (an elevator door locked): those moving or changed are compared
+   * in full, and the rest MD_ROLL a frame in turn. */
   for (i = 0; i < doornum; i++) {
-    const doorobj_t *d = doorobjlist[i];
-    const md_door_shadow_t *s = &md_doors[i];
-    if (d->texture != s->texture || d->alttexture != s->alttexture ||
-        (byte)d->action != s->action || d->flags != s->flags)
+    const int a = doorobjlist[i]->action;
+    if ((a == dr_opening || a == dr_closing || (byte)a != md_doors[i].action) &&
+        door_changed(i))
       put_door(world_item(MD_REC_DOOR, MD_DOOR_WORDS), i);
   }
+  for (i = 0; i < MD_ROLL && i < doornum; i++) {
+    if (++md_roll_door >= doornum) md_roll_door = 0;
+    if (door_changed(md_roll_door))
+      put_door(world_item(MD_REC_DOOR, MD_DOOR_WORDS), md_roll_door);
+  }
   /* Masked walls rarely change, and the changes in play say so
-   * (MD_MASKED_TOUCH): look for them then, and every 8th frame anyway. */
-  if (atari_md_masked_dirty || !(md_seq & 7)) {
+   * (MD_MASKED_TOUCH): all of them then, and otherwise MD_ROLL_MASKED a
+   * frame in turn. */
+  if (atari_md_masked_dirty) {
     atari_md_masked_dirty = 0;
     for (i = 0; i < maskednum; i++) {
-      const maskedwallobj_t *m = maskobjlist[i];
-      const md_mwall_shadow_t *s = &md_mwalls[i];
-      if (m->flags != s->flags || m->toptexture != s->top ||
-          m->midtexture != s->mid || m->bottomtexture != s->bottom)
-        put_mwall(world_item(MD_REC_MWALL, MD_MWALL_WORDS), i);
+      if (mwall_changed(i)) put_mwall(world_item(MD_REC_MWALL, MD_MWALL_WORDS), i);
+    }
+  } else {
+    for (i = 0; i < MD_ROLL_MASKED && i < maskednum; i++) {
+      if (++md_roll_mwall >= maskednum) md_roll_mwall = 0;
+      if (mwall_changed(md_roll_mwall))
+        put_mwall(world_item(MD_REC_MWALL, MD_MWALL_WORDS), md_roll_mwall);
     }
   }
   for (i = 0; i < pwallnum; i++) {
-    const pwallobj_t *w = pwallobjlist[i];
-    const md_pwall_shadow_t *s = &md_pwalls[i];
-    if (w->x != s->x || w->y != s->y || w->texture != s->texture ||
-        (byte)w->action != s->action)
+    const int a = pwallobjlist[i]->action;
+    if ((a == pw_pushing || a == pw_moving || (byte)a != md_pwalls[i].action) &&
+        pwall_changed(i))
       put_pwall(world_item(MD_REC_PWALL, MD_PWALL_WORDS), i);
+  }
+  for (i = 0; i < MD_ROLL && i < pwallnum; i++) {
+    if (++md_roll_pwall >= pwallnum) md_roll_pwall = 0;
+    if (pwall_changed(md_roll_pwall))
+      put_pwall(world_item(MD_REC_PWALL, MD_PWALL_WORDS), md_roll_pwall);
   }
   for (i = 0; i < MAXANIMWALLS; i++) {
     if (animwalls[i].texture != md_anims[i])
