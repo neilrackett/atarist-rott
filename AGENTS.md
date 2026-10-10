@@ -25,6 +25,9 @@ Build + Artifacts
 - Run it in EmuMD (from the host, not stcmd): `make emu` (builds with stcmd
   first; `EMU_ARGS` go to `mdfw run`, e.g. `--headless --frames N --screenshot out.png`)
 - Object files: `obj/atarist`, `obj/sdl`, `obj/sdl-030`
+- The native build's startup is `rott/atari_crt0.S`, linked first: libcmini's
+  crt0 plus a clear of the BSS, as a second run from the desktop on a real
+  Mega STE (TOS 2.06) kept the first run's statics.
 - CI (`.github/workflows`): pull requests to `main` build the three games
   and the firmware; anything landing on `main` is also tagged with the next
   `v1.4.0-atarist.N` (REminiscence style: ROTT 1.4, then a count; a tag put

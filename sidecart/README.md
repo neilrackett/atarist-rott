@@ -39,7 +39,7 @@ shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
    GPLv3 (c)2026 Neil Rackett
 
    Get ROTT from neilrackett.com/atarist
-   and run ROTT_ST.TOS
+   and run ROTT_ST.TOS from GEM Desktop
 
    ```
 
@@ -130,18 +130,18 @@ overlapping it with the next.
 
 ## How it works
 
-| Where | What |
-| --- | --- |
-| `include/rott_md_protocol.h` | The wire protocol, shared by both sides: ROM4 layout, commands, records |
-| `../rott/atari_md.c` | The ST side: level snapshot, per-frame deltas and view, frame copy |
-| `../rott/sidecart_md.c`, `sidecart_stubs.S` | ROM3 command transport (from STDOOM) with retries and the Mega STE cache guard |
-| `rp/src/md_proto.c` | Decodes ROM3 commands in an interrupt into a queue |
-| `rp/src/md_main.c` | Runs the commands: level setup, world updates, frames |
-| `rp/src/rott/` | ROTT's renderer (engine, walls, planes, sprites, text) against a mirror of the ST's world |
-| `rp/src/md_video.c` | The ST's 16-colour palette choice and dither, identical on both sides, and chunky-to-planar |
-| `rp/src/md_pack.c` | Level packs in flash, and the demand-loading ring |
-| `rp/src/md_music.c` | Music: the ST build's player (`../rott/audiolib/atari_music.c`) on a timer, the song read from the WAD |
-| `target/atarist/` | The 1 KB cartridge header and boot message |
+| Where                                       | What                                                                                                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `include/rott_md_protocol.h`                | The wire protocol, shared by both sides: ROM4 layout, commands, records                                |
+| `../rott/atari_md.c`                        | The ST side: level snapshot, per-frame deltas and view, frame copy                                     |
+| `../rott/sidecart_md.c`, `sidecart_stubs.S` | ROM3 command transport (from STDOOM) with retries and the Mega STE cache guard                         |
+| `rp/src/md_proto.c`                         | Decodes ROM3 commands in an interrupt into a queue                                                     |
+| `rp/src/md_main.c`                          | Runs the commands: level setup, world updates, frames                                                  |
+| `rp/src/rott/`                              | ROTT's renderer (engine, walls, planes, sprites, text) against a mirror of the ST's world              |
+| `rp/src/md_video.c`                         | The ST's 16-colour palette choice and dither, identical on both sides, and chunky-to-planar            |
+| `rp/src/md_pack.c`                          | Level packs in flash, and the demand-loading ring                                                      |
+| `rp/src/md_music.c`                         | Music: the ST build's player (`../rott/audiolib/atari_music.c`) on a timer, the song read from the WAD |
+| `target/atarist/`                           | The 1 KB cartridge header and boot message                                                             |
 
 **Level packs.** The flash window for graphics is 896 KB; one shareware
 level can ask for 1.6 MB, and the whole WAD holds 4.5 MB. When a level

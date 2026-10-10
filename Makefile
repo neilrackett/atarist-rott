@@ -123,7 +123,7 @@ ATARI_CFLAGS ?= -O3 -fomit-frame-pointer -s -std=gnu99 -m68000 \
 	-DATARI_MD_AUTOTEST=$(ATARI_MD_AUTOTEST) -DATARI_LOGIC_CHECK=$(ATARI_LOGIC_CHECK) \
 	-DATARI_LOD=$(ATARI_LOD) \
 	-DATARI_MD_AUTOTEST_DIE=$(ATARI_MD_AUTOTEST_DIE)
-ATARI_LDFLAGS ?= -s -nostdlib -L/freemint/libcmini/lib /freemint/libcmini/lib/crt0.o -m68000
+ATARI_LDFLAGS ?= -s -nostdlib -L/freemint/libcmini/lib -m68000
 ATARI_LIBS ?= -lcmini -lgcc
 ATARI_INCLUDES ?= -I$(SRCDIR) -I$(SRCDIR)/audiolib -Isidecart/include -Ilib/xpad/src -I/freemint/libcmini/include
 SDL_ONLY_SOURCES := $(SRCDIR)/atari_sdl.c $(SRCDIR)/audio_stubs.c $(SRCDIR)/modexlib_sdl.c
@@ -142,7 +142,9 @@ ATARI_AUDIOLIB_SOURCES := \
 ATARI_SOURCES := $(filter-out $(SRCDIR)/amiga_%.c $(SRCDIR)/dosutil.c $(SRCDIR)/dukemusc.c $(SRCDIR)/fx_man.c $(SRCDIR)/lookups.c $(SRCDIR)/vocdecode.c $(SDL_ONLY_SOURCES),$(wildcard $(SRCDIR)/*.c)) $(ATARI_AUDIOLIB_SOURCES) \
 	lib/xpad/src/xpad.c
 ATARI_ASM_SOURCES := $(SRCDIR)/sidecart_stubs.S $(SRCDIR)/atari_md_s.S
-ATARI_OBJECTS := $(addprefix $(OBJDIR)/,$(ATARI_SOURCES:.c=.o) $(ATARI_ASM_SOURCES:.S=.o))
+# libcmini's crt0, and a clear of the BSS first (see the file): linked first.
+ATARI_CRT0 := $(OBJDIR)/$(SRCDIR)/atari_crt0.o
+ATARI_OBJECTS := $(ATARI_CRT0) $(addprefix $(OBJDIR)/,$(ATARI_SOURCES:.c=.o) $(ATARI_ASM_SOURCES:.S=.o))
 ATARI_OUTPUT ?= $(BUILDDIR)/ROTT_ST.TOS
 # The shareware data the games use: the WAD, the levels (RTC: Comm-bat),
 # the remote ridicule sounds (the sound effects need its REMOSTRT), and the
