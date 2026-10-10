@@ -3,6 +3,7 @@
  * Author: Diego Parrilla Santamaría
  * Date: November 2024, February 2026
  * Copyright: 2025-2026 - GOODDATA LABS SL
+ * Modified: 2026 Neil Rackett, for the ROTT Accelerator
  * Description: Constants used in the placeholder file
  */
 

@@ -3,6 +3,7 @@
  * Author: Diego Parrilla Santamaría
  * Date: March 2026
  * Copyright: 2026 - GOODDATA LABS SL
+ * Modified: 2026 Neil Rackett, for the ROTT Accelerator
  * Description: ROM3 communication emulator backed by a DMA ring buffer.
  */
 

@@ -1,3 +1,4 @@
+# Modified: 2026 Neil Rackett, for the ROTT Accelerator
 # Set minimum required version of CMake
 cmake_minimum_required(VERSION 3.26)
 
