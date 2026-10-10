@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Neil Rackett
+# SPDX-License-Identifier: GPL-2.0-or-later
+
 name: Release
 
 # Rolling release: build the three games and, when anything it is built

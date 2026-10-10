@@ -1,4 +1,6 @@
 # Makefile for building ROTT for Atari ST, TT & Falcon
+# Copyright (C) 2026 Neil Rackett
+# SPDX-License-Identifier: GPL-2.0-or-later
 #
 #   make             the three games below
 #   make st          ROTT_ST.TOS: the native ST renderers (C2P, ROTT Accelerator)

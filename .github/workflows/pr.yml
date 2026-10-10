@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Neil Rackett
+# SPDX-License-Identifier: GPL-2.0-or-later
+
 name: PR
 
 # Does it build? That is the whole job. This runs the same builds as
