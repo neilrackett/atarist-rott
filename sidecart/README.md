@@ -36,7 +36,8 @@ shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
    ROTT Accelerator <version> ready
    GPLv3 (c)2026 Neil Rackett
 
-   Download ROTT: neilrackett.com/atarist
+   Get ROTT from neilrackett.com/atarist
+   and run ROTT_ST.TOS
    ```
 
 5. Run `ROTT_ST.TOS` from disk as normal. At startup it prints
