@@ -7,7 +7,7 @@
 #   make sdl         ROTT_SDL.TOS: ROTT's own renderer through SDL, any ST-compatible
 #   make sdl-030     ROTT_030.TOS: the same for 68030 + 68882 (TT, Falcon)
 #   make sidecart    the ROTT Accelerator firmware (make -C sidecart build)
-#   make shareware   HUNTBGIN.zip: the shareware data the games use, from DATADIR
+#   make shareware   HUNTBGIN.zip: the ROTT 1.3 shareware release, from SHAREWARE_DIR
 #
 # Run on the host, the games build through stcmd (atarist-toolkit-docker);
 # inside stcmd (stcmd make st, ...) they build directly. The firmware builds
@@ -177,15 +177,22 @@ endif
 sidecart:
 	$(MAKE) -C sidecart build
 
-# The shareware data the games use, in one zip to go beside them. Apogee's
-# VENDOR.DOC goes in too: its terms for passing the shareware on ask for
-# the whole release, DOS programs and all, which this is not.
+# The shareware release (ROTT 1.3) as Apogee's installer lays it out, for
+# the release page: the data the games use and the DOS programs with it.
+# VENDOR.DOC lets it be passed on only whole and unmodified, so this is every
+# file of a clean install, by name, never whatever a played-in folder holds.
+SHAREWARE_DIR ?= tmp/ROTT_DOS
 SHAREWARE_ZIP := $(BUILDDIR)/HUNTBGIN.zip
-SHAREWARE_FILES := $(RUNTIME_DATA_FILES) $(DATADIR)/VENDOR.DOC
+SHAREWARE_FILES := $(addprefix $(SHAREWARE_DIR)/, \
+	HUNTBGIN.WAD HUNTBGIN.RTL HUNTBGIN.RTC REMOTE1.RTS \
+	DEMO1_3.DMO DEMO2_3.DMO DEMO3_3.DMO DEMO4_3.DMO \
+	ROTT.EXE SETUP.EXE SNDSETUP.EXE ROTTIPX.EXE ROTTSER.EXE ROTTHELP.EXE \
+	README.EXE MODEM.PCK APOGEE.BAT VENDOR.DOC \
+	CATALOG.EXE DEALERS.EXE ORDER.FRM SWCBBS.EXE 3DRCAT.EXE 3DRORDER.FRM)
 
 shareware: $(SHAREWARE_ZIP)
 
-$(SHAREWARE_ZIP): $(SHAREWARE_FILES) | $(BUILDDIR)
+$(SHAREWARE_ZIP): $(SHAREWARE_FILES) Makefile | $(BUILDDIR)
 	$(RM) $@
 	zip -X -j -9 $@ $(SHAREWARE_FILES)
 

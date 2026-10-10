@@ -19,7 +19,7 @@ This repository contains 3 versions of ROTT:
 All builds:
 
 - Require 4MB RAM
-- Need you to install or download the DOS version of [ROTT shareware ("The Hunt Begins")](https://archive.org/details/rott_shareware)
+- Need the DOS version of ROTT shareware ("The Hunt Begins"), which is on the releases page as [`HUNTBGIN.zip`](https://github.com/neilrackett/atarist-rott/releases/download/latest/HUNTBGIN.zip)
 - Support keyboard and mouse controls
 
 Stable builds are avilable on the [releases page](https://github.com/neilrackett/atarist-rott/releases).
@@ -112,8 +112,7 @@ See the [ROTT Accelerator readme](sidecart/README.md) for installation, testing 
 
 ## Installation
 
-- Install the shareware version of ROTT for DOS using DOSbox, or [download the files from Internet.org](https://archive.org/details/rott_shareware)
-- Copy the installation folder to your Atari's hard disk
+- Download [`HUNTBGIN.zip`](https://github.com/neilrackett/atarist-rott/releases/download/latest/HUNTBGIN.zip), the ROTT 1.3 shareware release, from the [releases page](https://github.com/neilrackett/atarist-rott/releases) and unzip it into a folder on your Atari's hard disk (or install the [shareware from archive.org](https://archive.org/details/rott_shareware) for DOS using DOSBox and copy the installation folder across)
 - Copy `ROTT_ST.TOS`, `ROTT_SDL.TOS` and/or `ROTT_030.TOS` to the the same folder (the 030 build runs 20-30% faster on TT/Falcon)
 - Optionally, install the ROTT Accelerator on your SidecarTridge Multi-device (see the [ROTT Accelerator readme](sidecart/README.md))
 - Run `ROTT_ST.TOS`, `ROTT_SDL.TOS` or `ROTT_030.TOS`
@@ -129,10 +128,10 @@ make st          # ROTT_ST.TOS
 make sdl         # ROTT_SDL.TOS
 make sdl-030     # ROTT_030.TOS
 make sidecart    # the ROTT Accelerator firmware
-make shareware   # HUNTBGIN.zip: the shareware data the games use, from tmp/ROTT
+make shareware   # HUNTBGIN.zip: the ROTT 1.3 shareware release, from tmp/ROTT_DOS
 ```
 
-The games are built through `stcmd`, so you can run these from your own shell (or run `stcmd make st` and so on yourself). The firmware needs the Pico toolchain too: see the [ROTT Accelerator readme](sidecart/README.md). Everything goes to `dist/`, along with the config files and, if you put the shareware files in `tmp/ROTT`, the game data, so `dist/` is ready to run in an emulator or copy to your Atari.
+The games are built through `stcmd`, so you can run these from your own shell (or run `stcmd make st` and so on yourself). The firmware needs the Pico toolchain too: see the [ROTT Accelerator readme](sidecart/README.md). Everything goes to `dist/`, along with the config files and, if you unzip `HUNTBGIN.zip` into `tmp/ROTT`, the game data, so `dist/` is ready to run in an emulator or copy to your Atari.
 
 There's loads of build settings you can try too, just take a look at `Makefile`, including the ability to build ROTT Noir, a greyscale version that can be built with or without dithering:
 
