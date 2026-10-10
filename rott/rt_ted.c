@@ -275,12 +275,26 @@ void SortPreCache( void )
 =
 ======================
 */
+#if defined(ATARI_NATIVE)
+// The lumps in cachelist[1..cacheindex-1], a bit each: what the checks for
+// one already listed look through (never entry 0), where they read the
+// list from the start for every lump, thousands of times a level.
+static byte *cachelisted;
+#define CACHE_LISTED(lump) (cachelisted[(lump) >> 3] & (1 << ((lump) & 7)))
+#define CACHE_LIST(index, lump) \
+   ((void)((index) >= 1 ? (cachelisted[(lump) >> 3] |= (byte)(1 << ((lump) & 7))) : 0))
+#endif
+
 void SetupPreCache( void )
 {
 
    CachingStarted=true;
    cacheindex=0;
    cachelist=(cachetype *)SafeMalloc(MAXPRECACHE*(sizeof(cachetype)));
+#if defined(ATARI_NATIVE)
+   cachelisted=(byte *)SafeMalloc((W_NumLumps()+7)>>3);
+   memset(cachelisted,0,(W_NumLumps()+7)>>3);
+#endif
 #if !(defined(ATARI_NATIVE) && ATARI_SKIP_PRECACHE)
    DrawPreCache();
 #endif
@@ -300,6 +314,10 @@ void ShutdownPreCache( void )
 
    CachingStarted=false;
    SafeFree((byte *)cachelist);
+#if defined(ATARI_NATIVE)
+   SafeFree(cachelisted);
+   cachelisted=NULL;
+#endif
 }
 
 
@@ -324,9 +342,16 @@ void PreCacheLump( int lump, int level, int type ) // added type
 #endif
       return;
       }
+#if defined(ATARI_NATIVE)
+   (void)i;
+   if (CACHE_LISTED(lump))
+      return;
+   CACHE_LIST(cacheindex, lump);
+#else
    for (i=1;i<cacheindex;i++)
       if (cachelist[i].lump==lump)
          return;
+#endif
    cachelist[cacheindex].lump=lump;
    cachelist[cacheindex].cachelevel=level;
    cachelist[cacheindex++].type=type;
@@ -364,12 +389,21 @@ void PreCacheGroup( int start, int end, int type ) // added type
          continue;
          }
       found=0;
+#if defined(ATARI_NATIVE)
+      // (k is the count on entry, but what this call adds is below j)
+      (void)i;
+      (void)k;
+      found=CACHE_LISTED(j)!=0;
+      if (found==0)
+         CACHE_LIST(cacheindex, j);
+#else
       for (i=1;i<k;i++)
          if (cachelist[i].lump==j)
             {
             found=1;
             break;
 				}
+#endif
       if (found==0)
          {
          cachelist[cacheindex].lump=j;

@@ -123,6 +123,14 @@ Performance Notes
   list, so walks that can't meet one stop there (`firstareadisk`,
   `ATARI_DiskNear`). E1L1 at 8MHz: 4.8 -> 14 fps over a profile window,
   3.2 -> 6.1 fps at the overlay test spot. Distances in rt_actor.h.
+- Level loading (the red and yellow bar): its eight steps are stages of
+  `SetupGameLevel`, not loading progress, and the time was CPU, not disk.
+  Lump names are looked up through a hash index (`w_wad.c`, built on the
+  first lookup); the precache list's duplicate check is a bit a lump
+  (`rt_ted.c`); `DrawTiledRegion` copies rows; a palette change works out
+  each colour's dither once (`c2p_color_tables`). E1L1, EmuMD: Mega STE
+  61 -> 8.4 s, 8MHz over 100 -> 15 s. What's left is the setup functions'
+  own passes over the map.
 - Mega STE speed (`rott/atari_megaste.c`): set only bits 0-1 of
   `$FFFF8E21`, read-modify-write, as STDL does; a bare `0x03` clears bits
   the control panel sets, and Hatari can't show the difference.
