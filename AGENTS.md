@@ -75,11 +75,10 @@ Input + Timing Notes (Critical)
 - Sound effects: `rott/atari_sfx.c`, the `FX_` calls on DMA sound (STE, Mega
   STE), in place of the DOS library's `fx_man.c`/`multivoc.c`. A VBL routine
   mixes a 1KB ring at 12517Hz (the mixer is ported from STDL's voice mixer);
-  `NumVoices` in `sound.rot` is 1-8, or 0 for 4 with the Accelerator, 1
+  `NumVoices` in `sound.rot` is 1-8, or 0 for 2 with the Accelerator, 1
   without. On by default (`FXMode 6`); an ST without DMA sound skips them.
   The native build reads only `MusicMode`, `FXMode`, `NumVoices` and
-  `FXVolume` (`ReadAtariSoundToggles`) and never writes `sound.rot`. Help
-  shows voices playing and late refills.
+  `FXVolume` (`ReadAtariSoundToggles`) and never writes `sound.rot`.
 - Music: ROTT's MIDI songs on the YM2149 (`rott/audiolib/atari_music.c`, the
   `MUSIC_` calls in `atari_music_api.c`), stepped at 50Hz from the VBL off
   the 200Hz clock; YM registers only in supervisor mode, select and write
@@ -95,6 +94,24 @@ Input + Timing Notes (Critical)
 
 Performance Notes
 
+- Measure at 8MHz (EmuMD with `-- --machine ste --cpuclock 8`): what is
+  faster at 16MHz is a bonus.
+- Game logic runs once per tic (35 a second) and a slow frame is followed
+  by more tics of it, up to 10: logic costs the frame rate far more than
+  its share of the CPU, and on E1L1 at 8MHz it fills the tics on its own.
+  With the Accelerator the ST, not the Multi-device, sets the frame rate.
+  Per-object costs that run every tic (actor list walks, elevator disks,
+  moving walls) are the ones that matter; `ATARI_LOGIC_CHECK` proves a
+  change exact. Already done that way (rt_actor.c): the active-actor loop
+  is `ATARI_DoActiveActors`, with elevator disks through `DoElevDiskInline`
+  (keep it in step with `DoActor`); area walks skip by hand
+  (`NextInRangeXY`). `I_GetTime()`/`GetTicCount()` are macros on the
+  native build (i_timer.h, isr.h). Check new code for libgcc arithmetic
+  (`__mulsi3`, `__divsi3`, 64-bit, soft float) with STDL's
+  `tools/libcalls.sh` on the objects: about 350-3000 cycles a call.
+- Mega STE speed (`rott/atari_megaste.c`): set only bits 0-1 of
+  `$FFFF8E21`, read-modify-write, as STDL does; a bare `0x03` clears bits
+  the control panel sets, and Hatari can't show the difference.
 - Menu responsiveness depends heavily on event-driven menu path.
 - Disabling expensive effects has a larger impact than minor micro-optimizations.
 - `ATARI_NOIR=1` is available for grayscale palette testing and can help performance experiments.
@@ -131,6 +148,17 @@ ROTT Accelerator (MD/ROTT in the source; SidecarTridge Multi-device renderer)
 - Any 2D drawing into the chunky screen outside the view should say so
   (`ATARI_HUD_TOUCH()`, or `_RECT`/`_AT` with where), or the HUD only
   catches up every 16th frame.
+- The Help key toggles an overlay: with the Accelerator, frames a second,
+  game logic tics run each frame and their time (`TICS`, `LOGIC`), the
+  ST's wait for it each frame (`wait_ready`), its render and dither + c2p
+  time (from the status block), its SD loads during play, then sound
+  effects playing and late mixer refills, and `CPU`: on a Mega STE
+  `$FFFF8E21` as TOS left it and as set, then a speed probe (passes/100 of
+  a loop in 50ms: about 74 at 8MHz, 150 at 16MHz with the cache, in
+  Hatari). Without the Accelerator only the last three. The way to see on real hardware
+  where frames go: EmuMD runs the firmware natively, so its render times
+  (and SD loads) say nothing about a real RP2040. `TICS 10.0` is the
+  catch-up cap (`MAXTICS`): the frame rate is then set by game logic.
 - `ATARI_MD_BLIT=1` (default): the blitter copies MD frames while the CPU
   runs on; anything else that draws to the screen calls `ATARI_MD_BlitWait()`.
 - Most of `ATARI_MD_FinishUpdate` runs in supervisor mode on a Mega STE: no

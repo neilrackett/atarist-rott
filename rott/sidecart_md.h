@@ -62,5 +62,7 @@ void sidecart_md_set_intr_mask(int enable);
 
 /* Commands that failed after their retries, for the debug line. */
 extern unsigned short md_command_failures;
+/* Commands sent again after a timeout (every attempt after the first). */
+extern unsigned short md_command_retries;
 
 #endif /* SIDECART_MD_H */

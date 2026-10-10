@@ -61,6 +61,10 @@ extern volatile int fasttics;
 #define SetFastTics(a) {fasttics=a;}
 #else
 int GetTicCount (void);
+#if defined(ATARI_NATIVE)
+#include "i_timer.h"
+#define GetTicCount() I_GetTime() // what isr.c's does on the native build
+#endif
 int GetFastTics (void);
 
 void SetFastTics(int);

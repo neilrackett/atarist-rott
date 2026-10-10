@@ -45,6 +45,54 @@ fixed FixedMulShift(fixed a, fixed b, fixed shift)
 
 fixed FixedDiv2(fixed a, fixed b)
 {
+#if defined(ATARI_NATIVE)
+	/* (a << 16) / b exactly as below, without the 64-bit divide: that
+	 * was __divdi3 and its helpers, about 3000 cycles a call, and
+	 * atan2_appx calls this. On the magnitudes, rounded toward zero as C
+	 * does: the whole part, then sixteen bits below the point; one divu.w
+	 * when |a| < |b| < 65536, as STDL's STDL_FixDiv does. The result is
+	 * the quotient's low 32 bits, as the & below takes. Zero and the
+	 * most negative int stay on the 64-bit path. */
+	if (b != 0 && a != (fixed)0x80000000 && b != (fixed)0x80000000)
+	{
+		unsigned int ua = (a < 0) ? (unsigned int)-a : (unsigned int)a;
+		unsigned int ub = (b < 0) ? (unsigned int)-b : (unsigned int)b;
+		unsigned int q, r;
+		int i;
+
+		if (ua < ub && ub <= 0xFFFFu)
+		{
+			q = ua << 16; /* under ub << 16: the quotient fits a word */
+			__asm__("divu.w %1,%0" : "+d"(q) : "d"((unsigned short)ub));
+			q &= 0xFFFFu;
+		}
+		else
+		{
+			if (ua < ub)
+			{
+				q = 0;
+				r = ua;
+			}
+			else
+			{
+				q = ua / ub;
+				r = ua - q * ub;
+			}
+			/* r < ub < 2^31, so r << 1 never overflows */
+			for (i = 0; i < 16; i++)
+			{
+				r <<= 1;
+				q <<= 1;
+				if (r >= ub)
+				{
+					r -= ub;
+					q |= 1;
+				}
+			}
+		}
+		return ((a ^ b) < 0) ? (fixed)(0u - q) : (fixed)q;
+	}
+#endif
 	__int64 x = (signed int)a;
 	__int64 y = (signed int)b;
 	__int64 z = x * 65536 / y;

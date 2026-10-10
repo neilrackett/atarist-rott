@@ -21,7 +21,9 @@
  * NumVoices in sound.rot sets how many sounds play at once, 1 to 8. With
  * every voice busy a new sound takes the one of lowest priority if its own
  * is as high, as the DOS library did, so one voice is one sound at a time.
- * 0 picks 4 with the ROTT Accelerator and 1 without (ATARI_SFX_Voices).
+ * 0 picks 2 with the ROTT Accelerator and 1 without (ATARI_SFX_Voices):
+ * two mix straight into the ring, where a third takes the 16-bit sums
+ * and the clamp, about twice the cost, on an ST busy with the game logic.
  *
  * ROTT's sounds are VOC files, unsigned 8-bit mono at about 11kHz: the
  * mixer resamples them as it goes, straight out of the cached lump, and the
@@ -691,18 +693,16 @@ void ATARI_SFX_Service(void)
    }
 }
 
+/* A handle's low bits are its voice (sfx_start), so this is one look:
+ * the game asks after each moving wall's sound every tic. */
 static sfx_voice_t *sfx_find(int handle)
 {
-   int i;
+   sfx_voice_t *v;
 
    if (handle <= 0)
       return NULL;
-   for (i = 0; i < mx.voices; i++)
-   {
-      if (mx.v[i].handle == handle)
-         return &mx.v[i];
-   }
-   return NULL;
+   v = &mx.v[handle & (MAX_VOICES - 1)];
+   return (v->handle == handle) ? v : NULL;
 }
 
 /* A free voice, or with take the lowest priority one if priority is as
@@ -760,8 +760,8 @@ static int sfx_start(const sfx_sound_t *s, int pitchoffset, int vol,
    v->vt = voltab + level * 256;
    v->priority = priority;
    v->callbackval = callbackval;
-   v->handle = sfx_next_handle;
-   if (++sfx_next_handle > 0x7FFF0000)
+   v->handle = sfx_next_handle * MAX_VOICES + (int)(v - mx.v);
+   if (++sfx_next_handle > 0x0FFF0000)
       sfx_next_handle = 1;
    SFX_BARRIER();
    v->active = 1;
@@ -797,7 +797,7 @@ int ATARI_SFX_HasDMA(void)
 int ATARI_SFX_Voices(int numvoices)
 {
    if (numvoices <= 0)
-      numvoices = ATARI_MD_Active() ? 4 : 1;
+      numvoices = ATARI_MD_Active() ? 2 : 1;
    return (numvoices > MAX_VOICES) ? MAX_VOICES : numvoices;
 }
 
@@ -1125,11 +1125,16 @@ int FX_Pan3D(int handle, int angle, int distance)
 
 int FX_SoundActive(int handle)
 {
-   sfx_voice_t *v;
+   sfx_voice_t *v = sfx_find(handle);
 
-   ATARI_SFX_Service();
-   v = sfx_find(handle);
-   return v != NULL && v->active;
+   if (v == NULL)
+      return 0;
+   if (!v->active)
+   {
+      voice_release(v); /* ended: as ATARI_SFX_Service would */
+      return 0;
+   }
+   return 1;
 }
 
 int FX_SoundsPlaying(void)

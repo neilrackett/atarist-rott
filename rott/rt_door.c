@@ -3706,11 +3706,23 @@ void ClearActorat(pwallobj_t*pw)
  txhigh = (tryx + pwrad) >> 16;
  tylow = (tryy - pwrad) >> 16;
  tyhigh = (tryy + pwrad) >> 16;
+#if defined(ATARI_NATIVE)
+ // A pointer down each column (actorat is [x][y]) rather than the whole
+ // index each time: every moving wall, twice every tic. The order the
+ // tiles go in makes no difference.
+ for(x=txlow;x<=txhigh;x++)
+	{void **p = &actorat[x][tylow];
+	 for(y=tylow;y<=tyhigh;y++,p++)
+		if (*p == pw)
+			*p = NULL;
+	}
+#else
  for(y=tylow;y<=tyhigh;y++)
 	 for(x=txlow;x<=txhigh;x++)
 		{if (actorat[x][y] == pw)
 			actorat[x][y] = NULL;
 		}
+#endif
 }
 
 void SetActorat(pwallobj_t*pw)
@@ -3725,9 +3737,18 @@ void SetActorat(pwallobj_t*pw)
  tylow = (tryy - pwrad) >> 16;
  tyhigh = (tryy + pwrad) >> 16;
 
+#if defined(ATARI_NATIVE)
+ // As ClearActorat
+ for(x=txlow;x<=txhigh;x++)
+	{void **p = &actorat[x][tylow];
+	 for(y=tylow;y<=tyhigh;y++)
+		*p++ = pw;
+	}
+#else
  for(y=tylow;y<=tyhigh;y++)
 	 for(x=txlow;x<=txhigh;x++)
 		actorat[x][y] = pw;
+#endif
 }
 
 /*

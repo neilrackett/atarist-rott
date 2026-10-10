@@ -31,6 +31,7 @@
 #include <string.h>
 
 #include "atari_c2p.h"
+#include "atari_perf.h"
 #include "i_timer.h"
 #include "isr.h"
 #include "lumpy.h"
@@ -1026,13 +1027,98 @@ static int send_frame(void) {
                            (long)md_copied_seq, (long)md_level_serial);
 }
 
+/* The Help key's overlay (ATARI_MD_GetStats): 200Hz ticks the ST spent
+ * waiting for the MD, frames, and the MD's own figures for its frame. */
+extern volatile unsigned long atari_hz200_count;
+static unsigned long md_stat_t0, md_stat_wait, md_stat_cmd, md_stat_frames;
+static unsigned long md_stat_logic_tics, md_stat_logic_hz200;
+static int md_stat_fps10, md_stat_wait_ms, md_stat_cmd_ms;
+static int md_stat_tics10, md_stat_logic_ms;
+static unsigned short md_stat_render_us, md_stat_c2p_us;
+/* The MD's counters now, and as they stood when the level began. */
+enum { MDC_LOADS, MDC_EVICTS, MDC_DROPS, MDC_CHKERRS, MDC_FRAMES, MDC_COUNT };
+static const unsigned char md_stat_word[MDC_COUNT] = {
+    MD_ST_LOADS, MD_ST_EVICTS, MD_ST_DROPS, MD_ST_CHKERRS, MD_ST_FRAMES};
+static unsigned short md_stat_now[MDC_COUNT], md_stat_base[MDC_COUNT];
+static unsigned short md_stat_base_seq, md_stat_base_retries;
+static long md_stat_level = -1;
+
+/* Once a frame: the averages, every second. */
+static void md_stat_frame(void) {
+  const unsigned long now = atari_hz200_count;
+  unsigned long dt;
+
+  if (md_stat_t0 == 0) {
+    md_stat_t0 = now;
+    md_stat_frames = md_stat_wait = 0;
+    md_stat_logic_tics = atari_logic_tics;
+    md_stat_logic_hz200 = atari_logic_hz200;
+    return;
+  }
+  md_stat_frames++;
+  dt = now - md_stat_t0;
+  if (dt >= 200 && md_stat_frames) {
+    md_stat_fps10 = (int)((md_stat_frames * 2000 + dt / 2) / dt);
+    md_stat_wait_ms = (int)(md_stat_wait * 5 / md_stat_frames);
+    md_stat_cmd_ms = (int)(md_stat_cmd * 5 / md_stat_frames);
+    md_stat_tics10 =
+        (int)((atari_logic_tics - md_stat_logic_tics) * 10 / md_stat_frames);
+    md_stat_logic_ms =
+        (int)((atari_logic_hz200 - md_stat_logic_hz200) * 5 / md_stat_frames);
+    md_stat_t0 = now;
+    md_stat_frames = md_stat_wait = md_stat_cmd = 0;
+    md_stat_logic_tics = atari_logic_tics;
+    md_stat_logic_hz200 = atari_logic_hz200;
+  }
+}
+
+/* With the cartridge bus open, once a frame: the MD's figures, the counts
+ * starting again from where they stand when a new level begins. */
+static void md_stat_read(void) {
+  int i;
+
+  md_stat_render_us = MD_STATUS[MD_ST_RENDER_US];
+  md_stat_c2p_us = MD_STATUS[MD_ST_C2P_US];
+  for (i = 0; i < MDC_COUNT; i++) md_stat_now[i] = MD_STATUS[md_stat_word[i]];
+  if (md_stat_level != md_level_serial) {
+    md_stat_level = md_level_serial;
+    for (i = 0; i < MDC_COUNT; i++) md_stat_base[i] = md_stat_now[i];
+    md_stat_base_seq = (unsigned short)md_seq;
+    md_stat_base_retries = md_command_retries;
+  }
+}
+
+void ATARI_MD_GetStats(atari_md_stats_t *s) {
+#define MDC(i) ((unsigned short)(md_stat_now[i] - md_stat_base[i]))
+  s->fps10 = md_stat_fps10;
+  s->tics10 = md_stat_tics10;
+  s->logic_ms = md_stat_logic_ms;
+  s->wait_ms = md_stat_wait_ms;
+  s->cmd_ms = md_stat_cmd_ms;
+  s->render_ms = (md_stat_render_us + 500) / 1000;
+  s->c2p_ms = (md_stat_c2p_us + 500) / 1000;
+  s->sd_loads = MDC(MDC_LOADS);
+  s->evicts = MDC(MDC_EVICTS);
+  s->drops = MDC(MDC_DROPS);
+  s->chkerrs = MDC(MDC_CHKERRS);
+  s->retries = (unsigned short)(md_command_retries - md_stat_base_retries);
+  s->dups = (short)(MDC(MDC_FRAMES) - (unsigned short)((unsigned short)md_seq - md_stat_base_seq));
+#undef MDC
+}
+
 /* Wait until the MD has at most `ahead` frames left to finish. */
 static int wait_ready(int ahead) {
   long t0 = I_GetTimeMS();
+  const unsigned long w0 = atari_hz200_count;
+  int ok = 1;
   while ((unsigned short)(md_seq - MD_STATUS[MD_ST_READY_SEQ]) > ahead) {
-    if (I_GetTimeMS() - t0 > MD_WAIT_MS) return 0;
+    if (I_GetTimeMS() - t0 > MD_WAIT_MS) {
+      ok = 0;
+      break;
+    }
   }
-  return 1;
+  md_stat_wait += atari_hz200_count - w0;
+  return ok;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1148,9 +1234,18 @@ void ATARI_MD_ViewToChunky(unsigned char *chunky) {
                              md_shown_y, md_shown_w, md_shown_h);
 }
 
+static int md_hud_redraw;
+
 static void give_up(const char *why) {
   atari_md_active = 0;
+  md_hud_redraw = 1; /* the bars again, without the Accelerator's sign */
   AddMessage((char *)why, MSG_SYSTEM);
+}
+
+int ATARI_MD_TakeHudRedraw(void) {
+  const int r = md_hud_redraw;
+  md_hud_redraw = 0;
+  return r;
 }
 
 #if defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
@@ -1216,6 +1311,7 @@ int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
 
   if (!atari_md_active || !md_frame_pending) return 0;
   md_frame_pending = 0;
+  md_stat_frame();
 
   /* The frame runs in supervisor mode on a Mega STE, so the cache can be
    * off just while the cartridge is in use (not while building the frame
@@ -1249,18 +1345,25 @@ int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
 
   /* Pipelined: keep at most one frame in flight before sending another. */
   if (ATARI_MD_PIPELINE) wait_ready(1);
+  md_stat_read();
   read_spotvis();
   sidecart_md_bus_end();
 
   build_frame();
-  if (send_frame()) {
-    if (++md_failures >= 8) {
-      sidecart_md_super_end(ssp);
-      give_up("ROTT Accelerator lost: ST renderer");
-      return 0;
+  {
+    const unsigned long c0 = atari_hz200_count;
+    const int failed = send_frame();
+
+    md_stat_cmd += atari_hz200_count - c0;
+    if (failed) {
+      if (++md_failures >= 8) {
+        sidecart_md_super_end(ssp);
+        give_up("ROTT Accelerator lost: ST renderer");
+        return 0;
+      }
+    } else {
+      md_failures = 0;
     }
-  } else {
-    md_failures = 0;
   }
 
   /* The HUD the ST drew, around the view; then the view. */

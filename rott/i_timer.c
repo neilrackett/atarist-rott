@@ -50,6 +50,12 @@ volatile unsigned long atari_hz200_count;
 void *atari_old_timer_c;
 static int timer_hooked;
 
+/* The last answer and the 200 Hz count it was for, all ones while the
+ * count is not hooked (so atari_hz200_count is not moving): see I_GetTime
+ * in i_timer.h, which answers from these without a call. */
+unsigned long atari_time_hz200 = ~0UL;
+int atari_time_tics;
+
 void atari_timer_c(void);
 __asm__(
     "    .text\n"
@@ -78,6 +84,7 @@ void I_HookTimer(int on)
     else
     {
         *(void *volatile *)0x114 = atari_old_timer_c;
+        atari_time_hz200 = ~0UL; /* the copy stops: no answers from it */
     }
     __asm__ volatile("move.w %0,%%sr" : : "d"(sr) : "cc");
     Super(ssp);
@@ -131,9 +138,6 @@ static int hz200_to_tics(unsigned long ticks)
     return (int)(second_tics + tics_in_second[d]);
 }
 
-/* The last answer and the 200 Hz count it was for: see I_GetTime. */
-static unsigned long last_hz200 = ~0UL;
-static int last_tics;
 
 static int __attribute__((noinline)) get_time(unsigned long ticks)
 {
@@ -166,24 +170,25 @@ static int __attribute__((noinline)) get_time(unsigned long ticks)
             dbg_count++;
         }
 #endif
-        last_hz200 = hz200;
-        last_tics = t;
+        atari_time_hz200 = timer_hooked ? hz200 : ~0UL;
+        atari_time_tics = t;
         return t;
     }
 }
 
 /* Called hundreds of times a second, far more often than the 200 Hz count
  * moves on: the same count gives the same answer, with no more work than
- * this (the rest is out of line, so this path stays small). */
-int I_GetTime(void)
+ * this (the rest is out of line, so this path stays small). i_timer.h
+ * makes the same test before calling. */
+int (I_GetTime)(void)
 {
     const unsigned long ticks = tos_hz200();
 #if ATARI_LOGIC_CHECK > 0
     if (atari_check_clock_on)
         return get_time(ticks); /* virtual time: no shortcut */
 #endif
-    if (ticks == last_hz200)
-        return last_tics;
+    if (ticks == atari_time_hz200)
+        return atari_time_tics;
     return get_time(ticks);
 }
 
@@ -217,7 +222,7 @@ void I_WaitVBL(int count)
 void I_InitTimer(void)
 {
     basetime = 0;
-    last_hz200 = ~0UL;
+    atari_time_hz200 = ~0UL;
 }
 
 void I_ExitTimer(void)

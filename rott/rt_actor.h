@@ -369,6 +369,14 @@ void     MoveActor(objtype*);
 void     InitActorList(void);
 void     NewState(objtype*,statetype*);
 void     DoActor(objtype*);
+#if defined(ATARI_NATIVE)
+void     DoElevDisk(objtype*);
+void     ATARI_DoActiveActors(unsigned int actor_div, unsigned int actor_time_phase);
+// DoActor, with elevator disks (dozens a level, every tic) the short way.
+#define  ATARI_DoActor(ob)                                         \
+   (((ob)->state == &s_elevdisk) && ((ob)->obclass == diskobj) ?   \
+    DoElevDisk(ob) : DoActor(ob))
+#endif
 
 void     SpawnPushColumn(int tilex,int tiley,int which,int dir, int linked);
 void     SpawnGunThingy(classtype which, int tilex, int tiley, int dir);

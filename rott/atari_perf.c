@@ -53,6 +53,8 @@ unsigned int atari_frame_actor_updates = 0;
 unsigned int atari_frame_sprite_draws = 0;
 unsigned int atari_frame_effect_passes = 0;
 int atari_frame_tics = 1;
+unsigned long atari_logic_tics;
+unsigned long atari_logic_hz200;
 
 #if ATARI_PROFILE
 static unsigned int atari_profile_frame_count = 0;

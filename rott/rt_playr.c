@@ -5323,7 +5323,17 @@ void CheckSpecialSounds(objtype *ob, playertype *pstate)
 
    if ((!BATTLEMODE) && (ob == player))
       {
+#if defined(ATARI_NATIVE)
+      // A fifth of a few hundred, by a 16-bit divide (a multiply by the
+      // reciprocal): as an int it was a __divsi3 call every tic.
+      const int maxhp = MaxHitpointsForCharacter(locplayerstate);
+      const int fifth = ((maxhp >= -32768) && (maxhp <= 32767)) ?
+                        (short)maxhp / (short)5 : maxhp / 5;
+
+      if (pstate->health < fifth)
+#else
       if (pstate->health < MaxHitpointsForCharacter(locplayerstate)/5)
+#endif
          {
          pstate->healthtime ++;
          if (pstate->healthtime > 2*VBLCOUNTER)

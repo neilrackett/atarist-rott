@@ -435,6 +435,42 @@ void GameMemToScreen
 // DrawPlayScreen ()
 //
 //******************************************************************************
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
+#include "atari_md.h"
+/* The ROTT Accelerator's sign: a lightning bolt on the bottom bar while
+ * the Multi-device renders the view, between the health bar and the ammo
+ * (clear of both, and of the demo sign). Drawn with the bar, so it goes
+ * when the bar is drawn again after the Accelerator gives up. */
+#define MD_SIGN_X 214
+#define MD_SIGN_Y 188
+static void DrawAcceleratorSign (boolean bufferofsonly)
+   {
+   static const byte bolt[7] = { 0x03, 0x06, 0x0c, 0x1f, 0x06, 0x0c, 0x18 };
+   static int color = -1;
+   byte *base[3];
+   int pages = 1, p, row, col;
+
+   if (!ATARI_MD_Active() || SHOW_KILLS())
+      return;
+   if (color < 0)
+      color = BestColor(63, 56, 0, origpal); /* yellow */
+   base[0] = bufferofsonly ? bufferofs : page1start;
+   if (!bufferofsonly)
+      {
+      if (page2start != base[0])
+         base[pages++] = page2start;
+      if (page3start != base[0] && page3start != page2start)
+         base[pages++] = page3start;
+      }
+   ATARI_HUD_TOUCH_AT(base[0] + ylookup[MD_SIGN_Y] + MD_SIGN_X, 5, 7);
+   for (row = 0; row < 7; row++)
+      for (col = 0; col < 5; col++)
+         if (bolt[row] & (0x10 >> col))
+            for (p = 0; p < pages; p++)
+               base[p][ylookup[MD_SIGN_Y + row] + MD_SIGN_X + col] = (byte)color;
+   }
+#endif
+
 void DrawPlayScreen (boolean bufferofsonly)
 
    {
@@ -481,6 +517,9 @@ void DrawPlayScreen (boolean bufferofsonly)
 
       DrawBarAmmo( bufferofsonly );
       DrawBarHealth( bufferofsonly );
+#if defined(ATARI_NATIVE) && ATARI_MD_RENDER
+      DrawAcceleratorSign( bufferofsonly );
+#endif
 
       if ( demoplayback )
       {

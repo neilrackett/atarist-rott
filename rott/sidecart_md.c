@@ -29,6 +29,7 @@ extern int md_send_sync_write_command(int cmd, const char *buf,
 
 long md_command_timeout = MD_TIMEOUT_DETECT;
 unsigned short md_command_failures;
+unsigned short md_command_retries;
 
 #define MD_RETRIES 3
 
@@ -177,6 +178,7 @@ int sidecart_md_command(int cmd, long d3, long d4) {
   sidecart_md_bus_begin();
   for (attempt = 0; attempt < MD_RETRIES && rc; attempt++) {
     unsigned short sr = md_intr_begin();
+    if (attempt) md_command_retries++;
     rc = md_send_sync_command(cmd, 8, d3, d4);
     md_intr_end(sr);
   }
@@ -193,6 +195,7 @@ int sidecart_md_write(int cmd, const void *buf, int bytes, long d3, long d4,
   sidecart_md_bus_begin();
   for (attempt = 0; attempt < MD_RETRIES && rc; attempt++) {
     unsigned short sr = md_intr_begin();
+    if (attempt) md_command_retries++;
     rc = md_send_sync_write_command(cmd, (const char *)buf, bytes, d3, d4, d5);
     md_intr_end(sr);
   }

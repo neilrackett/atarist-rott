@@ -28,7 +28,7 @@ FXVolume         254
 ;
 ; Number of Voices: sound effects at once, each costing CPU time
 ; while it plays
-; 0 - Automatic: 4 with the ROTT Accelerator, 1 without
+; 0 - Automatic: 2 with the ROTT Accelerator, 1 without
 ; 1 - 8
 NumVoices          0
 

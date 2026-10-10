@@ -407,6 +407,13 @@ int SD_PlayIt ( int sndnum, int angle, int distance, int pitch )
 #endif
 #endif
 
+#if defined(ATARI_NATIVE)
+   // Sounds that have ended handed back first (their count below goes
+   // down): FX_SoundActive no longer does that for every voice, and a
+   // frame can be several tics.
+   ATARI_SFX_Service();
+#endif
+
    if (!(sounds[sndnum].flags & SD_WRITE))
       {
       if (sounds[sndnum].count)

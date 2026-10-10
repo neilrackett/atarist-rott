@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include <string.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include "rt_def.h"
 #include "rt_sound.h"
 #include "rt_door.h"
@@ -1062,6 +1063,8 @@ void CheckBounds(objtype*ob)
 =====================
 */
 
+// ATARI_NATIVE: DoElevDiskInline does this for elevator disks, with the
+// steps that can't apply to them left out: keep the two in step.
 void DoActor (objtype *ob)
    {
 	void (*think)(objtype *);
@@ -1853,7 +1856,89 @@ void SetElevatorDiskVariables(objtype *ob,int newz, int newmomentumz,
    }
 
 
+#if defined(ATARI_NATIVE)
+static __inline__ __attribute__((always_inline)) void ElevDiskThink(objtype*ob);
+
 void T_ElevDisk(objtype*ob)
+   {
+   ElevDiskThink(ob);
+   }
+
+/* DoActor for an elevator disk in s_elevdisk, its think inline: a few
+ * dozen of them every tic on some levels. The same steps in the same
+ * order, less the tests that cannot apply to a diskobj (gravity, boss
+ * sounds and REDTIME are for other classes, it is not the player), and
+ * NewState to the state it is in (its next, with no tics) written out:
+ * T_ElevDisk never changes the state. */
+static __inline__ __attribute__((always_inline)) void DoElevDiskInline(objtype *ob)
+   {
+   int door;
+
+   M_CheckDoor(ob);
+   ElevDiskThink(ob);
+   if (ob->ticcount)
+      ob->ticcount --;
+   else
+      {
+      SetVisiblePosition(ob,ob->x,ob->y);
+      ob->ticcount = (s_elevdisk.tictime>>1);
+      ob->shapenum = s_elevdisk.shapenum + ob->shapeoffset;
+      }
+
+   if (ob->flags&FL_NEVERMARK)
+      return;
+
+   if ((ob->flags&FL_NONMARK) && actorat[ob->tilex][ob->tiley])
+      return;
+
+   actorat[ob->tilex][ob->tiley] = ob;
+   }
+
+void DoElevDisk(objtype *ob)
+   {
+   DoElevDiskInline(ob);
+   }
+
+/* One tic of UpdateGameObjects' actor loop (the build without an actor
+ * budget or ATARI_PROFILE), here so the disks' path is inline: saving
+ * and restoring registers for each of them was a third of its cost.
+ * Actors outside the player's areas (and not the player or key actors)
+ * act one tic in actor_div, by a phase from where they are. */
+void ATARI_DoActiveActors(unsigned int actor_div, unsigned int actor_time_phase)
+   {
+   objtype *ob, *temp;
+
+   for (ob = firstactive; ob;)
+      {
+      temp = ob->nextactive;
+      if ((actor_div > 1) &&
+          (ob->obclass != playerobj) &&
+          ((ob->flags & FL_KEYACTOR) == 0) &&
+          !areabyplayer[ob->areanumber])
+         {
+         // At most a few hundred: a 16-bit divide, not __umodsi3.
+         unsigned int phase = (unsigned short)((unsigned short)ob->tilex +
+                               ((unsigned short)ob->tiley << 1) +
+                               (unsigned short)ob->obclass) %
+                              (unsigned short)actor_div;
+         if (actor_time_phase != phase)
+            {
+            ob = temp;
+            continue;
+            }
+         }
+      if ((ob->state == &s_elevdisk) && (ob->obclass == diskobj))
+         DoElevDiskInline(ob);
+      else
+         DoActor(ob);
+      ob = temp;
+      }
+   }
+
+static __inline__ __attribute__((always_inline)) void ElevDiskThink(objtype*ob)
+#else
+void T_ElevDisk(objtype*ob)
+#endif
    {
    objtype *temp = (objtype*)(actorat[ob->tilex][ob->tiley]);
    objtype *master;
@@ -4999,6 +5084,20 @@ void MissileMovement(objtype*ob)
    return false;                     \
    }
 
+#if defined(ATARI_NATIVE)
+// The areas a move check has walked, as bits in two longs on the stack
+// (NUMAREAS is under 64). An array zeroed with {0} was a memset call
+// every time: 188 bytes, 15% of CheckOtherActors, run for each moving
+// actor every tic.
+#define AREATRIED_DECL       unsigned long areatried[2] = {0, 0}
+#define AREATRIED(a)         (areatried[(a) >> 5] & (1UL << ((a) & 31)))
+#define AREATRIED_MARK(a)    (areatried[(a) >> 5] |= (1UL << ((a) & 31)))
+#else
+#define AREATRIED_DECL       boolean areatried[NUMAREAS] = {0}
+#define AREATRIED(a)         (areatried[a])
+#define AREATRIED_MARK(a)    (areatried[a] = true)
+#endif
+
 boolean MissileTryMove(objtype*ob,int tryx,int tryy,int tryz)
 {
  int             tilexlow,tileylow,tilexhigh,tileyhigh,x,y,
@@ -5011,7 +5110,7 @@ boolean MissileTryMove(objtype*ob,int tryx,int tryy,int tryz)
  doorobj_t       *tempdoor;
  int             doorn;
  statobj_t       *tempstat;
- boolean         areatried[NUMAREAS] = {0};
+ AREATRIED_DECL;
 
  sprrad = 0x4500;
  actrad = ACTORSIZE+0x2800;
@@ -5083,7 +5182,7 @@ boolean MissileTryMove(objtype*ob,int tryx,int tryy,int tryz)
   goto walls;
 
  area = ob->areanumber;
- areatried[area] = true;
+ AREATRIED_MARK(area);
 actors:
  for(temp=firstareaactor[area];temp;temp=temp->nextinarea)
       {
@@ -5239,9 +5338,9 @@ actors:
       for (x=tilexlow;x<=tilexhigh;x++)
          {
          area = AREANUMBER(x,y);
-         if (ValidAreanumber(area) && (areatried[area]==false))
+         if (ValidAreanumber(area) && !AREATRIED(area))
             {
-            areatried[area] = true;
+            AREATRIED_MARK(area);
             goto actors;
             }
          }
@@ -6324,12 +6423,49 @@ void BattleCrushCheck(objtype *ob,objtype *listrover)                           
 
 
 
+#if defined(ATARI_NATIVE)
+/* The first actor from p on (along nextinarea) within range of a point in
+ * both x and y: (unsigned)(bias - x) <= span, bias the point plus the
+ * range and span twice it, the test CheckOtherActors and PushWallMove
+ * make (testing y that early changes nothing where their tests in between
+ * only continue). Most of an area is out of range and only skipped, so
+ * that part by hand: 68 cycles an actor out of range in x, the span in a
+ * register and the next pointer's own load as the end test, where gcc
+ * made 90. It reads the actors, hence "memory". */
+static __inline__ objtype *NextInRangeXY(objtype *p, int xbias, int ybias,
+                                         unsigned int span)
+   {
+   __asm__ volatile(
+      "move.l  %0,%%d0\n\t"
+      "beq.s   3f\n"
+      "1:\n\t"
+      "move.l  %1,%%d0\n\t"
+      "sub.l   %c4(%0),%%d0\n\t"
+      "cmp.l   %3,%%d0\n\t"
+      "bhi.s   2f\n\t"
+      "move.l  %2,%%d0\n\t"
+      "sub.l   %c5(%0),%%d0\n\t"
+      "cmp.l   %3,%%d0\n\t"
+      "bls.s   3f\n"
+      "2:\n\t"
+      "move.l  %c6(%0),%%d0\n\t"
+      "movea.l %%d0,%0\n\t"
+      "bne.s   1b\n"
+      "3:"
+      : "+a"(p)
+      : "d"(xbias), "d"(ybias), "d"(span), "i"(offsetof(objtype, x)),
+        "i"(offsetof(objtype, y)), "i"(offsetof(objtype, nextinarea))
+      : "d0", "cc", "memory");
+   return p;
+   }
+
+#endif
 movement_status CheckOtherActors(objtype*ob,int tryx,int tryy,int tryz)
    {
    objtype *listrover;
    int area;
    int op;
-   int areatried[NUMAREAS]={0};
+   AREATRIED_DECL;
    int tilexlow,tilexhigh,tileylow,tileyhigh;
    int radius,actrad,oldrad;
    boolean bouncer,pusher,thinkingactor,zstoppable,ACTORSTOP;
@@ -6338,6 +6474,10 @@ movement_status CheckOtherActors(objtype*ob,int tryx,int tryy,int tryz)
    int ocl,tcl;
    int ISPLAYER = 0;
    int hoffset;
+#if defined(ATARI_NATIVE)
+   int nearbias, nearybias;
+   unsigned int nearspan;
+#endif
 
    ocl = ob->obclass;
 
@@ -6387,13 +6527,37 @@ movement_status CheckOtherActors(objtype*ob,int tryx,int tryy,int tryz)
    tileyhigh = (int)((tryy+radius) >>TILESHIFT);
 
    area = ob->areanumber;
-   areatried[area] = 1;
+   AREATRIED_MARK(area);
    ACTORSTOP = false;
    oldrad = actrad;
+#if defined(ATARI_NATIVE)
+   // dx within +-(oldrad + 0x3000) is dx + that in 0..twice that: one
+   // unsigned compare against a register (coordinates are far from
+   // overflowing), not two against constants. It is most of the time
+   // this takes: 40 actors a call on some levels.
+   nearbias = tryx + (oldrad + 0x3000);
+   nearybias = tryy + (oldrad + 0x3000);
+   nearspan = (unsigned int)(oldrad + 0x3000) << 1;
+#endif
 
  actors:
+#if defined(ATARI_NATIVE)
+   // Too far away in x or y whatever its class (the tests below only
+   // widen actrad by 0x3000, and only continue until the y test): most
+   // of the list, skipped by hand.
+   for(listrover=NextInRangeXY(firstareaactor[area],nearbias,nearybias,nearspan);
+       listrover;
+       listrover=NextInRangeXY(listrover->nextinarea,nearbias,nearybias,nearspan))
+#else
    for(listrover=firstareaactor[area];listrover;listrover=listrover->nextinarea)
+#endif
          {
+#if defined(ATARI_NATIVE)
+         if (listrover == ob)
+            continue;
+
+         actrad = oldrad;
+#else
          actrad = oldrad;
 
          if (listrover == ob)
@@ -6404,6 +6568,7 @@ movement_status CheckOtherActors(objtype*ob,int tryx,int tryy,int tryz)
          dx = tryx - listrover->x;
          if ((dx < -(oldrad + 0x3000)) || (dx > (oldrad + 0x3000)))
             continue;
+#endif
 
          tcl = listrover->obclass;
 
@@ -6552,9 +6717,9 @@ movement_status CheckOtherActors(objtype*ob,int tryx,int tryy,int tryz)
       for (x=tilexlow;x<=tilexhigh;x++)
          {
          area = AREANUMBER(x,y);
-         if (ValidAreanumber(area) && (areatried[area]==0))
+         if (ValidAreanumber(area) && !AREATRIED(area))
             {
-            areatried[area] = 1;
+            AREATRIED_MARK(area);
             goto actors;
             }
          }
@@ -7126,7 +7291,7 @@ movement_status CheckDoors(objtype *ob,int tryx,int tryy,int tryz)
 
 boolean ActorTryMove(objtype*ob,int tryx, int tryy, int tryz)
    {
-
+#if !defined(ATARI_NATIVE)
    movement_status (*reduced_movement_check[3])(objtype*,int,int,int)=
                    {
                    CheckRegularWalls,
@@ -7148,6 +7313,7 @@ boolean ActorTryMove(objtype*ob,int tryx, int tryy, int tryz)
    movement_status movement_check_result;
    int             numcheckfunctions;
    int             i;
+#endif
    boolean         xyblocked;
 
 
@@ -7165,6 +7331,40 @@ boolean ActorTryMove(objtype*ob,int tryx, int tryy, int tryz)
       )
       return false;
 
+#if defined(ATARI_NATIVE)
+   // The same checks in the same order, called directly: the two tables
+   // of them were built on the stack every call, for every moving actor
+   // every tic.
+#define TRYMOVE_CHECK(check)                                  \
+   {                                                          \
+   movement_status result = check(ob,tryx,tryy,tryz);         \
+   if (result == Z_MOVEMENT_ONLY)                             \
+      xyblocked = true;                                       \
+   else if (result == NO_MOVEMENT)                            \
+      return false;                                           \
+   }
+
+   xyblocked = false;
+   switch(ob->obclass)
+      {
+      case inertobj:
+      case bladeobj:
+      case firejetobj:
+         TRYMOVE_CHECK(CheckRegularWalls);
+         TRYMOVE_CHECK(CheckMaskedWalls);
+         TRYMOVE_CHECK(CheckDoors);
+         break;
+
+      default:
+         TRYMOVE_CHECK(CheckOtherActors);
+         TRYMOVE_CHECK(CheckRegularWalls);
+         TRYMOVE_CHECK(CheckStaticObjects);
+         TRYMOVE_CHECK(CheckMaskedWalls);
+         TRYMOVE_CHECK(CheckDoors);
+         break;
+      }
+#undef TRYMOVE_CHECK
+#else
    switch(ob->obclass)
       {
       case inertobj:
@@ -7190,6 +7390,7 @@ boolean ActorTryMove(objtype*ob,int tryx, int tryy, int tryz)
       else if (movement_check_result == NO_MOVEMENT)
          return false;
       }
+#endif
 
    if (xyblocked == true)
       return false;
@@ -7200,7 +7401,30 @@ boolean ActorTryMove(objtype*ob,int tryx, int tryy, int tryz)
    }
 
 
+#if defined(ATARI_NATIVE)
+static __attribute__((noinline)) void PushWallMoveNear(int num, objtype *first);
+
+/* Most tics no actor is anywhere near a moving wall: find the first that
+ * is, and only then the real work (with its eleven registers to save). */
 void PushWallMove(int num)
+{
+ pwallobj_t *pwall = pwallobjlist[num];
+ const int actrad = PWALLRAD + 0x5000;
+ const int tryx = pwall->x + pwall->momentumx;
+ const int tryy = pwall->y + pwall->momentumy;
+ objtype *first = NextInRangeXY(firstareaactor[AREANUMBER(tryx >> 16, tryy >> 16)],
+                                tryx + actrad, tryy + actrad,
+                                (unsigned int)actrad << 1);
+
+ if (first)
+    PushWallMoveNear(num, first);
+}
+
+/* PushWallMove from the first actor near enough in x and y on */
+static void PushWallMoveNear(int num, objtype *first)
+#else
+void PushWallMove(int num)
+#endif
 {
  int             tcl;
  pwallobj_t      *pwall;
@@ -7209,6 +7433,10 @@ void PushWallMove(int num)
  objtype         *temp;
  boolean         pushem;
  int             tryx,tryy,areanumber,trytilex,trytiley;
+#if defined(ATARI_NATIVE)
+ int             nearbias,nearybias;
+ unsigned int    nearspan;
+#endif
 
 
  pwall=pwallobjlist[num];
@@ -7220,14 +7448,33 @@ void PushWallMove(int num)
  trytiley = (tryy >> 16);
 
  areanumber = AREANUMBER(trytilex,trytiley);
+#if defined(ATARI_NATIVE)
+ // |dx| > actrad as one unsigned compare against a register, as in
+ // CheckOtherActors: this walk is most of a moving wall's time.
+ nearbias = tryx + actrad;
+ nearybias = tryy + actrad;
+ nearspan = (unsigned int)actrad << 1;
+#endif
 
 
+#if defined(ATARI_NATIVE)
+ // Out of range first, skipped by hand (NextInRangeXY): most actors.
+ // The y test is moved up past ones that only continue.
+ for(temp=first;
+     temp;
+     temp=NextInRangeXY(temp->nextinarea,nearbias,nearybias,nearspan))
+#else
  for(temp=firstareaactor[areanumber];temp;temp=temp->nextinarea)
+#endif
 	 {
 	 // Out of range first: most actors are, and these tests only continue.
+#if defined(ATARI_NATIVE)
+	 dx = abs(tryx - temp->x);
+#else
 	 dx = abs(tryx - temp->x);
 	 if (dx > actrad)
 		 continue;
+#endif
 
 	 tcl = temp->obclass;
 

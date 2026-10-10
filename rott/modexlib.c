@@ -149,6 +149,7 @@ static void atari_set_fast_mode(void)
 {
    if (is_megaste())
       megaste_enable_16mhz_cache();
+   cpu_speed_measure(); /* once, for the overlay */
 }
 
 static void atari_super_set_vector(void **slot, void *handler)
@@ -160,6 +161,8 @@ static void atari_super_set_vector(void **slot, void *handler)
 
 static void atari_draw_char(int x, int y, char ch, unsigned char color)
 {
+   /* 3x5 glyphs, in the order of chars[] */
+   static const char chars[] = "0123456789CM:FPSADEILNRTWX.OUVYKHGB/";
    static const unsigned char font[][5] = {
        {0x7, 0x5, 0x5, 0x5, 0x7}, /* 0 */
        {0x2, 0x6, 0x2, 0x2, 0x7}, /* 1 */
@@ -176,24 +179,39 @@ static void atari_draw_char(int x, int y, char ch, unsigned char color)
        {0x0, 0x2, 0x0, 0x2, 0x0}, /* : */
        {0x7, 0x4, 0x6, 0x4, 0x4}, /* F */
        {0x7, 0x5, 0x7, 0x4, 0x4}, /* P */
-       {0x7, 0x4, 0x7, 0x1, 0x7}  /* S */
+       {0x7, 0x4, 0x7, 0x1, 0x7}, /* S */
+       {0x2, 0x5, 0x7, 0x5, 0x5}, /* A */
+       {0x6, 0x5, 0x5, 0x5, 0x6}, /* D */
+       {0x7, 0x4, 0x6, 0x4, 0x7}, /* E */
+       {0x7, 0x2, 0x2, 0x2, 0x7}, /* I */
+       {0x4, 0x4, 0x4, 0x4, 0x7}, /* L */
+       {0x6, 0x5, 0x5, 0x5, 0x5}, /* N */
+       {0x6, 0x5, 0x6, 0x5, 0x5}, /* R */
+       {0x7, 0x2, 0x2, 0x2, 0x2}, /* T */
+       {0x5, 0x5, 0x7, 0x7, 0x5}, /* W */
+       {0x5, 0x5, 0x2, 0x5, 0x5}, /* X */
+       {0x0, 0x0, 0x0, 0x0, 0x2}, /* . */
+       {0x2, 0x5, 0x5, 0x5, 0x2}, /* O */
+       {0x5, 0x5, 0x5, 0x5, 0x7}, /* U */
+       {0x5, 0x5, 0x5, 0x5, 0x2}, /* V */
+       {0x5, 0x5, 0x2, 0x2, 0x2}, /* Y */
+       {0x5, 0x6, 0x4, 0x6, 0x5}, /* K */
+       {0x5, 0x5, 0x7, 0x5, 0x5}, /* H */
+       {0x7, 0x4, 0x5, 0x5, 0x7}, /* G */
+       {0x6, 0x5, 0x6, 0x5, 0x6}, /* B */
+       {0x1, 0x1, 0x2, 0x4, 0x4}  /* / */
    };
    int idx = -1;
    int ry;
-   if (ch >= '0' && ch <= '9')
-      idx = ch - '0';
-   else if (ch == 'C')
-      idx = 10;
-   else if (ch == 'M')
-      idx = 11;
-   else if (ch == ':')
-      idx = 12;
-   else if (ch == 'F')
-      idx = 13;
-   else if (ch == 'P')
-      idx = 14;
-   else if (ch == 'S')
-      idx = 15;
+   const char *c;
+   for (c = chars; *c; ++c)
+   {
+      if (*c == ch)
+      {
+         idx = (int)(c - chars);
+         break;
+      }
+   }
    if (idx < 0)
       return;
 
@@ -330,19 +348,54 @@ static void atari_draw_fps_overlay(void)
 }
 #endif
 
-// Help (F11 to the game): sound effects playing (V) and late mixer refills (L),
-// see atari_sfx.c
-static void atari_draw_sfx_stats(void)
+static void atari_draw_stats_line(int y, const char *text)
 {
+   const int w = (int)strlen(text) * 4 + 2;
+   atari_fill_rect(1, y, w, 7, atari_overlay_bg_color);
+   atari_draw_text(2, y + 1, text, atari_overlay_text_color);
+}
+
+// Help (F11 to the game). With the ROTT Accelerator: frames a second, game
+// logic tics run each frame and the time (ms) they took, then per frame
+// (ms) the ST's wait for it, sending it the frame, its render and
+// its dither + c2p; then, since the level began, its loads from the SD card
+// and evictions, commands sent again and commands it dropped (atari_md.h).
+// Then sound effects playing and late mixer refills (atari_sfx.c), and the
+// CPU's speed setting and measured speed.
+static void atari_draw_stats(void)
+{
+   char buf[96], cpu[24];
    int playing = 0, late = 0;
+
    ATARI_SFX_GetDebugStats(&playing, &late);
-   atari_draw_char(2, 2, 'V', atari_overlay_text_color);
-   atari_draw_char(6, 2, ':', atari_overlay_text_color);
-   atari_draw_number(10, 2, playing, atari_overlay_text_color);
-   atari_draw_char(2, 10, 'L', atari_overlay_text_color);
-   atari_draw_char(6, 10, ':', atari_overlay_text_color);
-   atari_draw_number(10, 10, late, atari_overlay_text_color);
-   ATARI_HUD_TOUCH_RECT(0, 0, 40, 18);
+   // CPU: on a Mega STE $FFFF8E21 as TOS left it and as set, then the
+   // speed (atari_megaste.c).
+   if (megaste_ctl_set >= 0)
+      sprintf(cpu, "CPU %02X/%02X %u", megaste_ctl_boot & 0xFF,
+              megaste_ctl_set & 0xFF, cpu_speed_passes / 100);
+   else
+      sprintf(cpu, "CPU %u", cpu_speed_passes / 100);
+#if ATARI_MD_RENDER
+   if (ATARI_MD_Active())
+   {
+      atari_md_stats_t md;
+      ATARI_MD_GetStats(&md);
+      sprintf(buf, "FPS %d.%d TICS %d.%d LOGIC %d WAIT %d CMD %d RENDER %d C2P %d",
+              md.fps10 / 10, md.fps10 % 10, md.tics10 / 10, md.tics10 % 10,
+              md.logic_ms, md.wait_ms, md.cmd_ms, md.render_ms, md.c2p_ms);
+      atari_draw_stats_line(1, buf);
+      // Both rows in the top status bar, outside the MD's view.
+      sprintf(buf, "SD %d EVICT %d RETRY %d DROP %d SFX %d LATE %d %s",
+              md.sd_loads, md.evicts, md.retries, md.drops, playing, late,
+              cpu);
+      atari_draw_stats_line(9, buf);
+      ATARI_HUD_TOUCH_RECT(0, 0, 256, 17);
+      return;
+   }
+#endif
+   sprintf(buf, "SFX %d LATE %d %s", playing, late, cpu);
+   atari_draw_stats_line(1, buf);
+   ATARI_HUD_TOUCH_RECT(0, 0, 160, 9);
 }
 
 void GraphicsMode(void)
@@ -446,7 +499,7 @@ void I_FinishUpdate(void)
    int protect_bottom = 0;
    ATARI_SFX_Service();
    if (sfx_debug_overlay)
-      atari_draw_sfx_stats();
+      atari_draw_stats();
 #if defined(__MINT__)
    if (!ATARI_RenderAllowed())
       return;

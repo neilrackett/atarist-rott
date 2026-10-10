@@ -57,7 +57,7 @@ FPS based on running ROTT with automatic detail selection enabled.
 
 Music plays ROTT's MIDI songs on the ST's own sound chip, so it works on any ST. Set `MusicMode` to `0` in `SOUND.ROT` to turn it off, or `MusicVolume` (0-255) to change its volume.
 
-Sound effects use the STE's DMA sound, so they need an STE or Mega STE (an ST just plays without them). Set `FXMode` to `0` in `SOUND.ROT` to turn them off. `NumVoices` sets how many play at once, from 1 to 8; each one costs CPU time while it plays (about 5% of a Mega STE for one), and nothing when it's quiet. The default, `0`, plays one at a time, or four with the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device).
+Sound effects use the STE's DMA sound, so they need an STE or Mega STE (an ST just plays without them). Set `FXMode` to `0` in `SOUND.ROT` to turn them off. `NumVoices` sets how many play at once, from 1 to 8; each one costs CPU time while it plays (about 5% of a Mega STE for one), and nothing when it's quiet. The default, `0`, plays one at a time, or two with the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device).
 
 ## Rise of the Triad (SDL)
 
@@ -87,7 +87,7 @@ As well as taking the load off the ST, it brings back some of what the ST versio
 - Full resolution at every view size, rather than a 2x or 4x zoom, up to the full width between the status bars
 - On-screen messages
 
-`ROTT_ST.TOS` looks for the ROTT Accelerator when it starts and falls back to the ST renderer if it isn't there, so there's still only one version to install.
+`ROTT_ST.TOS` looks for the ROTT Accelerator when it starts and falls back to the ST renderer if it isn't there, so there's still only one version to install. While the Accelerator is rendering, a small yellow lightning bolt shows on the bottom status bar.
 
 See the [ROTT Accelerator readme](sidecart/README.md) for installation, testing and build instructions.
 
