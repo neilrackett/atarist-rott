@@ -135,10 +135,26 @@ static void wad_close(void) {
   s_wad_open = false;
 }
 
+bool md_pack_wad_ok(void) { return s_wad_ok; }
+
+bool md_pack_wad_lump(int lump, uint32_t *pos, uint32_t *size) {
+  uint8_t e[16];
+  if (!s_wad_ok || lump < 0 || lump >= (int)s_wad_numlumps) return false;
+  if (!md_pack_wad_read(s_wad_dirofs + (uint32_t)lump * 16u, e, 16))
+    return false;
+  *pos = rd32(e);
+  *size = rd32(e + 4);
+  return true;
+}
+
 static bool wad_read(uint32_t pos, void *dst, uint32_t len) {
   UINT br = 0;
   return f_lseek(&s_wad, pos) == FR_OK &&
          f_read(&s_wad, dst, len, &br) == FR_OK && br == len;
+}
+
+bool md_pack_wad_read(uint32_t pos, void *dst, uint32_t len) {
+  return s_wad_ok && wad_open() && wad_read(pos, dst, len);
 }
 
 /* ------------------------------------------------------------------ */
@@ -574,22 +590,22 @@ static void writer_put(writer_t *w, const void *src, uint32_t len) {
   }
 }
 
-/* Copy `len` bytes at `filepos` of the WAD straight into the stage. */
+/* Copy `len` bytes at `filepos` of the WAD straight into the stage. Each
+ * piece is sought afresh: a flush calls the progress callback, which keeps
+ * the music going by reading the same file elsewhere (md_music_service). */
 static void writer_copy(writer_t *w, uint32_t filepos, uint32_t len) {
-  if (f_lseek(&s_wad, filepos) != FR_OK) {
-    w->failed = true;
-    return;
-  }
   while (len && !w->failed) {
     uint32_t n = MD_PACK_STAGE - w->fill;
     if (n > len) n = len;
     UINT br = 0;
-    if (f_read(&s_wad, w->stage + w->fill, n, &br) != FR_OK || br != n) {
+    if (f_lseek(&s_wad, filepos) != FR_OK ||
+        f_read(&s_wad, w->stage + w->fill, n, &br) != FR_OK || br != n) {
       w->failed = true;
       return;
     }
     w->fill += n;
     w->written += n;
+    filepos += n;
     len -= n;
     if (w->fill == MD_PACK_STAGE) writer_flush(w);
   }

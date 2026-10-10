@@ -21,6 +21,7 @@
 
 #include "debug.h"
 #include "hardware/sync.h"
+#include "md_music.h"
 #include "md_pack.h"
 #include "md_proto.h"
 #include "md_video.h"
@@ -189,6 +190,7 @@ static void cmd_hello(const uint16_t *w, uint32_t n) {
   md_get_bytes((uint8_t *)name, b + MD_HELLO_NAME, MD_HELLO_NAME_WORDS * 2);
   name[sizeof(name) - 1] = 0;
 
+  md_music_command(MD_MUSIC_STOP, 0, false, 0); /* the WAD reopens */
   if (!s_sd_ok) {
     err = MD_ERR_NO_SD;
   } else {
@@ -196,6 +198,8 @@ static void cmd_hello(const uint16_t *w, uint32_t n) {
                            md_get32(b + MD_HELLO_WADSIZE),
                            md_get32(b + MD_HELLO_DIROFS));
   }
+  /* Music comes from the WAD, so only with it. */
+  status_set(MD_ST_CAPS, md_pack_wad_ok() ? MD_CAP_MUSIC : 0);
   /* A new session: the old errors are history. */
   s_errors = 0;
   status_set(MD_ST_ERRORS, 0);
@@ -219,6 +223,7 @@ static void cmd_hello(const uint16_t *w, uint32_t n) {
 }
 
 static void pack_progress(unsigned percent) {
+  md_music_service(); /* the song goes on while the pack is built */
   status_set(MD_ST_PROGRESS, (uint16_t)percent);
 }
 
@@ -424,6 +429,13 @@ static void cmd_test(const uint16_t *w, uint32_t n) {
   publish_frame(buf, seq, sx, sy, width, height, t1 - t0, t2 - t1);
 }
 
+static void cmd_music(const uint16_t *w, uint32_t n) {
+  if (n < 4) return;
+  const uint32_t d3 = md_get32(w), d4 = md_get32(w + 2);
+  md_music_command((unsigned)(d3 >> 16), (int)(d3 & 0xFFFFu),
+                   ((d4 >> 8) & 0xFFu) != 0, (unsigned)(d4 & 0xFFu));
+}
+
 static void cmd_echo(const uint16_t *w, uint32_t n) {
   static uint16_t s_ok, s_bad;
   if (n < 6) return;
@@ -445,7 +457,6 @@ static void dispatch(const md_cmd_t *c) {
   const uint16_t *w = md_cmd_words(c);
   const uint32_t n = md_cmd_word_count(c);
 
-  status_set(MD_ST_LAST_CMD, c->command_id);
   switch (c->command_id) {
     case MD_CMD_HELLO:
       cmd_hello(w, n);
@@ -473,6 +484,9 @@ static void dispatch(const md_cmd_t *c) {
     case MD_CMD_TEST:
       cmd_test(w, n);
       break;
+    case MD_CMD_MUSIC:
+      cmd_music(w, n);
+      break;
     case MD_CMD_ECHO:
       cmd_echo(w, n);
       break;
@@ -480,6 +494,10 @@ static void dispatch(const md_cmd_t *c) {
       add_error(MD_ERR_BAD_CMD);
       break;
   }
+  /* Only once it has run: the ST waits for HELLO here, then reads what
+   * it set (the result, the errors, the capabilities). */
+  __dmb();
+  status_set(MD_ST_LAST_CMD, c->command_id);
 }
 
 /* ------------------------------------------------------------------ */
@@ -505,6 +523,7 @@ void md_main_init(uintptr_t rom_base, const char *folder, bool sd_ok) {
   md_video_set_palette(s_chunky, 0, s_chunky + 1024);
   publish_palette();
   md_pack_init();
+  md_music_init(rom_base);
 }
 
 void md_main_ready(void) {
@@ -521,6 +540,7 @@ bool md_main_poll(void) {
   static uint16_t heartbeat;
   status_set(MD_ST_HEARTBEAT, ++heartbeat);
   publish_counters(); /* checksum errors happen without a command */
+  md_music_service(); /* a few hundred bytes a second, from the WAD */
   md_cmd_t *c = md_proto_peek();
   if (!c) {
     /* Idle: load what the last frame had to go without. */

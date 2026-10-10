@@ -53,6 +53,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_str.h"
 #if defined(ATARI_NATIVE)
 #include "atari_sfx.h"
+#include "atari_music.h"
 #endif
 
 #if (SHAREWARE==0)
@@ -1214,6 +1215,16 @@ void MU_PlaySong ( int num )
    lastsongnumber=num;
 
    lump = W_GetNumForName(rottsongs[num].lumpname);
+#if defined(ATARI_NATIVE)
+   // The ROTT Accelerator plays it from its own copy of the WAD if it can,
+   // so the ST needn't load it at all.
+   if (MUSIC_PlaySongLump(lump, (rottsongs[num].loopflag == loop_yes) ?
+                          MUSIC_LoopSong : MUSIC_PlayOnce) == MUSIC_Ok)
+      {
+      MU_SetVolume (MUvolume);
+      return;
+      }
+#endif
    size = W_LumpLength(lump);
 
    currentsong=W_CacheLumpNum(lump,PU_STATIC, CvtNull, 1);

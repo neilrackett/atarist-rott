@@ -114,6 +114,14 @@ int ATARI_MD_TakeHudRedraw(void);
 /* Did the MD see the tile at (x, y), or one next to it, last frame? */
 int ATARI_MD_SpotvisNear(int x, int y);
 
+/* Music on the MD (its firmware says MD_CAP_MUSIC): an MD_MUSIC_* command
+ * (1 if sent), whether its song is playing, and the VBL's copy of its YM
+ * registers to the chip (supervisor). */
+int ATARI_MD_MusicAvailable(void);
+int ATARI_MD_Music(int action, int lump, int loop, int volume);
+int ATARI_MD_MusicPlaying(void);
+void ATARI_MD_MusicVbl(void);
+
 #if defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
 /* Test runs: after frame `frame` is on screen, save it as SHOTnnn.PI1 if
  * it is one of the frames compared between MD and ST runs. */
@@ -125,6 +133,10 @@ void ATARI_MD_AutotestShot(int frame);
 #define ATARI_MD_Active() 0
 #define MD_TILE_TOUCH(x, y) ((void)0)
 #define MD_MASKED_TOUCH() ((void)0)
+#define ATARI_MD_MusicAvailable() 0
+#define ATARI_MD_Music(action, lump, loop, volume) 0
+#define ATARI_MD_MusicPlaying() 0
+#define ATARI_MD_MusicVbl() ((void)0)
 
 #endif
 

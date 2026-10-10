@@ -8,6 +8,11 @@
  * tempo holds however long a frame takes. While music is on, TOS's key
  * click and bell are off, so they cannot fight over the chip, as STDL's
  * ym.c does (https://github.com/neilrackett/atarist-stdl).
+ *
+ * With the ROTT Accelerator (MD_CAP_MUSIC) the same player runs on the
+ * Multi-device instead, from its copy of the WAD (MUSIC_PlaySongLump), and
+ * the VBL only writes the registers it publishes to the chip: about 7% of
+ * an 8MHz ST given back. The calls below follow the song wherever it is.
  */
 #include <string.h>
 #include <mint/osbind.h>
@@ -16,6 +21,8 @@
 #include "music.h"
 #include "atari_music.h"
 #include "atari_vbl.h"
+#include "atari_md.h"
+#include "rott_md_protocol.h"
 
 #define CONTERM (*(volatile unsigned char *)0x484UL)
 #define HZ_200 (*(volatile unsigned long *)0x4BAUL)
@@ -30,6 +37,7 @@ static unsigned long music_ticks = 0;
 static unsigned long music_ms = 0;
 static unsigned long music_hz200 = 0;
 static int old_conterm = -1;
+static volatile int music_md; /* the Accelerator plays the song */
 
 void MUSIC_Service(void);
 
@@ -70,6 +78,18 @@ static void music_vbl(void)
 {
     unsigned long now = HZ_200;
     int steps = 0;
+
+    if (music_md)
+    {
+        if (ATARI_MD_Active())
+        {
+            ATARI_MD_MusicVbl();
+            return;
+        }
+        /* It gave up: quiet, until the game plays the song here */
+        music_md = 0;
+        ymmusic_silence();
+    }
 
     if (music_hz200 == 0)
         music_hz200 = now;
@@ -138,6 +158,11 @@ int MUSIC_Shutdown(void)
     if (!music_initialized)
         return MUSIC_Ok;
     music_initialized = 0;
+    if (music_md)
+    {
+        music_md = 0;
+        ATARI_MD_Music(MD_MUSIC_STOP, 0, 0, 0);
+    }
     ATARI_VBL_Remove(music_vbl); /* and silences the YM */
     music_ticks = 0;
     music_ms = 0;
@@ -158,6 +183,8 @@ void MUSIC_SetVolume(int volume)
 
     music_volume = volume;
     ymmusic_master = volume;
+    if (music_md)
+        ATARI_MD_Music(MD_MUSIC_VOLUME, 0, 0, volume);
 }
 
 void MUSIC_SetMidiChannelVolume(int channel, int volume)
@@ -184,11 +211,18 @@ int MUSIC_SongPlaying(void)
 {
     if (!music_initialized)
         return 0;
+    if (music_md)
+        return ATARI_MD_MusicPlaying();
     return (ymmusic_state & YMMUSIC_PLAY) ? 1 : 0;
 }
 
 void MUSIC_Continue(void)
 {
+    if (music_initialized && music_md)
+    {
+        ATARI_MD_Music(MD_MUSIC_CONTINUE, 0, 0, music_volume);
+        return;
+    }
     if (!music_initialized || ymmusic_data_cmd == NULL)
         return;
 
@@ -199,6 +233,11 @@ void MUSIC_Pause(void)
 {
     if (!music_initialized)
         return;
+    if (music_md)
+    {
+        ATARI_MD_Music(MD_MUSIC_PAUSE, 0, 0, music_volume);
+        return;
+    }
     music_send_command(ymmusic_data_cmd, ymmusic_state_cmd & ~YMMUSIC_PLAY);
 }
 
@@ -206,6 +245,11 @@ int MUSIC_StopSong(void)
 {
     if (!music_initialized)
         return MUSIC_Ok;
+    if (music_md)
+    {
+        music_md = 0;
+        ATARI_MD_Music(MD_MUSIC_STOP, 0, 0, 0);
+    }
 
     music_send_command(NULL, 0);
     music_ticks = 0;
@@ -244,12 +288,39 @@ int MUSIC_PlaySongROTT(unsigned char *song, int size, int loopflag)
         return MUSIC_Error;
     }
 
+    if (music_md)
+    {
+        music_md = 0;
+        ATARI_MD_Music(MD_MUSIC_STOP, 0, 0, 0);
+    }
     music_loopflag = loopflag;
     music_ticks = 0;
     music_ms = 0;
     music_set_error(MUSIC_Ok);
 
     music_send_command(song, YMMUSIC_PLAY | ((loopflag == MUSIC_LoopSong) ? YMMUSIC_LOOP : 0));
+    return MUSIC_Ok;
+}
+
+/* The song in WAD lump `lump`, on the ROTT Accelerator if it can play it:
+ * then the ST needs no copy of the song at all. MUSIC_Error if not, for
+ * the caller to load it and use MUSIC_PlaySongROTT. */
+int MUSIC_PlaySongLump(int lump, int loopflag)
+{
+    if (!music_initialized || !ATARI_MD_MusicAvailable())
+        return MUSIC_Error;
+    music_send_command(NULL, 0); /* the ST's own player stops */
+    music_md = 1;
+    if (!ATARI_MD_Music(MD_MUSIC_PLAY, lump, loopflag == MUSIC_LoopSong,
+                        music_volume))
+    {
+        music_md = 0;
+        return MUSIC_Error;
+    }
+    music_loopflag = loopflag;
+    music_ticks = 0;
+    music_ms = 0;
+    music_set_error(MUSIC_Ok);
     return MUSIC_Ok;
 }
 

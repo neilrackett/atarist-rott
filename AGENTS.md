@@ -32,8 +32,8 @@ Build + Artifacts
   release and then moves the `latest` tag. The firmware (`<uuid>.uf2` and
   `<uuid>.json`, needs the `APP_UUID_KEY` secret) is only rebuilt and
   replaced when something it's built from has changed since the commit
-  `latest` marks: `sidecart/` apart from its documentation, or
-  `rott/atari_tables.*`. A manual run of the workflow can force it, which
+  `latest` marks: `sidecart/` apart from its documentation,
+  `rott/atari_tables.*` or `rott/audiolib/atari_music.*`. A manual run of the workflow can force it, which
   is also the fix if `latest` gets moved by hand. Documentation-only
   changes (`.md` files, `doc/`, `COPYING`, `LICENSE`) run neither workflow.
   The firmware ships `sidecart/version.txt` as it is, so bump it by hand
@@ -83,7 +83,12 @@ Input + Timing Notes (Critical)
   `MUSIC_` calls in `atari_music_api.c`), stepped at 50Hz from the VBL off
   the 200Hz clock; YM registers only in supervisor mode, select and write
   with interrupts masked. TOS's key click and bell are off while it plays.
-  On by default (`MusicMode 6`); `MusicVolume` 0-255.
+  On by default (`MusicMode 6`); `MusicVolume` 0-255. With the Accelerator
+  (`MD_CAP_MUSIC`, `ATARI_MD_MUSIC=1`) the firmware runs the same player
+  (`sidecart/rp/src/md_music.c`, `atari_music.c` built with `YMMUSIC_MD`)
+  and the VBL copies its registers (`ATARI_MD_MusicVbl`, the `MD_YM_*`
+  ring); check changes at 8MHz in EmuMD (its clock is wrong after the
+  Mega STE's switch to 16MHz).
 - `rott/atari_vbl.c`: one TOS VBL queue slot for the sound effects mixer and
   the music, and their hardware put back through the terminate vector on any
   exit (`Error()`, a crash). Anything new on the VBL goes through it.

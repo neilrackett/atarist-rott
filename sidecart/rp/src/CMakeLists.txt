@@ -99,7 +99,11 @@ add_subdirectory(${FATFS_SDK_PATH}/src build)
 # The MD/ROTT renderer: ROTT's own, ported (rott/, see r_local.h), plus the
 # ST build's fixed-point tables, compiled from rott/ rather than copied.
 file(GLOB ROTT_RENDERER_SOURCES ${CMAKE_CURRENT_LIST_DIR}/rott/*.c)
-set(ROTT_SHARED_SOURCES ${ROTT_ROOT}/rott/atari_tables.c)
+# The ST build's music player too, for MD_CMD_MUSIC (md_music.c).
+set(ROTT_SHARED_SOURCES ${ROTT_ROOT}/rott/atari_tables.c
+        ${ROTT_ROOT}/rott/audiolib/atari_music.c)
+set_source_files_properties(${ROTT_ROOT}/rott/audiolib/atari_music.c md_music.c
+        PROPERTIES COMPILE_DEFINITIONS "YMMUSIC_MD")
 # The renderer is the hot path: -O2 rather than the global MinSizeRel.
 set_source_files_properties(${ROTT_RENDERER_SOURCES} md_video.c PROPERTIES
         COMPILE_OPTIONS "-O2")
@@ -119,6 +123,7 @@ target_sources(${PROJECT_NAME} PRIVATE
         hw_config.c
         md_core1.c
         md_main.c
+        md_music.c
         md_pack.c
         md_proto.c
         md_video.c

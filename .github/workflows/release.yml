@@ -101,12 +101,14 @@ jobs:
         # The latest tag marks the commit whose files are on the release
         # (it only moves once they are all uploaded, below), so the
         # firmware there is current unless something it is built from has
-        # changed since: sidecart/, apart from its documentation, and the
-        # fixed-point tables it compiles from the ST build's rott/.
+        # changed since: sidecart/, apart from its documentation, and what
+        # it compiles from the ST build's rott/ (the fixed-point tables and
+        # the music player).
         env:
           FORCE: ${{ inputs.firmware }}
         run: |
           SOURCES=(sidecart rott/atari_tables.c rott/atari_tables.h
+                   rott/audiolib/atari_music.c rott/audiolib/atari_music.h
                    ':(exclude)*.md' ':(exclude)sidecart/LICENSE')
 
           if [ "$FORCE" = "true" ]; then

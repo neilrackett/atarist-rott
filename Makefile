@@ -39,6 +39,7 @@ ATARI_NOIR_DITHERING ?= 0 # Dither noir output
 ATARI_MD_RENDER ?= 1 # Use the MD/ROTT firmware when present
 ATARI_MD_PIPELINE ?= 1 # MD renders frame N while the ST runs N+1
 ATARI_MD_BLIT ?= 1 # The blitter copies MD frames while the CPU goes on
+ATARI_MD_MUSIC ?= 1 # The MD plays the music, if its firmware can
 ATARI_MD_AUTOTEST ?= 0 # Test runs: start a game, turn N angles a tic
 ATARI_MD_AUTOTEST_DIE ?= 0 # Test runs: the player is killed at frame N
 ATARI_LOGIC_CHECK ?= 0 # Test runs: N tics a frame, scripted, state hashes
@@ -118,7 +119,7 @@ ATARI_CFLAGS ?= -O3 -fomit-frame-pointer -s -std=gnu99 -m68000 \
 	-DATARI_USE_ASM_HOTSPOTS=$(ATARI_USE_ASM_HOTSPOTS) \
 	-DATARI_SKIP_LIGHTLEVEL=$(ATARI_SKIP_LIGHTLEVEL) -DATARI_SKIP_FIZZLE=$(ATARI_SKIP_FIZZLE) \
 	-DATARI_MD_RENDER=$(ATARI_MD_RENDER) -DATARI_MD_PIPELINE=$(ATARI_MD_PIPELINE) \
-	-DATARI_MD_BLIT=$(ATARI_MD_BLIT) \
+	-DATARI_MD_BLIT=$(ATARI_MD_BLIT) -DATARI_MD_MUSIC=$(ATARI_MD_MUSIC) \
 	-DATARI_MD_AUTOTEST=$(ATARI_MD_AUTOTEST) -DATARI_LOGIC_CHECK=$(ATARI_LOGIC_CHECK) \
 	-DATARI_LOD=$(ATARI_LOD) \
 	-DATARI_MD_AUTOTEST_DIE=$(ATARI_MD_AUTOTEST_DIE)

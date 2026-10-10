@@ -31,6 +31,7 @@
 #include <string.h>
 
 #include "atari_c2p.h"
+#include "atari_megaste.h"
 #include "atari_perf.h"
 #include "i_timer.h"
 #include "isr.h"
@@ -88,6 +89,8 @@ extern int CalcRotate(objtype *ob);
 #define FIXEDTRANSLEVEL (30) /* _rt_draw.h */
 
 int atari_md_active;
+static unsigned short md_caps; /* MD_ST_CAPS, read at HELLO */
+static int md_mste;            /* a Mega STE: its cache in the way */
 int atari_md_masked_dirty = 1;
 
 #define MD_PKT_WORDS (MD_CMD_MAX_BYTES / 2)
@@ -359,7 +362,9 @@ void ATARI_MD_Init(void) {
     }
   }
   sidecart_md_result(result, sizeof(result));
+  md_caps = MD_STATUS[MD_ST_CAPS]; /* 0 from an older firmware */
   sidecart_md_bus_end();
+  md_mste = is_megaste();
 
   if (rc != 0) {
     printf("ROTT Accelerator not answering\nUsing the ST renderer\n");
@@ -1234,6 +1239,122 @@ void ATARI_MD_ViewToChunky(unsigned char *chunky) {
   ATARI_MD_BlitWait();
   atari_c2p_screen_to_chunky((const unsigned char *)Physbase(), chunky, md_shown_x,
                              md_shown_y, md_shown_w, md_shown_h);
+}
+
+/* ------------------------------------------------------------------ */
+/* Music on the MD (MD_CAP_MUSIC)                                       */
+/* ------------------------------------------------------------------ */
+
+#define MSTE_CTL (*(volatile unsigned char *)0xFFFF8E21UL)
+#define YM_SELECT (*(volatile unsigned char *)0xFFFF8800UL)
+#define YM_DATA (*(volatile unsigned char *)0xFFFF8802UL)
+
+static unsigned short md_ym_last; /* the last step played (0: none yet) */
+static unsigned char md_ym_shadow[14];
+static volatile unsigned char md_ym_playing;
+
+#ifndef ATARI_MD_MUSIC
+#define ATARI_MD_MUSIC 1
+#endif
+
+int ATARI_MD_MusicAvailable(void) {
+  return ATARI_MD_MUSIC && atari_md_active && (md_caps & MD_CAP_MUSIC);
+}
+
+int ATARI_MD_Music(int action, int lump, int loop, int volume) {
+  if (!ATARI_MD_MusicAvailable()) return 0;
+  if (action == MD_MUSIC_PLAY) {
+    /* every register written from the first step of the song on (all of
+     * it compared, not just its changes) */
+    memset(md_ym_shadow, 0xFF, sizeof(md_ym_shadow));
+    md_ym_last = 0;
+    md_ym_playing = 1; /* until the MD says otherwise */
+  }
+  return sidecart_md_command(MD_CMD_MUSIC,
+                             ((long)action << 16) | (long)(lump & 0xFFFF),
+                             ((long)(loop ? 1 : 0) << 8) | (long)(volume & 0xFF)) == 0;
+}
+
+int ATARI_MD_MusicPlaying(void) { return md_ym_playing; }
+
+/* The lowest set bit of a byte (md_ym_step's walk of a register mask). */
+static const unsigned char md_lsb[256] = {
+#define L4(n) n, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0
+    0, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, L4(4), L4(5), L4(4),
+    L4(6), L4(4), L4(5), L4(4), L4(7), L4(4), L4(5), L4(4), L4(6), L4(4),
+    L4(5), L4(4)
+#undef L4
+};
+
+/* One step from its slot (step is MD_YM_STEP(n)): its changed registers,
+ * or all of them, read out, its number read again (the MD may have come
+ * round to the slot meanwhile), then those that differ from the chip
+ * written to it. 0 if the slot no longer held the step. */
+static int md_ym_step(unsigned short step, int all) {
+  volatile const unsigned short *slot =
+      (volatile const unsigned short *)(MD_ROM4_BASE + MD_YM_SLOT_OFFSET) +
+      (step % MD_YM_SLOTS) * MD_YM_WORDS;
+  unsigned char reg[14], val[14];
+  unsigned short flags;
+  unsigned m;
+  int n = 0, k;
+
+  if (slot[MD_YM_SEQ] != step) return 0;
+  flags = slot[MD_YM_FLAGS];
+  for (m = all ? 0x3FFF : MD_YMF_CHANGED(flags); m; m &= m - 1) {
+    const int i = (m & 0xFF) ? md_lsb[m & 0xFF] : 8 + md_lsb[m >> 8];
+    reg[n] = (unsigned char)i;
+    val[n++] = (unsigned char)slot[MD_YM_REGS + i];
+  }
+  if (slot[MD_YM_SEQ] != step) return 0;
+  md_ym_playing = (unsigned char)(flags & MD_YMF_PLAYING);
+  for (k = 0; k < n; k++) {
+    const int i = reg[k];
+    unsigned char b = val[k];
+    unsigned short sr;
+    if (b == md_ym_shadow[i]) continue;
+    md_ym_shadow[i] = b;
+    __asm__ volatile("move.w %%sr,%0\n\tori.w #0x0700,%%sr" : "=d"(sr) : : "cc");
+    YM_SELECT = (unsigned char)i;
+    if (i == 7) b = (unsigned char)((YM_SELECT & 0xC0) | (b & 0x3F));
+    YM_DATA = b;
+    __asm__ volatile("move.w %0,%%sr" : : "d"(sr) : "cc");
+  }
+  return 1;
+}
+
+/* The VBL (supervisor): the MD's steps in order (MD_YM_SLOTS), one a VBL,
+ * or two while behind so it doesn't stay at the edge of the ring. Just
+ * started, too far behind or a step missed: on from the newest, every
+ * register compared, as only a step that follows the one played can go by
+ * its changes. The cartridge is read with a Mega STE's cache off, as
+ * everywhere, put back as it was (the game may have it off just now). R7's
+ * port bits stay as the chip has them. */
+void ATARI_MD_MusicVbl(void) {
+  unsigned short newest;
+  unsigned char ctl = 0;
+  int k;
+
+  if (md_mste) {
+    ctl = MSTE_CTL;
+    if (ctl & 1) MSTE_CTL = (unsigned char)(ctl & ~1);
+  }
+  newest = *(volatile const unsigned short *)(MD_ROM4_BASE + MD_YM_NEWEST_OFFSET);
+  for (k = 0; k < 2 && newest != md_ym_last && (newest & 0x8000); k++) {
+    unsigned short step = (unsigned short)MD_YM_STEP(md_ym_last + 1);
+    int all = 0;
+    if (md_ym_last == 0 ||
+        ((newest - md_ym_last) & MD_YM_STEP_MASK) >= MD_YM_SLOTS) {
+      step = newest;
+      all = 1;
+    }
+    if (!md_ym_step(step, all)) {
+      md_ym_last = 0;
+      break;
+    }
+    md_ym_last = step;
+  }
+  if (md_mste && (ctl & 1)) MSTE_CTL = ctl;
 }
 
 static int md_hud_redraw;

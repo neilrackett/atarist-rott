@@ -2,10 +2,18 @@
  * Copyright (C) 2026 Neil Rackett
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
-#include <stdio.h>
 #include <stddef.h>
 #include <stdbool.h>
+#if defined(YMMUSIC_MD)
+/* Built into the ROTT Accelerator's firmware too (sidecart/rp/src/
+ * md_music.c): the same player, its YM writes kept in ymmusic_regs for the
+ * ST to copy, its MIDI tracks streamed through small windows
+ * (YMMUSIC_TRACK_READY, ymmusic_md_rewind). Only MIDI songs come that way. */
+#define SHORT(x) (x)
+#else
+#include <stdio.h>
 #include "i_swap.h"
+#endif
 #include "atari_music.h"
 
 // Music volume, 0-255 (MUSIC_SetVolume).
@@ -28,8 +36,9 @@ static const unsigned char ymmusic_levels[128] = {
 
 typedef struct
 {
-    // Points to an array of data points.
-    char *data;
+    // Points to an array of data points (signed: char is unsigned on ARM,
+    // where the ROTT Accelerator runs this too).
+    signed char *data;
     // Indexes into array which mark certain points in time.
     unsigned char sustain_begin, release_begin, last;
 } envelope_t;
@@ -80,7 +89,7 @@ typedef struct
     .release_begin = release,                           \
     .last = sizeof(dataname)-1}
 
-static char overdriven_guitar_volume_envelope_data[] =
+static signed char overdriven_guitar_volume_envelope_data[] =
     {-70, -40, -10, 0, -1, -1, -2, -2, -3, -3, -4, -4, -5, -5, -6, -6, -7, -7, -8, -8, -9, -9, -10, -10};
 static envelope_t overdriven_guitar_volume_envelope = ENVELOPE(overdriven_guitar_volume_envelope_data, 3, 5);
 static instrument_t overdriven_guitar = {
@@ -88,9 +97,9 @@ static instrument_t overdriven_guitar = {
     .volume_envelope = &overdriven_guitar_volume_envelope,
 };
 
-static char distortion_guitar_volume_envelope_data[] =
+static signed char distortion_guitar_volume_envelope_data[] =
     {-20, 60, 10, 0, 8, -1, -1, -2, -3, -3, -4, -4, -5, -5, -6, -6, -7, -7, -8, -8, -9, -9, -10, -10};
-static char distortion_guitar_pitch_envelope_data[] =
+static signed char distortion_guitar_pitch_envelope_data[] =
     {80, 40, 20, 0, 20, 0};
 static envelope_t distortion_guitar_volume_envelope = ENVELOPE(distortion_guitar_volume_envelope_data, 3, 5);
 static envelope_t distortion_guitar_pitch_envelope = ENVELOPE(distortion_guitar_pitch_envelope_data, 3, 5);
@@ -100,7 +109,7 @@ static instrument_t distortion_guitar = {
     .pitch_envelope = &distortion_guitar_pitch_envelope,
 };
 
-static char dummy_instrument_volume_envelope_data[] =
+static signed char dummy_instrument_volume_envelope_data[] =
     {-20, 0, -16, -32, -64};
 static envelope_t dummy_instrument_volume_envelope = ENVELOPE(dummy_instrument_volume_envelope_data, 1, 2);
 static instrument_t dummy_instrument = {
@@ -108,9 +117,9 @@ static instrument_t dummy_instrument = {
     .volume_envelope = &dummy_instrument_volume_envelope,
 };
 
-static char bass_drum_volume_envelope_data[] =
+static signed char bass_drum_volume_envelope_data[] =
     {0, 0, 0, 0, 0, -60, -80, -100, -120};
-static char bass_drum_note_envelope_data[] =
+static signed char bass_drum_note_envelope_data[] =
     {0, -4, -8, -18, -26, -32, -35, -35, -36};
 static envelope_t bass_drum_volume_envelope = ENVELOPE(bass_drum_volume_envelope_data, 16, 16);
 static envelope_t bass_drum_note_envelope = ENVELOPE(bass_drum_note_envelope_data, 16, 16);
@@ -122,11 +131,11 @@ static instrument_t bass_drum = {
     .overrides_note = 1,
 };
 
-static char snare_volume_envelope_data[] =
+static signed char snare_volume_envelope_data[] =
     {120, 20, 10, 4, 0, -4, -8, -12, -16, -20, -24, -28, -32, -34, -36, -38, -40, -41, -42, -43, -44, -45, -46, -47,
      -48, -49, -50, -51, -52, -53, -54, -55, -56, -57, -58, -59, -60, -61, -62, -63};
 static envelope_t snare_volume_envelope = ENVELOPE(snare_volume_envelope_data, 127, 127);
-static char electric_snare_note_envelope_data[] =
+static signed char electric_snare_note_envelope_data[] =
     {+48, +0, -16, -10, -30, -28, -37, -33, -36};
 static envelope_t electric_snare_note_envelope = ENVELOPE(electric_snare_note_envelope_data, 127, 127);
 static instrument_t electric_snare = {
@@ -138,7 +147,7 @@ static instrument_t electric_snare = {
     .enables_noise = 1,
 };
 
-static char dummy_percussion_volume_envelope_data[] =
+static signed char dummy_percussion_volume_envelope_data[] =
     {40, -60, -98, -120};
 static envelope_t dummy_percussion_volume_envelope = ENVELOPE(dummy_percussion_volume_envelope_data, 127, 127);
 static instrument_t dummy_percussion = {
@@ -176,17 +185,7 @@ static int ymmusic_mode = 0; /* 0=none, 1=MUS, 2=MIDI */
 #define YMMUSIC_NUMVOICES (sizeof(ymmusic_voices) / sizeof(ymmusic_voice_t))
 #define YMMUSIC_NUMCHANNELS (sizeof(ymmusic_channels) / sizeof(ymmusic_channel_t))
 
-#define YMMUSIC_MAX_MIDI_TRACKS 32
 #define YMMUSIC_MIDI_ENDED 0xFFFFFFFFUL
-typedef struct
-{
-    unsigned long next; /* song tick of the track's next event; all ones once ended */
-    unsigned char *start;
-    unsigned char *ptr;
-    unsigned char *end;
-    unsigned char running_status;
-    unsigned char active;
-} ymmusic_midi_track_t;
 
 static ymmusic_midi_track_t ymmusic_midi_tracks[YMMUSIC_MAX_MIDI_TRACKS];
 static int ymmusic_midi_num_tracks = 0;
@@ -206,6 +205,14 @@ static unsigned short ymmusic_ack_nr = 0;
 // Timer C plays Dosound sequences on the same chip and outranks the VBL,
 // so landing in between would send the value to the register it selected.
 // (As STDL's ym.c does: https://github.com/neilrackett/atarist-stdl)
+#if defined(YMMUSIC_MD)
+unsigned char ymmusic_regs[14] = {0, 0, 0, 0, 0, 0, 0, 0x3f};
+
+static __inline__ unsigned long ym_mulu(unsigned short a, unsigned short b)
+{
+    return (unsigned long)a * b;
+}
+#else
 #define YM_SELECT (*(volatile unsigned char *)0xFFFF8800UL)
 #define YM_DATA (*(volatile unsigned char *)0xFFFF8802UL)
 
@@ -217,12 +224,25 @@ static __inline__ unsigned long ym_mulu(unsigned short a, unsigned short b)
     __asm__("mulu.w %1,%0" : "+d"(r) : "d"(b));
     return r;
 }
+#endif
 
 // What was last written to each voice's period and volume, so a step only
 // writes the registers that change. All ones: unknown, write next time.
 static unsigned short ym_period_shadow[3] = {0xffff, 0xffff, 0xffff};
 static unsigned char ym_volume_shadow[3] = {0xff, 0xff, 0xff};
 
+#if defined(YMMUSIC_MD)
+static void ym_write(unsigned char reg, unsigned char value)
+{
+    ymmusic_regs[reg] = value;
+}
+
+// The mixer's tone and noise bits; the ST keeps its port bits as they are.
+static void ym_mixer(unsigned char clear, unsigned char set)
+{
+    ymmusic_regs[7] = (unsigned char)(((ymmusic_regs[7] & ~clear) | set) & 0x3f);
+}
+#else
 static void ym_write(unsigned char reg, unsigned char value)
 {
     unsigned short sr;
@@ -244,11 +264,12 @@ static void ym_mixer(unsigned char clear, unsigned char set)
     YM_DATA = (unsigned char)((YM_SELECT & ~clear) | set);
     __asm__ volatile("move.w %0,%%sr" : : "d"(sr) : "cc");
 }
+#endif
 
 // Divisor table for MUS notes * 4 bit precision for pitch bend
 // [note 0..127][pitch bend 0..15]
 // This data was generated using the 'ym_table.c' tool
-static short ymmusic_divisors[128][16] = {
+static const short ymmusic_divisors[128][16] = {
   { 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095},
   { 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095},
   { 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095},
@@ -652,6 +673,10 @@ static void ymmusic_midi_update(void)
     {
         if (ymmusic_state & YMMUSIC_LOOP)
         {
+#if defined(YMMUSIC_MD)
+            if (!ymmusic_md_rewind())
+                return; /* the windows go back to the tracks' starts first */
+#endif
             ymmusic_midi_reset_tracks();
         }
         else
@@ -699,14 +724,15 @@ static void ymmusic_midi_update(void)
         if (due == NULL)
             break;
         ymmusic_midi_next = earliest;
-        if (earliest > ymmusic_midi_now)
+        if (earliest > ymmusic_midi_now || !YMMUSIC_TRACK_READY(due))
             break;
         // Its events, while none of another track's comes first (on a tie
         // the scan decides, as the first track's goes first)
         do
         {
             ymmusic_midi_process_track_event(due);
-        } while (due->next <= ymmusic_midi_now && due->next < second);
+        } while (due->next <= ymmusic_midi_now && due->next < second &&
+                 YMMUSIC_TRACK_READY(due));
         // The earliest now, with no scan (`second` is the earliest of the
         // others): one scan less a step, as the last one only found this.
         ymmusic_midi_next = (due->next < second) ? due->next : second;
@@ -762,6 +788,47 @@ void ymmusic_init()
 {
     ymmusic_reset();
 }
+
+#if defined(YMMUSIC_MD)
+void ymmusic_md_stop(void)
+{
+    ymmusic_state = 0;
+    ymmusic_silence();
+    ymmusic_reset();
+}
+
+ymmusic_midi_track_t *ymmusic_md_track(int i)
+{
+    return &ymmusic_midi_tracks[i];
+}
+
+void ymmusic_md_begin(unsigned short division, int tracks, int loop)
+{
+    ymmusic_midi_division = division ? division : 96;
+    ymmusic_midi_num_tracks = tracks;
+    ymmusic_mode = 2;
+    /* MIDI mode keeps ptr non-null as an active marker */
+    ymmusic_data = ymmusic_ptr = (unsigned char *)ymmusic_midi_tracks;
+    ymmusic_state = (unsigned short)(YMMUSIC_PLAY | (loop ? YMMUSIC_LOOP : 0));
+    ymmusic_midi_reset_tracks();
+}
+
+void ymmusic_md_pause(int paused)
+{
+    if (paused)
+    {
+        ymmusic_state &= ~YMMUSIC_PLAY;
+        ymmusic_silence(); /* no step will now, as none is due */
+    }
+    else if (ymmusic_ptr)
+        ymmusic_state |= YMMUSIC_PLAY;
+}
+
+int ymmusic_md_playing(void)
+{
+    return ymmusic_ptr != NULL && (ymmusic_state & YMMUSIC_PLAY);
+}
+#endif
 
 // A command not yet taken, or a song playing: worth a step.
 int ymmusic_active()
@@ -927,7 +994,7 @@ static void ymmusic_controller(unsigned char channel, unsigned char control, uns
 }
 
 // Retrieves the value belonging to the current tick from an envelope.
-static char ymmusic_envelope_value(envelope_t *env, unsigned short ticks, unsigned char released) {
+static signed char ymmusic_envelope_value(envelope_t *env, unsigned short ticks, unsigned char released) {
     if (released) {
         // In release phase
         ticks += env->release_begin;
@@ -1007,6 +1074,7 @@ static int ymmusic_voice_finished(ymmusic_voice_t *voice)
     }
 }
 
+#if !defined(YMMUSIC_MD)
 // Debug function to dump a human-readable transcript of the MUS file.
 static void ymmusic_dump(unsigned char *data, FILE *f)
 {
@@ -1127,6 +1195,7 @@ static void ymmusic_dump_file(unsigned char *data)
     ymmusic_dump(data, f);
     fclose(f);
 }
+#endif
 
 // Called cyclically to drive the internal playback state and to push commands to YM-2149 hardware.
 void ymmusic_update()

@@ -2503,7 +2503,10 @@ fromloadedgame:
       IN_PumpEvents();
 #if ATARI_MD_RENDER
       if (ATARI_MD_TakeHudRedraw())
+         {
          DrawPlayScreen(true); /* without the Accelerator's sign */
+         MU_PlaySong(MU_GetSongNumber()); /* its song, on the ST now */
+         }
 #endif
       ATARI_BeginRenderFrame();
       const int render = 1;
