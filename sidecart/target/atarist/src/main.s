@@ -97,7 +97,7 @@ msg_not_ready:
 msg_footer:
 	dc.b "GPLv3 (c)2026 Neil Rackett",$d,$a,$d,$a
 	dc.b "Get ROTT from neilrackett.com/atarist",$d,$a
-	dc.b "and run ROTT_ST.TOS",$d,$a,0
+	dc.b "and run ROTT_ST.TOS",$d,$a,$d,$a,0
 	even
 ; Non-zero end marker: firmware.py trims trailing zero bytes and needs an
 ; even length.
