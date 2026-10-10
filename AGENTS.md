@@ -188,6 +188,13 @@ ROTT Accelerator (MD/ROTT in the source; SidecarTridge Multi-device renderer)
   where frames go: EmuMD runs the firmware natively, so its render times
   (and SD loads) say nothing about a real RP2040. `TICS 10.0` is the
   catch-up cap (`MAXTICS`): the frame rate is then set by game logic.
+- Level start with the Accelerator (`ATARI_MD_FinishUpdate`'s snapshot):
+  the game clock is paused (`I_PauseTime`/`I_ResumeTime`, i_timer.c) from
+  the snapshot to the end of that frame, as catching up on the wait ran
+  ten tics a frame on stale input for seconds; then `warm_up` renders the
+  start position facing four ways (unseen) so the MD loads from SD now
+  what the level opens with. "Preparing level" shows the pack as 0-80%
+  and the warm-up as 80-100%.
 - `ATARI_MD_BLIT=1` (default): the blitter copies MD frames while the CPU
   runs on; anything else that draws to the screen calls `ATARI_MD_BlitWait()`.
 - Most of `ATARI_MD_FinishUpdate` runs in supervisor mode on a Mega STE: no

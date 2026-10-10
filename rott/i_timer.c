@@ -139,6 +139,29 @@ static int hz200_to_tics(unsigned long ticks)
 }
 
 
+#if defined(ATARI_NATIVE)
+/* The 200Hz ticks the game clock leaves out (I_PauseTime..I_ResumeTime):
+ * waits inside play the game shouldn't catch up on afterwards, ten tics a
+ * frame with the input of before the wait, as if not answering. */
+static unsigned long skip_hz200, pause_hz200;
+static int paused;
+
+void I_PauseTime(void)
+{
+    if (!paused++)
+        pause_hz200 = tos_hz200();
+}
+
+void I_ResumeTime(void)
+{
+    if (paused && !--paused)
+    {
+        skip_hz200 += tos_hz200() - pause_hz200;
+        atari_time_hz200 = ~0UL; /* the next answer worked out afresh */
+    }
+}
+#endif
+
 static int __attribute__((noinline)) get_time(unsigned long ticks)
 {
     static int dbg_count = 0;
@@ -157,6 +180,9 @@ static int __attribute__((noinline)) get_time(unsigned long ticks)
     if (basetime == 0)
         basetime = ticks;
     ticks -= basetime;
+#if defined(ATARI_NATIVE)
+    ticks -= skip_hz200;
+#endif
 #if ATARI_LOGIC_CHECK > 0
     if (atari_check_clock_on)
         return atari_check_clock;

@@ -494,6 +494,11 @@ static void show_progress(int percent) {
   }
 }
 
+/* Defined below: frames of the start position before play (warm_up), and
+ * the wait for the MD's frames it uses. */
+static void warm_up(void);
+static int wait_ready(int ahead);
+
 static int wait_level_state(void) {
   long t0 = I_GetTimeMS();
   long last = -1000;
@@ -507,7 +512,8 @@ static int wait_level_state(void) {
     if (I_GetTimeMS() - last > 250) {
       last = I_GetTimeMS();
       I_GetTime(); /* keeps the music going */
-      show_progress(MD_STATUS[MD_ST_PROGRESS]);
+      /* the pack is the first 80%; warm_up the rest */
+      show_progress(MD_STATUS[MD_ST_PROGRESS] * 4 / 5);
     }
     if (I_GetTimeMS() - t0 > MD_PACK_WAIT_MS) return MD_LEVEL_ERROR;
   }
@@ -1149,6 +1155,54 @@ static int send_frame(void) {
                            (long)md_copied_seq, (long)md_level_serial);
 }
 
+/* After a snapshot, with "Preparing level" up: frames of the start
+ * position facing each way in turn, never shown, so the MD loads from its
+ * SD card what the level opens with (sprites near the player, the weapon)
+ * now, not in the first seconds of play, where each load held a frame up
+ * and the game seemed not to answer. Each way again until a frame loads
+ * nothing more (objects are chosen from what the MD saw the frame before),
+ * the player's own view last, so the frame play starts on is that one.
+ * It stops if the MD has to drop lumps for room: more would only churn. */
+#define MD_WARM_TRIES 6
+static void warm_up(void) {
+  const int angle = viewangle;
+  const unsigned short evicts = MD_STATUS[MD_ST_EVICTS];
+  int dir, done = 0;
+
+  if (MD_STATUS[MD_ST_PACK_MISSING] == 0) return; /* the pack has it all */
+  for (dir = 1; dir <= 4 && !done; dir++) {
+    unsigned short loads = MD_STATUS[MD_ST_LOADS];
+    int tries;
+
+    show_progress(80 + (dir - 1) * 5);
+    viewangle = (angle + dir * (FINEANGLES / 4)) & (FINEANGLES - 1);
+    for (tries = 0; tries < MD_WARM_TRIES; tries++) {
+      unsigned short now;
+
+      read_spotvis();
+      build_frame();
+      if (send_frame() || !wait_ready(0)) {
+        done = 1;
+        break;
+      }
+      now = MD_STATUS[MD_ST_LOADS];
+      if (MD_STATUS[MD_ST_EVICTS] != evicts) {
+        done = 1;
+        break;
+      }
+      if (tries > 0 && now == loads) break;
+      loads = now;
+    }
+  }
+  viewangle = angle;
+  if (done) {
+    /* stopped early: the player's view, so play starts on it */
+    read_spotvis();
+    build_frame();
+    if (!send_frame()) wait_ready(0);
+  }
+}
+
 /* The Help key's overlay (ATARI_MD_GetStats): 200Hz ticks the ST spent
  * waiting for the MD, frames, and the MD's own figures for its frame. */
 extern volatile unsigned long atari_hz200_count;
@@ -1553,6 +1607,7 @@ void ATARI_MD_AutotestShot(int frame) {
 
 int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
   long ssp;
+  int resume = 0; /* the game clock paused for a snapshot (I_PauseTime) */
 
   if (!atari_md_active || !md_frame_pending) return 0;
   md_frame_pending = 0;
@@ -1577,12 +1632,20 @@ int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
     sidecart_md_bus_end();
     sidecart_md_super_end(ssp);
     sidecart_md_bus_begin();
+    /* The game clock waits too (preparing the level, warm_up, and the
+     * rest of this frame, the HUD all converted): caught up afterwards, it
+     * ran ten tics a frame on the input of before for as long again, and
+     * seemed not to answer. On again in user mode, at the end (Super). */
+    I_PauseTime();
+    resume = 1;
     if (!send_snapshot()) {
+      I_ResumeTime();
       sidecart_md_bus_end();
       if (++md_snapshot_tries >= 3) give_up("ROTT Accelerator failed: ST renderer");
       return 0;
     }
     md_snapshot_tries = 0;
+    warm_up();
     sidecart_md_bus_end();
     ssp = sidecart_md_super_begin();
     sidecart_md_bus_begin();
@@ -1603,6 +1666,7 @@ int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
     if (failed) {
       if (++md_failures >= 8) {
         sidecart_md_super_end(ssp);
+        if (resume) I_ResumeTime();
         give_up("ROTT Accelerator lost: ST renderer");
         return 0;
       }
@@ -1618,6 +1682,7 @@ int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
   copy_ready(screen);
   sidecart_md_bus_end();
   sidecart_md_super_end(ssp);
+  if (resume) I_ResumeTime();
 #if defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
   sidecart_md_bus_begin();
   autotest_report();

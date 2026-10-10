@@ -57,6 +57,11 @@ void I_InitTimer(void);
 void I_WaitVBL(int count);
 #if defined(ATARI_NATIVE)
 void I_HookTimer(int on);
+// The game clock stops between these (they nest): for waits inside play
+// the game shouldn't catch up on afterwards (the Accelerator preparing a
+// level). I_GetTimeMS goes on.
+void I_PauseTime(void);
+void I_ResumeTime(void);
 #endif
 
 #endif
