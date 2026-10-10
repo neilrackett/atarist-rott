@@ -111,6 +111,7 @@ void ReadInt (const char * s1, int * val);
 void ReadBoolean (const char * s1, boolean * val);
 void ReadConfig (void);
 void ReadAtariSoundToggles (void);
+void ReadAtariConfig (void);
 void WriteParameter (int file, const char * s1, int val);
 void WriteScores (void);
 void WriteConfig (void);

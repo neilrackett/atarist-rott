@@ -90,6 +90,7 @@ extern word Joy_y;
 
 static int sfx_debug_overlay = 0;
 volatile int atari_bars_redraw;
+int atari_view_zoom; // ViewZoom in config.rot (ReadAtariConfig)
 
 unsigned char atari_joy_buttons = 0;
 
@@ -520,7 +521,7 @@ void I_FinishUpdate(void)
 #define ATARI_C2P_VIEW_ZOOM 1
 #endif
 #if ATARI_C2P_VIEW_ZOOM
-   if (controlupdatestarted == 1 &&
+   if (atari_view_zoom && controlupdatestarted == 1 &&
        (playstate == ex_stillplaying || playstate == ex_demoplayback) &&
        viewwidth > 0 && viewheight > 0)
    {

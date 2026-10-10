@@ -1088,7 +1088,8 @@ void ReadConfig (void)
 }
 
 #if defined(ATARI_NATIVE)
-// The number after key at the start of a sound.rot line, if it is that key.
+// The number after key at the start of a sound.rot or config.rot line, if it
+// is that key.
 static boolean AtariSoundValue (const char *line, const char *line_end,
                                 const char *key, long *value)
 {
@@ -1177,6 +1178,57 @@ void ReadAtariSoundToggles (void)
    FXvolume = parsed_fx_volume;
    MUvolume = parsed_music_volume;
    AtariFXRate = parsed_fx_rate;
+#endif
+}
+
+//******************************************************************************
+//
+// ReadAtariConfig () - the native build's own settings in config.rot, which
+// it otherwise doesn't read: each found by its key wherever it is.
+//
+//******************************************************************************
+
+void ReadAtariConfig (void)
+{
+#if defined(ATARI_NATIVE)
+   extern int atari_view_zoom;
+   char filename[128];
+   struct stat st;
+   void *buffer = NULL;
+   long size = 0;
+
+   GetPathFromEnvironment(filename, ApogeePath, ConfigName);
+   if (stat(filename, &st) != 0)
+      return;
+   size = LoadFile(filename, &buffer);
+   if (buffer && size > 0)
+      {
+      char *p = (char *)buffer;
+      char *end = p + size;
+
+      while (p < end)
+         {
+         char *line = p;
+         char *line_end;
+
+         while (p < end && *p != '\n' && *p != '\r')
+            p++;
+         line_end = p;
+         while (line < line_end && isspace((unsigned char)*line))
+            line++;
+         if (line < line_end && *line != ';')
+            {
+            long v;
+
+            if (AtariSoundValue(line, line_end, "ViewZoom", &v))
+               atari_view_zoom = (v != 0);
+            }
+         while (p < end && (*p == '\n' || *p == '\r'))
+            p++;
+         }
+      }
+   if (buffer)
+      SafeFree(buffer);
 #endif
 }
 

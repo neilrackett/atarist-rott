@@ -191,6 +191,10 @@ extern int atari_hud_dirty;
 // Something drew over the status bars that only redrawing them puts right
 // (the Help overlay, turned off): the play loop does it, between frames.
 extern volatile int atari_bars_redraw;
+// ViewZoom in config.rot: view sizes up to 160 wide shown 2x, up to 80
+// 4x (the ST's renderer zooms them; the Accelerator renders them that
+// big). Off by default: the view is the size its setting says.
+extern int atari_view_zoom;
 void atari_hud_touch_rect(int x, int y, int w, int h);
 void atari_hud_touch_at(const unsigned char *dst, int w, int h);
 #define ATARI_HUD_TOUCH() (atari_hud_dirty = 1)

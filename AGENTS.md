@@ -60,8 +60,12 @@ Current Makefile Defaults
 Important Current Behavior
 
 - Low-memory mode is forced (`rott/z_zone.c`: `lowmemory=1`).
-- Atari default view size is tuned small by default (`rott/rt_view.c`, `rott/rt_cfg.c`).
-- C2P zoom/no-overlap logic is in `rott/atari_c2p.c`.
+- Atari default view size is 7, 320x168 between the status bars (`rott/rt_view.c`);
+  the native build reads nothing else from `config.rot` but `ViewZoom`
+  (`ReadAtariConfig`, found by key, so it can sit anywhere in the file).
+- C2P zoom/no-overlap logic is in `rott/atari_c2p.c`; it runs only with
+  `ViewZoom 1` (off by default), as does the Accelerator's matching rule
+  (`view_rect` in `atari_md.c`).
 - Atari movie playback is intentionally static-last-frame style in `rott/cin_main.c`.
   - Static behavior is now code-based constants, not `ATARI_CINEMATIC_*` flags.
 - First title flow after logo jumps to menu on Atari (`rott/rt_main.c`).

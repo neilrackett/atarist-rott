@@ -419,6 +419,7 @@ int main (int argc, char *argv[])
       ATARI_MD_Init();
 #endif
       ReadAtariSoundToggles();
+      ReadAtariConfig();
       GetMenuInfo ();
 #else
       ReadConfig ();

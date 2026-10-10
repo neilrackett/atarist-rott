@@ -482,9 +482,16 @@ static void show_progress(int percent) {
   px = (viewwidth - w) / 2 + (screenofs % iGLOBAL_SCREENWIDTH);
   py = (screenofs / iGLOBAL_SCREENWIDTH) + (viewheight / 2) - 4;
   VW_DrawPropString(text);
-  atari_md_active = 0; /* the plain C2P path, just this once */
-  I_FinishUpdate();
-  atari_md_active = 1;
+  {
+    /* the plain C2P path, just this once, and not zoomed (which cut the
+     * text off) */
+    const int zoom = atari_view_zoom;
+    atari_view_zoom = 0;
+    atari_md_active = 0;
+    I_FinishUpdate();
+    atari_md_active = 1;
+    atari_view_zoom = zoom;
+  }
 }
 
 static int wait_level_state(void) {
@@ -641,7 +648,9 @@ static void view_rect(void) {
   md_view_y = sy;
   md_view_w = viewwidth;
   md_view_h = viewheight;
-  if (viewwidth <= 80)
+  if (!atari_view_zoom)
+    zoom = 1;
+  else if (viewwidth <= 80)
     zoom = 4;
   else if (viewwidth <= 160)
     zoom = 2;

@@ -36,7 +36,7 @@ To achieve this, optimisations include:
 
 - 16 colours with dithering
 - Static intro screens
-- Automatic 2x or 4x game area zoom based on selected view size
+- Optional 2x or 4x game area zoom for small view sizes (`ViewZoom 1` in `CONFIG.ROT`)
 - Event-driven menus
 - Optimised keyboard input handling
 - Blitter chip HUD updates (if available)
@@ -56,7 +56,7 @@ So, in terms of raw FPS it's 2-3x faster than the SDL build, which is great to s
 
 FPS based on running ROTT with automatic detail selection enabled.
 
-Music plays ROTT's MIDI songs on the ST's own sound chip, so it works on any ST. Set `MusicMode` to `0` in `SOUND.ROT` to turn it off, or `MusicVolume` (0-255) to change its volume. With the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device) (firmware v1.4.0-beta.3 or later), the Multi-device plays the songs and your ST just copies the notes to its sound chip, which gives an 8MHz ST about 7% of its time back.
+Music plays ROTT's MIDI songs on the ST's own sound chip, so it works on any ST. Set `MusicMode` to `0` in `SOUND.ROT` to turn it off, or `MusicVolume` (0-255) to change its volume. With the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device) (firmware v1.4.0-beta.4 or later), the Multi-device plays the songs and your ST just copies the notes to its sound chip, which gives an 8MHz ST about 7% of its time back.
 
 Sound effects use the STE's DMA sound, so they need an STE or Mega STE (an ST just plays without them). Set `FXMode` to `0` in `SOUND.ROT` to turn them off. `NumVoices` sets how many play at once, from 1 to 8; each one costs CPU time while it plays (about 5% of a Mega STE for one), and nothing when it's quiet. The default, `0`, plays one at a time, or two with the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device). On an 8MHz ST they're mixed at 6258Hz rather than 12517Hz, for half the CPU time: set `FXRate` to `12517` for the full rate.
 
