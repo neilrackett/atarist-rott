@@ -86,10 +86,9 @@ extern volatile int LastScan;
 extern word Joy_x;
 extern word Joy_y;
 
-extern void DSL_Service(void);
-extern void DSL_GetDebugStats(int *calls, int *misses);
+#include "atari_sfx.h"
 
-static int dsl_debug_overlay = 0;
+static int sfx_debug_overlay = 0;
 
 unsigned char atari_joy_buttons = 0;
 
@@ -331,16 +330,19 @@ static void atari_draw_fps_overlay(void)
 }
 #endif
 
-static void atari_draw_dsl_stats(void)
+// Help (F11 to the game): sound effects playing (V) and late mixer refills (L),
+// see atari_sfx.c
+static void atari_draw_sfx_stats(void)
 {
-   int calls = 0, misses = 0;
-   DSL_GetDebugStats(&calls, &misses);
-   atari_draw_char(2, 2, 'C', atari_overlay_text_color);
+   int playing = 0, late = 0;
+   ATARI_SFX_GetDebugStats(&playing, &late);
+   atari_draw_char(2, 2, 'V', atari_overlay_text_color);
    atari_draw_char(6, 2, ':', atari_overlay_text_color);
-   atari_draw_number(10, 2, calls, atari_overlay_text_color);
-   atari_draw_char(2, 10, 'M', atari_overlay_text_color);
+   atari_draw_number(10, 2, playing, atari_overlay_text_color);
+   atari_draw_char(2, 10, 'L', atari_overlay_text_color);
    atari_draw_char(6, 10, ':', atari_overlay_text_color);
-   atari_draw_number(10, 10, misses, atari_overlay_text_color);
+   atari_draw_number(10, 10, late, atari_overlay_text_color);
+   ATARI_HUD_TOUCH_RECT(0, 0, 40, 18);
 }
 
 void GraphicsMode(void)
@@ -442,9 +444,9 @@ void I_FinishUpdate(void)
    int view_h = 200;
    int protect_top = 0;
    int protect_bottom = 0;
-   DSL_Service();
-   if (dsl_debug_overlay)
-      atari_draw_dsl_stats();
+   ATARI_SFX_Service();
+   if (sfx_debug_overlay)
+      atari_draw_sfx_stats();
 #if defined(__MINT__)
    if (!ATARI_RenderAllowed())
       return;
@@ -686,7 +688,7 @@ static void atari_enqueue_key(unsigned char data)
       k = (unsigned char)atari_translate_scancode(data & 0x7f);
       if (k == sc_F11)
       {
-         dsl_debug_overlay = !dsl_debug_overlay;
+         sfx_debug_overlay = !sfx_debug_overlay;
          return;
       }
       Keystate[k] = 1;

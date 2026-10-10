@@ -114,17 +114,14 @@ ATARI_LDFLAGS ?= -s -nostdlib -L/freemint/libcmini/lib /freemint/libcmini/lib/cr
 ATARI_LIBS ?= -lcmini -lgcc
 ATARI_INCLUDES ?= -I$(SRCDIR) -I$(SRCDIR)/audiolib -Isidecart/include -Ilib/xpad/src -I/freemint/libcmini/include
 SDL_ONLY_SOURCES := $(SRCDIR)/atari_sdl.c $(SRCDIR)/audio_stubs.c $(SRCDIR)/modexlib_sdl.c
+# Sound effects are rott/atari_sfx.c (the FX_ calls, on DMA sound), in place
+# of the DOS library's fx_man.c, multivoc.c and its DMA driver.
 ATARI_AUDIOLIB_SOURCES := \
 	$(SRCDIR)/audiolib/atari_stubs.c \
 	$(SRCDIR)/audiolib/atari_music.c \
 	$(SRCDIR)/audiolib/atari_music_api.c \
 	$(SRCDIR)/audiolib/debugio.c \
-	$(SRCDIR)/audiolib/dsl.c \
-	$(SRCDIR)/audiolib/fx_man.c \
 	$(SRCDIR)/audiolib/ll_man.c \
-	$(SRCDIR)/audiolib/multivoc.c \
-	$(SRCDIR)/audiolib/mv_mix.c \
-	$(SRCDIR)/audiolib/mvreverb.c \
 	$(SRCDIR)/audiolib/nodpmi.c \
 	$(SRCDIR)/audiolib/pitch.c \
 	$(SRCDIR)/audiolib/user.c \

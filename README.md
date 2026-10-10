@@ -55,6 +55,8 @@ So, in terms of raw FPS it's 2-3x faster than the SDL build, which is great to s
 
 FPS based on running ROTT with automatic detail selection enabled.
 
+Sound effects use the STE's DMA sound, so they need an STE or Mega STE, and they're off by default: set `FXMode` to `6` in `SOUND.ROT` to turn them on. `NumVoices` sets how many play at once, from 1 to 8; each one costs CPU time while it plays (about 5% of a Mega STE for one), and nothing when it's quiet. The default, `0`, plays one at a time, or four with the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device).
+
 ## Rise of the Triad (SDL)
 
 <img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/1558c670-be05-427a-b1ce-1ee767a4870e" /> <img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/17067577-e151-4d6d-a9c6-69a1ef9d9837" />

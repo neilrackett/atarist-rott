@@ -10,7 +10,7 @@ Version            14
 MusicMode          0
 
 ;
-; FX Modes
+; FX Modes (sound effects need DMA sound: STE, Mega STE)
 ; 0  -  Off
 ; 6  -  On
 FXMode             0
@@ -26,9 +26,11 @@ MusicVolume      128
 FXVolume         254
 
 ;
-; Number of Voices
+; Number of Voices: sound effects at once, each costing CPU time
+; while it plays
+; 0 - Automatic: 4 with the ROTT Accelerator, 1 without
 ; 1 - 8
-NumVoices          4
+NumVoices          0
 
 ;
 ; Stereo or Mono

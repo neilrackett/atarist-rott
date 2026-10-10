@@ -52,7 +52,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "rt_str.h"
 #if defined(ATARI_NATIVE)
-#include "dsl.h"
+#include "atari_sfx.h"
 #endif
 
 #if (SHAREWARE==0)
@@ -250,7 +250,7 @@ int SD_Startup ( boolean bombonerror )
       return (0);
 
 #if defined(ATARI_NATIVE)
-   if (!DSL_HasDMASound())
+   if (!ATARI_SFX_HasDMA())
       {
       // No STE DMA hardware: keep the game running without SFX.
       return 0;
@@ -309,13 +309,18 @@ int SD_Startup ( boolean bombonerror )
 
 #if ATARI_SDL
    NumVoices = 1;
-#else
+#elif !defined(ATARI_NATIVE)
    NumVoices = 4;
 #endif
    NumChannels = 1;
    NumBits = 8;
-   
+
+#if defined(ATARI_NATIVE)
+   // NumVoices from sound.rot, 0 for automatic: see atari_sfx.c.
+   voices   = ATARI_SFX_Voices(NumVoices);
+#else
    voices   = NumVoices;
+#endif
    channels = NumChannels;
    bits     = NumBits;
 
