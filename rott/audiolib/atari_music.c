@@ -177,12 +177,13 @@ static int ymmusic_mode = 0; /* 0=none, 1=MUS, 2=MIDI */
 #define YMMUSIC_NUMCHANNELS (sizeof(ymmusic_channels) / sizeof(ymmusic_channel_t))
 
 #define YMMUSIC_MAX_MIDI_TRACKS 32
+#define YMMUSIC_MIDI_ENDED 0xFFFFFFFFUL
 typedef struct
 {
+    unsigned long next; /* song tick of the track's next event; all ones once ended */
     unsigned char *start;
     unsigned char *ptr;
     unsigned char *end;
-    unsigned long delta;
     unsigned char running_status;
     unsigned char active;
 } ymmusic_midi_track_t;
@@ -191,7 +192,11 @@ static ymmusic_midi_track_t ymmusic_midi_tracks[YMMUSIC_MAX_MIDI_TRACKS];
 static int ymmusic_midi_num_tracks = 0;
 static unsigned short ymmusic_midi_division = 96;
 static unsigned long ymmusic_midi_tempo_us = 500000; /* us per quarter note */
+static unsigned long ymmusic_midi_us_per_tick = 500000 / 96;
 static unsigned long ymmusic_midi_us_accum = 0;
+static unsigned long ymmusic_midi_now = 0;  /* song ticks so far */
+static unsigned long ymmusic_midi_next = 0; /* the earliest track's next event */
+static int ymmusic_midi_active = 0;         /* tracks still going */
 
 // Incremented by interrupt if any request is processed.
 static unsigned short ymmusic_ack_nr = 0;
@@ -204,6 +209,20 @@ static unsigned short ymmusic_ack_nr = 0;
 #define YM_SELECT (*(volatile unsigned char *)0xFFFF8800UL)
 #define YM_DATA (*(volatile unsigned char *)0xFFFF8802UL)
 
+// 16 x 16 bits in one mulu.w: an int multiply is a __mulsi3 call on a 68000.
+static __inline__ unsigned long ym_mulu(unsigned short a, unsigned short b)
+{
+    unsigned long r = a;
+
+    __asm__("mulu.w %1,%0" : "+d"(r) : "d"(b));
+    return r;
+}
+
+// What was last written to each voice's period and volume, so a step only
+// writes the registers that change. All ones: unknown, write next time.
+static unsigned short ym_period_shadow[3] = {0xffff, 0xffff, 0xffff};
+static unsigned char ym_volume_shadow[3] = {0xff, 0xff, 0xff};
+
 static void ym_write(unsigned char reg, unsigned char value)
 {
     unsigned short sr;
@@ -212,18 +231,6 @@ static void ym_write(unsigned char reg, unsigned char value)
     YM_SELECT = reg;
     YM_DATA = value;
     __asm__ volatile("move.w %0,%%sr" : : "d"(sr) : "cc");
-}
-
-static unsigned char ym_read(unsigned char reg)
-{
-    unsigned short sr;
-    unsigned char value;
-
-    __asm__ volatile("move.w %%sr,%0\n\tori.w #0x0700,%%sr" : "=d"(sr) : : "cc");
-    YM_SELECT = reg;
-    value = YM_SELECT;
-    __asm__ volatile("move.w %0,%%sr" : : "d"(sr) : "cc");
-    return value;
 }
 
 // The mixer (register 7): set and clear tone/noise bits, keeping the I/O
@@ -405,16 +412,21 @@ static unsigned long ymmusic_read_var(unsigned char **pp, unsigned char *end)
 static void ymmusic_midi_reset_tracks(void)
 {
     int i;
-    for (i = 0; i < ymmusic_midi_num_tracks; ++i)
+
+    ymmusic_midi_active = 0;    for (i = 0; i < ymmusic_midi_num_tracks; ++i)
     {
         ymmusic_midi_track_t *t = &ymmusic_midi_tracks[i];
         t->ptr = t->start;
         t->running_status = 0;
         t->active = (t->start < t->end) ? 1 : 0;
-        t->delta = t->active ? ymmusic_read_var(&t->ptr, t->end) : 0;
+        t->next = t->active ? ymmusic_read_var(&t->ptr, t->end) : YMMUSIC_MIDI_ENDED;
+        ymmusic_midi_active += t->active;
     }
     ymmusic_midi_tempo_us = 500000;
+    ymmusic_midi_us_per_tick = ymmusic_midi_tempo_us / ymmusic_midi_division;
     ymmusic_midi_us_accum = 0;
+    ymmusic_midi_now = 0;
+    ymmusic_midi_next = 0; /* the first step finds it */
 }
 
 static int ymmusic_midi_init(unsigned char *data)
@@ -470,15 +482,15 @@ static int ymmusic_midi_init(unsigned char *data)
     return 1;
 }
 
-static int ymmusic_midi_any_active(void)
+// A track has run out: off, and one fewer going.
+static void ymmusic_midi_end_track(ymmusic_midi_track_t *t)
 {
-    int i;
-    for (i = 0; i < ymmusic_midi_num_tracks; ++i)
+    if (t->active)
     {
-        if (ymmusic_midi_tracks[i].active)
-            return 1;
+        t->active = 0;
+        t->next = YMMUSIC_MIDI_ENDED;
+        --ymmusic_midi_active;
     }
-    return 0;
 }
 
 // MIDI keeps its drums on channel 10 (9 from 0); the player came from MUS,
@@ -498,7 +510,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
 
     if (!t->active || t->ptr >= t->end)
     {
-        t->active = 0;
+        ymmusic_midi_end_track(t);
         return;
     }
 
@@ -507,7 +519,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
     {
         if (t->running_status == 0)
         {
-            t->active = 0;
+            ymmusic_midi_end_track(t);
             return;
         }
         status = t->running_status;
@@ -590,7 +602,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
 
             if (type == 0x2F)
             {
-                t->active = 0;
+                ymmusic_midi_end_track(t);
                 t->ptr = t->end;
                 return;
             }
@@ -601,6 +613,10 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
                                         (unsigned long)t->ptr[2];
                 if (ymmusic_midi_tempo_us == 0)
                     ymmusic_midi_tempo_us = 500000;
+                // the division happens here, not on every step
+                ymmusic_midi_us_per_tick = ymmusic_midi_tempo_us / ymmusic_midi_division;
+                if (ymmusic_midi_us_per_tick == 0)
+                    ymmusic_midi_us_per_tick = 1;
             }
 
             t->ptr = meta_end;
@@ -618,35 +634,21 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
 
     if (t->ptr >= t->end)
     {
-        t->active = 0;
+        ymmusic_midi_end_track(t);
         return;
     }
 
-    t->delta = ymmusic_read_var(&t->ptr, t->end);
+    t->next += ymmusic_read_var(&t->ptr, t->end);
 }
 
-static void ymmusic_midi_tick(void)
-{
-    int i;
-    for (i = 0; i < ymmusic_midi_num_tracks; ++i)
-    {
-        ymmusic_midi_track_t *t = &ymmusic_midi_tracks[i];
-        if (!t->active)
-            continue;
-
-        if (t->delta > 0)
-            --t->delta;
-
-        while (t->active && t->delta == 0)
-            ymmusic_midi_process_track_event(t);
-    }
-}
-
+// One 50Hz step: move the song clock on by 20ms worth of MIDI ticks, then
+// play every event now due, earliest first across the tracks. This used to
+// step tick by tick, counting each track's delta down every tick, which on
+// a song of a dozen tracks took 27,000 cycles a step: 8% of a 16MHz Mega
+// STE. Now a step with nothing due is one comparison a track.
 static void ymmusic_midi_update(void)
 {
-    unsigned long us_per_tick;
-
-    if (!ymmusic_midi_any_active())
+    if (ymmusic_midi_active == 0)
     {
         if (ymmusic_state & YMMUSIC_LOOP)
         {
@@ -659,15 +661,55 @@ static void ymmusic_midi_update(void)
         }
     }
 
-    us_per_tick = (unsigned long)ymmusic_midi_tempo_us / (unsigned long)ymmusic_midi_division;
-    if (us_per_tick == 0)
-        us_per_tick = 1;
-
     ymmusic_midi_us_accum += 20000; /* 50 Hz service cadence */
-    while (ymmusic_midi_us_accum >= us_per_tick)
+    while (ymmusic_midi_us_accum >= ymmusic_midi_us_per_tick)
     {
-        ymmusic_midi_us_accum -= us_per_tick;
-        ymmusic_midi_tick();
+        ymmusic_midi_us_accum -= ymmusic_midi_us_per_tick;
+        ++ymmusic_midi_now;
+    }
+
+    // Nothing due yet: the usual step, and no scan of the tracks at all.
+    // Otherwise play the earliest track's event, find the earliest again,
+    // and so on until the earliest is in the future.
+    while (ymmusic_midi_active && ymmusic_midi_next <= ymmusic_midi_now)
+    {
+        ymmusic_midi_track_t *t = ymmusic_midi_tracks;
+        ymmusic_midi_track_t *end = t + ymmusic_midi_num_tracks;
+        ymmusic_midi_track_t *due = NULL;
+        unsigned long earliest = YMMUSIC_MIDI_ENDED;
+        unsigned long second = YMMUSIC_MIDI_ENDED;
+
+        // The earliest track (the first, on a tie) and the time after it.
+        // One long a track: an ended track's is all ones, never earliest.
+        for (; t < end; ++t)
+        {
+            unsigned long next = t->next;
+
+            if (next < earliest)
+            {
+                second = earliest;
+                earliest = next;
+                due = t;
+            }
+            else if (next < second)
+            {
+                second = next;
+            }
+        }
+        if (due == NULL)
+            break;
+        ymmusic_midi_next = earliest;
+        if (earliest > ymmusic_midi_now)
+            break;
+        // Its events, while none of another track's comes first (on a tie
+        // the scan decides, as the first track's goes first)
+        do
+        {
+            ymmusic_midi_process_track_event(due);
+        } while (due->next <= ymmusic_midi_now && due->next < second);
+        // The earliest now, with no scan (`second` is the earliest of the
+        // others): one scan less a step, as the last one only found this.
+        ymmusic_midi_next = (due->next < second) ? due->next : second;
     }
 }
 
@@ -677,6 +719,11 @@ static void ymmusic_reset()
 
     // Initialize mixer: disable all noise and tone
     ym_mixer(0, 0x3f);
+    for (i = 0; i < 3; i++)
+    {
+        ym_period_shadow[i] = 0xffff;
+        ym_volume_shadow[i] = 0xff;
+    }
 
     ymmusic_ptr = NULL;
     ymmusic_end = NULL;
@@ -685,6 +732,8 @@ static void ymmusic_reset()
     ymmusic_wait_remainder = 0;
     ymmusic_midi_num_tracks = 0;
     ymmusic_midi_us_accum = 0;
+    ymmusic_midi_now = 0;
+    ymmusic_midi_active = 0;
 
     for (i = 0; i < YMMUSIC_NUMVOICES; i++)
     {
@@ -703,7 +752,7 @@ static void ymmusic_reset()
         ymmusic_midi_tracks[i].start = NULL;
         ymmusic_midi_tracks[i].ptr = NULL;
         ymmusic_midi_tracks[i].end = NULL;
-        ymmusic_midi_tracks[i].delta = 0;
+        ymmusic_midi_tracks[i].next = YMMUSIC_MIDI_ENDED;
         ymmusic_midi_tracks[i].running_status = 0;
         ymmusic_midi_tracks[i].active = 0;
     }
@@ -728,6 +777,8 @@ void ymmusic_silence()
     for (i = 0; i < 3; i++)
     {
         ym_write(8 + i, 0);
+        ym_volume_shadow[i] = 0;
+        ym_period_shadow[i] = 0xffff;
         ymmusic_voices[i].ticks = 0xffff;
         ymmusic_voices[i].channel = 0xff;
     }
@@ -904,14 +955,14 @@ static char ymmusic_envelope_value(envelope_t *env, unsigned short ticks, unsign
 // on that, then the music volume.
 static unsigned char ymmusic_voice_volume(ymmusic_voice_t *voice)
 {
-    short volume = (short)((ymmusic_channels[voice->channel].volume * voice->velocity) >> 7);
+    short volume = (short)(ym_mulu(ymmusic_channels[voice->channel].volume, voice->velocity) >> 7);
     if (voice->instrument && voice->instrument->volume_envelope) {
         envelope_t *env = voice->instrument->volume_envelope;
         volume += ymmusic_envelope_value(env, voice->ticks, voice->released);
     }
     if (volume < 0) volume = 0;
     if (volume > 127) volume = 127;
-    return ymmusic_levels[(volume * ymmusic_master) >> 8];
+    return ymmusic_levels[ym_mulu(volume, ymmusic_master) >> 8];
 }
 
 // Calculates the note of a voice at the current tick, in 128th of a note
@@ -1149,16 +1200,20 @@ void ymmusic_update()
 
             short divisor = ymmusic_divisors[note >> 7][(note >> 3) & 15];
 
-            // Push note to soundchip
-            ym_write(0 + 2 * voice->ymidx, divisor & 0xff);
-            ym_write(1 + 2 * voice->ymidx, divisor >> 8);
+            // Push note to soundchip, if it changed
+            if (ym_period_shadow[voice->ymidx] != (unsigned short)divisor)
+            {
+                ym_period_shadow[voice->ymidx] = divisor;
+                ym_write(0 + 2 * voice->ymidx, divisor & 0xff);
+                ym_write(1 + 2 * voice->ymidx, divisor >> 8);
+            }
 
-            // Amplitude
+            // Amplitude, if it changed
             unsigned char new_volume = ymmusic_voice_volume(voice);
 
-            // Push amplitude to soundchip
-            if (ym_read(8 + voice->ymidx) != new_volume)
+            if (ym_volume_shadow[voice->ymidx] != new_volume)
             {
+                ym_volume_shadow[voice->ymidx] = new_volume;
                 ym_write(8 + voice->ymidx, new_volume);
             }
 
