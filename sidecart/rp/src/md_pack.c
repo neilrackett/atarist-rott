@@ -123,9 +123,21 @@ static void flash_erase(uint32_t off, uint32_t len) {
   md_core1_unpark();
 }
 
+#if defined(CREATE_LINKMAP)
+/* The WAD's cluster map (FatFs fast seek), so a seek into it reads no FAT:
+ * every lump loaded on demand, and the music, seek. Room for 32 fragments
+ * (a copied file is usually one); a WAD in more is read without it. */
+static DWORD s_wad_clmt[66];
+#endif
+
 static bool wad_open(void) {
   if (s_wad_open) return true;
   if (!s_wad_ok || f_open(&s_wad, s_wad_path, FA_READ) != FR_OK) return false;
+#if defined(CREATE_LINKMAP)
+  s_wad.cltbl = s_wad_clmt;
+  s_wad_clmt[0] = sizeof(s_wad_clmt) / sizeof(s_wad_clmt[0]);
+  if (f_lseek(&s_wad, CREATE_LINKMAP) != FR_OK) s_wad.cltbl = NULL;
+#endif
   s_wad_open = true;
   return true;
 }
