@@ -183,10 +183,21 @@
 #define MD_ST_EVICTS 28      /* demand-loaded lumps dropped for room       */
 #define MD_ST_LOAD_FAILS 29  /* lumps that could not be loaded at all      */
 #define MD_ST_CAPS 30        /* MD_CAP_*: what this firmware can do        */
+#define MD_ST_SPOTVIS_X 31   /* MD_SVX_*: SPOTVIS columns in use            */
 
 /* MD_ST_CAPS bits. An older firmware leaves the word 0, so the ST does the
  * job itself. */
 #define MD_CAP_MUSIC 0x0001 /* MD_CMD_MUSIC: plays songs from the WAD */
+
+/* MD_ST_SPOTVIS_X: the columns (x) that hold any SPOTVIS bits for the
+ * newest frame or the one before, so the ST need copy only those. Without
+ * MD_SVX_VALID (older firmware) the ST copies all of it; first > last is
+ * none at all. */
+#define MD_SVX_VALID 0x8000
+#define MD_SVX_FIRST(w) ((unsigned)(w) & 127u)
+#define MD_SVX_LAST(w) (((unsigned)(w) >> 7) & 127u)
+#define MD_SVX(first, last) \
+  (MD_SVX_VALID | ((unsigned)(first) & 127u) | (((unsigned)(last) & 127u) << 7))
 
 #define MD_STATUS_MAGIC 0x4D52 /* 'MR' */
 

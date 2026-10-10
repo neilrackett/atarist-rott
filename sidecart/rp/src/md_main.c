@@ -134,21 +134,41 @@ static void spread_column(const uint16_t *c, uint16_t *o) {
 static void publish_spotvis(const uint16_t *in, volatile uint16_t *out) {
   /* Each column spread up and down (spread_column), three at a time: the
    * one before, this one and the next, ORed into this one's output. */
+  static int s_last_first = 0, s_last_last = 127;
   uint16_t cols[3][8];
   uint16_t *prev = cols[0], *cur = cols[1], *next = cols[2];
+  int first = 128, last = -1;
   memset(prev, 0, sizeof(cols[0]));
   spread_column(in, cur);
   for (unsigned x = 0; x < 128; x++) {
+    uint16_t any = 0;
     if (x + 1 < 128)
       spread_column(in + (x + 1) * 8, next);
     else
       memset(next, 0, sizeof(cols[0]));
-    for (unsigned k = 0; k < 8; k++)
-      out[x * 8 + k] = (uint16_t)(prev[k] | cur[k] | next[k]);
+    for (unsigned k = 0; k < 8; k++) {
+      const uint16_t w = (uint16_t)(prev[k] | cur[k] | next[k]);
+      out[x * 8 + k] = w;
+      any |= w;
+    }
+    if (any) {
+      if (first > (int)x) first = (int)x;
+      last = (int)x;
+    }
     uint16_t *t = prev;
     prev = cur;
     cur = next;
     next = t;
+  }
+  /* This frame's columns and the last one's (MD_ST_SPOTVIS_X): the ST may
+   * read the range for one frame and copy the next's bits. */
+  {
+    const int f = first < s_last_first ? first : s_last_first;
+    const int l = last > s_last_last ? last : s_last_last;
+    s_last_first = first;
+    s_last_last = last;
+    status_set(MD_ST_SPOTVIS_X,
+               (uint16_t)(f <= l ? MD_SVX(f, l) : MD_SVX(127, 0)));
   }
 }
 

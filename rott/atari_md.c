@@ -723,19 +723,52 @@ void ATARI_MD_Messages(const char *const *lines, int count) {
  * around the player added: an object is sent if its tile's bit is set,
  * one test where it was a bitset look and a distance check. */
 static unsigned short md_spotvis[MD_BITSET_WORDS];
+/* The columns (x) of md_spotvis that may hold bits: the rest are 0. */
+static int md_spot_first, md_spot_last = MAPSIZE - 1;
+
+/* Columns first..last of md_spotvis, 8 words each, cleared. */
+static void spotvis_clear(int first, int last) {
+  if (first <= last)
+    memset(md_spotvis + first * 8, 0, (last - first + 1) * 16);
+}
 
 static void read_spotvis(void) {
-  int x, y;
+  const unsigned short svx = MD_STATUS[MD_ST_SPOTVIS_X];
+  const int px = player->tilex, py = player->tiley;
+  int first = 0, last = MAPSIZE - 1, x, y;
 
-  memcpy(md_spotvis, (const void *)(MD_ROM4_BASE + MD_SPOTVIS_OFFSET),
-         MD_BITSET_WORDS * 2);
-  for (x = player->tilex - 2; x <= player->tilex + 2; x++) {
+  /* Only the columns the MD says hold bits (older firmware: all of them),
+   * those that held some last time and don't now cleared. */
+  if (svx & MD_SVX_VALID) {
+    first = MD_SVX_FIRST(svx);
+    last = MD_SVX_LAST(svx);
+  }
+  if (first > last) {
+    spotvis_clear(md_spot_first, md_spot_last);
+  } else {
+    spotvis_clear(md_spot_first, (first <= md_spot_last ? first : md_spot_last + 1) - 1);
+    spotvis_clear(last >= md_spot_first ? last + 1 : md_spot_first, md_spot_last);
+    memcpy(md_spotvis + first * 8,
+           (const void *)(MD_ROM4_BASE + MD_SPOTVIS_OFFSET + first * 16),
+           (last - first + 1) * 16);
+  }
+  for (x = px - 2; x <= px + 2; x++) {
     if (x < 0 || x >= MAPSIZE) continue;
-    for (y = player->tiley - 2; y <= player->tiley + 2; y++) {
+    for (y = py - 2; y <= py + 2; y++) {
       if (y >= 0 && y < MAPSIZE)
         md_spotvis[MD_BITSET_WORD(x, y)] |= (unsigned short)(1u << MD_BITSET_BIT(y));
     }
   }
+  /* what may hold bits now: the columns copied and the player's */
+  if (first > last) {
+    first = px - 2;
+    last = px + 2;
+  } else {
+    if (first > px - 2) first = px - 2;
+    if (last < px + 2) last = px + 2;
+  }
+  md_spot_first = first < 0 ? 0 : first;
+  md_spot_last = last >= MAPSIZE ? MAPSIZE - 1 : last;
 }
 
 /* Is the tile at (x, y), one of its eight neighbours or the player near?
