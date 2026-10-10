@@ -71,9 +71,10 @@ Input + Timing Notes (Critical)
   STE), in place of the DOS library's `fx_man.c`/`multivoc.c`. A VBL routine
   mixes a 1KB ring at 12517Hz (the mixer is ported from STDL's voice mixer);
   `NumVoices` in `sound.rot` is 1-8, or 0 for 4 with the Accelerator, 1
-  without. Off by default (`FXMode 0`). The native build reads only
-  `MusicMode`, `FXMode`, `NumVoices` and `FXVolume` (`ReadAtariSoundToggles`)
-  and never writes `sound.rot`. Help shows voices playing and late refills.
+  without. On by default (`FXMode 6`); an ST without DMA sound skips them.
+  The native build reads only `MusicMode`, `FXMode`, `NumVoices` and
+  `FXVolume` (`ReadAtariSoundToggles`) and never writes `sound.rot`. Help
+  shows voices playing and late refills.
 - Gamepads: Xpad (submodule `lib/xpad`, consumer half only), `rott/atari_xpad.c`.
   In play it sets `buttonpoll[]` and `JX`/`JY` from `PollControls`; outside play
   (menus, key waits) it injects keys from `doEvents`. Only providers that read

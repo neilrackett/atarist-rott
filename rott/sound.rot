@@ -13,7 +13,7 @@ MusicMode          0
 ; FX Modes (sound effects need DMA sound: STE, Mega STE)
 ; 0  -  Off
 ; 6  -  On
-FXMode             0
+FXMode             6
 
 ;
 ; Music Volume
