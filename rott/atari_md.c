@@ -740,13 +740,18 @@ static void read_spotvis(void) {
 
 /* Is the tile at (x, y), one of its eight neighbours or the player near?
  * The MD publishes each tile with its neighbours' bits already ORed in.
- * Masked to the map, which every object is on. */
-#define SPOTVIS_NEAR(x, y)                                                   \
-  ((md_spotvis[(((unsigned)(x) & (MAPSIZE - 1)) << 3) |                      \
-               (((unsigned)(y) & (MAPSIZE - 1)) >> 4)] >>                    \
-    ((unsigned)(y) & 15)) & 1)
+ * Tile i = (x << 7) | y is bit i & 15 of word i >> 4, which on the ST is
+ * bit i & 7 of byte (i >> 3) ^ 1: a byte look and a test. Every object
+ * is on the map (x, y < MAPSIZE). */
+static __inline__ int spotvis_near(unsigned x, unsigned y) {
+  const unsigned short i = (unsigned short)((x << 7) | y);
+  return (((const unsigned char *)md_spotvis)[(unsigned short)((i >> 3) ^ 1)] >>
+          (i & 7)) & 1;
+}
 
-int ATARI_MD_SpotvisNear(int x, int y) { return SPOTVIS_NEAR(x, y); }
+int ATARI_MD_SpotvisNear(int x, int y) {
+  return (unsigned)x < MAPSIZE && (unsigned)y < MAPSIZE && spotvis_near(x, y);
+}
 
 static unsigned short *obj_item(void) { return pkt_item(MD_REC_OBJS, MD_OBJ_WORDS); }
 
@@ -775,6 +780,7 @@ static int disk_shape(int value) {
  * light them. Rotation and the height flips are resolved here because they
  * need game state; the MD does the rest. */
 static void add_objects(void) {
+  objtype *const me = player;
   statobj_t *statptr;
   objtype *obj;
   int count = 0;
@@ -785,7 +791,7 @@ static void add_objects(void) {
     unsigned short *p;
 
     if (statptr->shapenum == NOTHING) continue;
-    if (!SPOTVIS_NEAR(statptr->tilex, statptr->tiley)) {
+    if (!spotvis_near(statptr->tilex, statptr->tiley)) {
       if (statptr->flags & FL_VISIBLE) statptr->flags &= ~FL_VISIBLE;
       continue;
     }
@@ -827,9 +833,9 @@ static void add_objects(void) {
     int shapenum, flags = MD_OF_NORMAL, extra = 0;
     unsigned short *p;
 
-    if (obj == player) continue;
+    if (obj == me) continue;
     if (obj->shapenum == NOTHING) continue;
-    if (!SPOTVIS_NEAR(obj->tilex, obj->tiley)) {
+    if (!spotvis_near(obj->tilex, obj->tiley)) {
       if (obj->flags & FL_VISIBLE) obj->flags &= ~FL_VISIBLE;
       continue;
     }
@@ -935,11 +941,15 @@ static void add_deltas(void) {
    * changed (its texture and position only move with it), but for the odd
    * flag (an elevator door locked): those moving or changed are compared
    * in full, and the rest MD_ROLL a frame in turn. */
-  for (i = 0; i < doornum; i++) {
-    const int a = doorobjlist[i]->action;
-    if ((a == dr_opening || a == dr_closing || (byte)a != md_doors[i].action) &&
-        door_changed(i))
-      put_door(world_item(MD_REC_DOOR, MD_DOOR_WORDS), i);
+  {
+    doorobj_t *const *d = doorobjlist;
+    const md_door_shadow_t *sh = md_doors;
+    for (i = 0; i < doornum; i++, d++, sh++) {
+      const int a = (*d)->action;
+      if ((a == dr_opening || a == dr_closing || (byte)a != sh->action) &&
+          door_changed(i))
+        put_door(world_item(MD_REC_DOOR, MD_DOOR_WORDS), i);
+    }
   }
   for (i = 0; i < MD_ROLL && i < doornum; i++) {
     if (++md_roll_door >= doornum) md_roll_door = 0;
@@ -961,11 +971,15 @@ static void add_deltas(void) {
         put_mwall(world_item(MD_REC_MWALL, MD_MWALL_WORDS), md_roll_mwall);
     }
   }
-  for (i = 0; i < pwallnum; i++) {
-    const int a = pwallobjlist[i]->action;
-    if ((a == pw_pushing || a == pw_moving || (byte)a != md_pwalls[i].action) &&
-        pwall_changed(i))
-      put_pwall(world_item(MD_REC_PWALL, MD_PWALL_WORDS), i);
+  {
+    pwallobj_t *const *w = pwallobjlist;
+    const md_pwall_shadow_t *sh = md_pwalls;
+    for (i = 0; i < pwallnum; i++, w++, sh++) {
+      const int a = (*w)->action;
+      if ((a == pw_pushing || a == pw_moving || (byte)a != sh->action) &&
+          pwall_changed(i))
+        put_pwall(world_item(MD_REC_PWALL, MD_PWALL_WORDS), i);
+    }
   }
   for (i = 0; i < MD_ROLL && i < pwallnum; i++) {
     if (++md_roll_pwall >= pwallnum) md_roll_pwall = 0;

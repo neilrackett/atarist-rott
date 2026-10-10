@@ -1599,8 +1599,40 @@ void DrawTime
 
    if ( oldsec != sec )
       {
+#if defined(ATARI_NATIVE)
+      // Only the digits that changed, usually one a second, where each was
+      // drawn (and converted) every second: as DrawTimeXY would draw them.
+      static signed char drawn[6];
+      int digit[6], hour, min, i;
+
+      if (oldsec == -1) // the bar was drawn afresh
+         memset(drawn, -1, sizeof(drawn));
+      oldsec = sec;
+      while (sec > ( ( 9 * 3600 ) + 3599 ) )
+         sec -= ( ( 9 * 3600 ) + 3599 );
+      hour = sec / 3600;
+      min = ( sec / 60 ) - ( hour * 60 );
+      sec %= 60;
+      digit[0] = (hour < 10) ? -1 : hour / 10; // DrawTimeNumber leaves it
+      digit[1] = hour % 10;
+      digit[2] = min / 10;
+      digit[3] = min % 10;
+      digit[4] = sec / 10;
+      digit[5] = sec % 10;
+      for (i = 0; i < 6; i++)
+         {
+         static const short xoff[6] =
+            { HOUR_X, HOUR_X + 8, MIN_X, MIN_X + 8, SEC_X, SEC_X + 8 };
+         if (digit[i] < 0 || drawn[i] == digit[i])
+            continue;
+         drawn[i] = (signed char)digit[i];
+         StatusDrawTime( GAMETIME_X + xoff[i], GAMETIME_Y, digit[i],
+                         bufferofsonly );
+         }
+#else
       oldsec = sec;
       DrawTimeXY( GAMETIME_X, GAMETIME_Y, sec, bufferofsonly) ;
+#endif
       }
    }
 
@@ -1777,6 +1809,7 @@ void DrawColoredMPPic (int xpos, int ypos, int width, int height, int heightmod,
    int write_page3 = (!bufferofsonly && base3 != base1 && base3 != base2);
    byte *cmap = playermaps[color] + (1 << 12);
 
+   ATARI_HUD_TOUCH_AT(base1 + ylookup[ypos] + xpos, pixwidth, height);
    for (y = 0; y < height; ++y)
    {
       for (x = 0; x < pixwidth; ++x)

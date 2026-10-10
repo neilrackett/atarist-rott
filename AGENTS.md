@@ -161,7 +161,7 @@ ROTT Accelerator (MD/ROTT in the source; SidecarTridge Multi-device renderer)
   any masked wall write (flags or textures) needs `MD_MASKED_TOUCH()`.
 - Any 2D drawing into the chunky screen outside the view should say so
   (`ATARI_HUD_TOUCH()`, or `_RECT`/`_AT` with where), or the HUD only
-  catches up every 16th frame.
+  catches up every 64th frame.
 - The Help key toggles an overlay: with the Accelerator, frames a second,
   game logic tics run each frame and their time (`TICS`, `LOGIC`), the
   ST's wait for it each frame (`wait_ready`), its render and dither + c2p

@@ -971,9 +971,10 @@ void atari_c2p_hud(unsigned char *out, const unsigned char *in,
     all = !prev_chunky_valid;
     /* Comparing the whole HUD costs more than the rest of this put
      * together, so: all of it when something drew without saying where
-     * (ATARI_HUD_TOUCH) and every 16th frame in case something drew without
-     * saying at all; else just where something drew (_RECT), if anything. */
-    if (!all && !atari_hud_dirty && (++frames & 15))
+     * (ATARI_HUD_TOUCH) and every 64th frame in case something drew without
+     * saying at all; else just where something drew (_RECT), if anything.
+     * (Every 16th was 2% of an 8MHz ST, and the status bars all say.) */
+    if (!all && !atari_hud_dirty && (++frames & 63))
     {
         if (hud_x1 <= hud_x0 || hud_y1 <= hud_y0)
             return;
