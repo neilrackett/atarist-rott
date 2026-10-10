@@ -1117,6 +1117,7 @@ void ReadAtariSoundToggles (void)
    int parsed_fx_mode = FXMode;
    int parsed_voices = 0; // automatic: see atari_sfx.c
    int parsed_fx_volume = FXvolume;
+   int parsed_music_volume = MUvolume;
 
    GetPathFromEnvironment(filename, ApogeePath, SoundName);
    if (stat(filename, &st) == 0)
@@ -1151,6 +1152,8 @@ void ReadAtariSoundToggles (void)
                   parsed_voices = (v < 0) ? 0 : (v > 8 ? 8 : (int)v);
                else if (AtariSoundValue(line, line_end, "FXVolume", &v))
                   parsed_fx_volume = (v < 0) ? 0 : (v > 255 ? 255 : (int)v);
+               else if (AtariSoundValue(line, line_end, "MusicVolume", &v))
+                  parsed_music_volume = (v < 0) ? 0 : (v > 255 ? 255 : (int)v);
                }
 
             while (p < end && (*p == '\n' || *p == '\r'))
@@ -1165,6 +1168,7 @@ void ReadAtariSoundToggles (void)
    FXMode = parsed_fx_mode;
    NumVoices = parsed_voices;
    FXvolume = parsed_fx_volume;
+   MUvolume = parsed_music_volume;
 #endif
 }
 

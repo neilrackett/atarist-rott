@@ -8,7 +8,23 @@
 #include "i_swap.h"
 #include "atari_music.h"
 
-extern int snd_MusicVolume;
+// Music volume, 0-255 (MUSIC_SetVolume).
+int ymmusic_master = 196;
+
+// A linear amplitude 0-127 as a YM2149 level 0-15. The YM's levels are
+// about 3dB apart, so 15 + 20 log10(a / 127) / 3, rounded: subtracting
+// from the level instead (as this did) put the music 24dB down at the
+// default volume, and a quiet note at nothing at all.
+static const unsigned char ymmusic_levels[128] = {
+    0, 1, 3, 4, 5, 6, 6, 7, 7, 7, 8, 8, 8, 8, 9, 9,
+    9, 9, 9, 9, 10, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11,
+    11, 11, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
+    12, 12, 12, 12, 12, 12, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
+    13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 14, 14, 14, 14,
+    14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
+    14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15
+};
 
 typedef struct
 {
@@ -42,6 +58,8 @@ typedef struct
     unsigned char ymidx;
     // Whether the note has been released
     unsigned char released;
+    // MIDI note velocity 0..127 (127 for MUS, whose notes set the channel's volume)
+    unsigned char velocity;
     // Instrument playing
     instrument_t *instrument;
 } ymmusic_voice_t;
@@ -178,9 +196,47 @@ static unsigned long ymmusic_midi_us_accum = 0;
 // Incremented by interrupt if any request is processed.
 static unsigned short ymmusic_ack_nr = 0;
 
-// YM2149 sound chip access
-static volatile unsigned char *pPsgSndCtrl = (void *)0xff8800;
-static volatile unsigned char *pPsgSndData = (void *)0xff8802;
+// YM2149 sound chip access, in supervisor mode only (the VBL, or Supexec).
+// Interrupts are masked between selecting a register and using it: TOS's
+// Timer C plays Dosound sequences on the same chip and outranks the VBL,
+// so landing in between would send the value to the register it selected.
+// (As STDL's ym.c does: https://github.com/neilrackett/atarist-stdl)
+#define YM_SELECT (*(volatile unsigned char *)0xFFFF8800UL)
+#define YM_DATA (*(volatile unsigned char *)0xFFFF8802UL)
+
+static void ym_write(unsigned char reg, unsigned char value)
+{
+    unsigned short sr;
+
+    __asm__ volatile("move.w %%sr,%0\n\tori.w #0x0700,%%sr" : "=d"(sr) : : "cc");
+    YM_SELECT = reg;
+    YM_DATA = value;
+    __asm__ volatile("move.w %0,%%sr" : : "d"(sr) : "cc");
+}
+
+static unsigned char ym_read(unsigned char reg)
+{
+    unsigned short sr;
+    unsigned char value;
+
+    __asm__ volatile("move.w %%sr,%0\n\tori.w #0x0700,%%sr" : "=d"(sr) : : "cc");
+    YM_SELECT = reg;
+    value = YM_SELECT;
+    __asm__ volatile("move.w %0,%%sr" : : "d"(sr) : "cc");
+    return value;
+}
+
+// The mixer (register 7): set and clear tone/noise bits, keeping the I/O
+// port direction bits TOS relies on (port A drives the floppy select).
+static void ym_mixer(unsigned char clear, unsigned char set)
+{
+    unsigned short sr;
+
+    __asm__ volatile("move.w %%sr,%0\n\tori.w #0x0700,%%sr" : "=d"(sr) : : "cc");
+    YM_SELECT = 7;
+    YM_DATA = (unsigned char)((YM_SELECT & ~clear) | set);
+    __asm__ volatile("move.w %0,%%sr" : : "d"(sr) : "cc");
+}
 
 // Divisor table for MUS notes * 4 bit precision for pitch bend
 // [note 0..127][pitch bend 0..15]
@@ -425,6 +481,16 @@ static int ymmusic_midi_any_active(void)
     return 0;
 }
 
+// MIDI keeps its drums on channel 10 (9 from 0); the player came from MUS,
+// which keeps them on 15, and picks percussion instruments there. Swap the
+// two so the drums sound as drums.
+static unsigned char ymmusic_midi_channel(unsigned char status)
+{
+    unsigned char channel = status & 0x0F;
+
+    return (channel == 9) ? 15 : (channel == 15) ? 9 : channel;
+}
+
 static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
 {
     unsigned char status;
@@ -458,7 +524,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
     {
     case 0x80:
     {
-        unsigned char channel = status & 0x0F;
+        unsigned char channel = ymmusic_midi_channel(status);
         unsigned char note = (t->ptr < t->end) ? *t->ptr++ : 0;
         if (t->ptr < t->end)
             ++t->ptr; /* velocity */
@@ -467,7 +533,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
     }
     case 0x90:
     {
-        unsigned char channel = status & 0x0F;
+        unsigned char channel = ymmusic_midi_channel(status);
         unsigned char note = (t->ptr < t->end) ? *t->ptr++ : 0;
         unsigned char vel = (t->ptr < t->end) ? *t->ptr++ : 0;
         if (vel == 0)
@@ -479,7 +545,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
     case 0xA0:
     case 0xB0:
     {
-        unsigned char channel = status & 0x0F;
+        unsigned char channel = ymmusic_midi_channel(status);
         unsigned char c1 = (t->ptr < t->end) ? *t->ptr++ : 0;
         unsigned char c2 = (t->ptr < t->end) ? *t->ptr++ : 0;
         if ((status & 0xF0) == 0xB0)
@@ -495,7 +561,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
     }
     case 0xC0:
     {
-        unsigned char channel = status & 0x0F;
+        unsigned char channel = ymmusic_midi_channel(status);
         unsigned char patch = (t->ptr < t->end) ? *t->ptr++ : 0;
         ymmusic_controller(channel, 0, patch);
         break;
@@ -506,7 +572,7 @@ static void ymmusic_midi_process_track_event(ymmusic_midi_track_t *t)
         break;
     case 0xE0:
     {
-        unsigned char channel = status & 0x0F;
+        unsigned char channel = ymmusic_midi_channel(status);
         unsigned char lsb = (t->ptr < t->end) ? *t->ptr++ : 0;
         unsigned char msb = (t->ptr < t->end) ? *t->ptr++ : 0;
         unsigned short bend = (unsigned short)(((unsigned short)msb << 7) | (lsb & 0x7F));
@@ -610,8 +676,7 @@ static void ymmusic_reset()
     int i;
 
     // Initialize mixer: disable all noise and tone
-    *pPsgSndCtrl = 7;
-    *pPsgSndData = (*pPsgSndCtrl & 0b11000000) | 0b00111111;
+    ym_mixer(0, 0x3f);
 
     ymmusic_ptr = NULL;
     ymmusic_end = NULL;
@@ -647,6 +712,26 @@ static void ymmusic_reset()
 void ymmusic_init()
 {
     ymmusic_reset();
+}
+
+// A command not yet taken, or a song playing: worth a step.
+int ymmusic_active()
+{
+    return ymmusic_cmd_nr_end != ymmusic_ack_nr || (ymmusic_state & YMMUSIC_PLAY);
+}
+
+// Every voice silent and off, keeping the song and its place.
+void ymmusic_silence()
+{
+    int i;
+
+    for (i = 0; i < 3; i++)
+    {
+        ym_write(8 + i, 0);
+        ymmusic_voices[i].ticks = 0xffff;
+        ymmusic_voices[i].channel = 0xff;
+    }
+    ym_mixer(0, 0x3f);
 }
 
 #define FIXED_CHANNELS 0
@@ -710,9 +795,19 @@ static void ymmusic_play_note(unsigned char channel, unsigned char note, unsigne
     // We have found a voice.
 found:
 
-    if (use_volume)
+    if (ymmusic_mode == 2)
     {
-        ymmusic_channels[channel].volume = volume;
+        // MIDI: the velocity belongs to the note; the channel's volume is
+        // controller 7's
+        voice->velocity = volume;
+    }
+    else
+    {
+        if (use_volume)
+        {
+            ymmusic_channels[channel].volume = volume;
+        }
+        voice->velocity = 127;
     }
     voice->channel = channel;
     voice->note = note;
@@ -804,16 +899,19 @@ static char ymmusic_envelope_value(envelope_t *env, unsigned short ticks, unsign
     return env->data[ticks];
 }
 
-// Calculates the volume of a voice at the current tick.
+// Calculates the volume of a voice at the current tick, as a YM level 0..15:
+// the channel's volume times the note's velocity, the instrument's envelope
+// on that, then the music volume.
 static unsigned char ymmusic_voice_volume(ymmusic_voice_t *voice)
 {
-    unsigned char volume = ymmusic_channels[voice->channel].volume;
+    short volume = (short)((ymmusic_channels[voice->channel].volume * voice->velocity) >> 7);
     if (voice->instrument && voice->instrument->volume_envelope) {
         envelope_t *env = voice->instrument->volume_envelope;
         volume += ymmusic_envelope_value(env, voice->ticks, voice->released);
     }
+    if (volume < 0) volume = 0;
     if (volume > 127) volume = 127;
-    return volume;
+    return ymmusic_levels[(volume * ymmusic_master) >> 8];
 }
 
 // Calculates the note of a voice at the current tick, in 128th of a note
@@ -1027,10 +1125,10 @@ void ymmusic_update()
         return;
     }
 
-    // Not playing? Do nothing.
+    // Not playing (paused)? Silence, but keep the place to carry on from.
     if (!(ymmusic_state & YMMUSIC_PLAY))
     {
-        ymmusic_reset();
+        ymmusic_silence();
         return;
     }
 
@@ -1052,43 +1150,28 @@ void ymmusic_update()
             short divisor = ymmusic_divisors[note >> 7][(note >> 3) & 15];
 
             // Push note to soundchip
-            *pPsgSndCtrl = 0 + 2 * voice->ymidx;
-            *pPsgSndData = divisor & 0xff;
-            *pPsgSndCtrl = 1 + 2 * voice->ymidx;
-            *pPsgSndData = divisor >> 8;
+            ym_write(0 + 2 * voice->ymidx, divisor & 0xff);
+            ym_write(1 + 2 * voice->ymidx, divisor >> 8);
 
             // Amplitude
-            unsigned char new_volume = (ymmusic_voice_volume(voice) >> 3) + snd_MusicVolume;
-            if (new_volume > 15)
-            {
-                new_volume -= 15;
-            }
-            else
-            {
-                new_volume = 0;
-            }
-            
+            unsigned char new_volume = ymmusic_voice_volume(voice);
+
             // Push amplitude to soundchip
-            *pPsgSndCtrl = 8 + voice->ymidx;
-            if (*pPsgSndCtrl != new_volume)
+            if (ym_read(8 + voice->ymidx) != new_volume)
             {
-                *pPsgSndData = new_volume;
+                ym_write(8 + voice->ymidx, new_volume);
             }
 
             // Enable mixer
             if (voice->ticks == 0 && !voice->released)
             {
-                // Note just pressed? Enable mixer for channel.
-                *pPsgSndCtrl = 7;
-                // Enable voice
-                unsigned char data = *pPsgSndCtrl & ~(1 << voice->ymidx);
-                // Enable or disable noise
+                // Note just pressed? Enable the voice's tone, and its
+                // noise if the instrument has it.
                 if (voice->instrument && voice->instrument->enables_noise) {
-                    data &=  ~(8 << voice->ymidx);
+                    ym_mixer(9 << voice->ymidx, 0);
                 } else {
-                    data |= 8 << voice->ymidx;
+                    ym_mixer(1 << voice->ymidx, 8 << voice->ymidx);
                 }
-                *pPsgSndData = data;
             } 
 
             voice->ticks++;
@@ -1096,10 +1179,8 @@ void ymmusic_update()
 
         if (voice->ticks == 0xffff)
         {
-            // Reaching end? Disable mixer for channel.
-            *pPsgSndCtrl = 7;
-            // 9 disables both voice and noise generator
-            *pPsgSndData = *pPsgSndCtrl | (9 << voice->ymidx);
+            // Reaching end? Disable both tone and noise for the voice.
+            ym_mixer(0, 9 << voice->ymidx);
         }
     }
 

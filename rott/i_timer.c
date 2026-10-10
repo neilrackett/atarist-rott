@@ -41,9 +41,6 @@
 #define TOS_HZ_200_ADDR 0x4BA
 
 static unsigned long basetime = 0;
-static unsigned long music_service_hz200 = 0;
-
-extern void MUSIC_Service(void);
 
 /* A copy of _hz_200 the program can read without Super(), which costs two
  * GEMDOS traps and was called dozens of times a frame. Timer C (the
@@ -149,13 +146,6 @@ static int __attribute__((noinline)) get_time(unsigned long ticks)
     if (ATARI_DEBUG && dbg_count < 8)
         Cconws("ROTT: I_GetTime entry\r\n");
 #endif
-    if (music_service_hz200 == 0)
-        music_service_hz200 = ticks;
-    while ((ticks - music_service_hz200) >= 4)
-    {
-        MUSIC_Service();
-        music_service_hz200 += 4;
-    }
 #if defined(ATARI_NATIVE)
     if (ATARI_DEBUG && dbg_count < 8)
         Cconws("ROTT: I_GetTime after hz200\r\n");
@@ -227,7 +217,6 @@ void I_WaitVBL(int count)
 void I_InitTimer(void)
 {
     basetime = 0;
-    music_service_hz200 = 0;
     last_hz200 = ~0UL;
 }
 

@@ -2,14 +2,25 @@
  * Copyright (C) 2026 Neil Rackett
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
+/*
+ * The MUSIC_ calls for the native build: ROTT's MIDI songs on the YM2149
+ * (atari_music.c), stepped at 50Hz from the VBL in supervisor mode, so the
+ * tempo holds however long a frame takes. While music is on, TOS's key
+ * click and bell are off, so they cannot fight over the chip, as STDL's
+ * ym.c does (https://github.com/neilrackett/atarist-stdl).
+ */
 #include <string.h>
+#include <mint/osbind.h>
 
 #include "rt_def.h"
 #include "music.h"
 #include "atari_music.h"
+#include "atari_vbl.h"
+
+#define CONTERM (*(volatile unsigned char *)0x484UL)
+#define HZ_200 (*(volatile unsigned long *)0x4BAUL)
 
 int MUSIC_ErrorCode = MUSIC_Ok;
-int snd_MusicVolume = 15;
 
 static int music_initialized = 0;
 static int music_loopflag = MUSIC_PlayOnce;
@@ -17,6 +28,10 @@ static int music_volume = 196;
 static int music_context = 0;
 static unsigned long music_ticks = 0;
 static unsigned long music_ms = 0;
+static unsigned long music_hz200 = 0;
+static int old_conterm = -1;
+
+void MUSIC_Service(void);
 
 static void music_set_error(int code)
 {
@@ -49,17 +64,72 @@ char *MUSIC_ErrorString(int ErrorNumber)
     }
 }
 
+/* The VBL routine: a step every 4 ticks of the 200Hz clock, so 50 a
+ * second whatever the VBL rate, and no burst after interrupts were off. */
+static void music_vbl(void)
+{
+    unsigned long now = HZ_200;
+    int steps = 0;
+
+    if (music_hz200 == 0)
+        music_hz200 = now;
+    while ((now - music_hz200) >= 4)
+    {
+        if (++steps > 4)
+        {
+            music_hz200 = now;
+            break;
+        }
+        MUSIC_Service();
+        music_hz200 += 4;
+    }
+}
+
+/* Supervisor: the YM silent and TOS's key click and bell back, here or
+ * from the terminate vector (atari_vbl.c). */
+static void music_release(void)
+{
+    ymmusic_silence();
+    if (old_conterm >= 0)
+    {
+        CONTERM = (unsigned char)old_conterm;
+        old_conterm = -1;
+    }
+}
+
+static long music_init_super(void)
+{
+    ymmusic_init();
+    old_conterm = CONTERM;
+    CONTERM = (unsigned char)(old_conterm & ~5); /* key click, bell */
+    return 0;
+}
+
+static long music_release_super(void)
+{
+    music_release();
+    return 0;
+}
+
 int MUSIC_Init(int SoundCard, int Address)
 {
     (void)SoundCard;
     (void)Address;
-
-    ymmusic_init();
-    music_initialized = 1;
+    if (music_initialized)
+        MUSIC_Shutdown();
     music_ticks = 0;
     music_ms = 0;
-    music_set_error(MUSIC_Ok);
+    music_hz200 = 0;
     music_send_command(NULL, 0);
+    Supexec(music_init_super);
+    if (ATARI_VBL_Add(music_vbl, music_release) < 0)
+    {
+        Supexec(music_release_super);
+        music_set_error(MUSIC_Error);
+        return MUSIC_Error;
+    }
+    music_initialized = 1;
+    music_set_error(MUSIC_Ok);
     return MUSIC_Ok;
 }
 
@@ -67,9 +137,10 @@ int MUSIC_Shutdown(void)
 {
     if (!music_initialized)
         return MUSIC_Ok;
-
-    music_send_command(NULL, 0);
     music_initialized = 0;
+    ATARI_VBL_Remove(music_vbl); /* and silences the YM */
+    music_ticks = 0;
+    music_ms = 0;
     return MUSIC_Ok;
 }
 
@@ -86,7 +157,7 @@ void MUSIC_SetVolume(int volume)
         volume = 255;
 
     music_volume = volume;
-    snd_MusicVolume = (volume * 15) / 255;
+    ymmusic_master = volume;
 }
 
 void MUSIC_SetMidiChannelVolume(int channel, int volume)
@@ -254,15 +325,16 @@ void MUSIC_RegisterTimbreBank(unsigned char *timbres)
     (void)timbres;
 }
 
+/* One 50Hz step, from the VBL. A command not yet taken (a new song, a
+ * stop, a pause) still needs one, or a stopped song would hold its notes. */
 void MUSIC_Service(void)
 {
-    if (!music_initialized)
+    if (!music_initialized || !ymmusic_active())
         return;
-
-    if (!(ymmusic_state_cmd & YMMUSIC_PLAY))
-        return;
-
     ymmusic_update();
-    ++music_ticks;
-    music_ms += 20;
+    if (ymmusic_state & YMMUSIC_PLAY)
+    {
+        ++music_ticks;
+        music_ms += 20;
+    }
 }

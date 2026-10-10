@@ -2,10 +2,9 @@
  * Copyright (C) 2026 Neil Rackett
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
- * The mixer, the DMA helpers, the VBL queue slot and the terminate vector
- * handling are ported from STDL - Atari ST DirectMedia Layer (src/voice.c,
- * src/audio.c, src/vbl.c, src/stram.c and src/video.c), Copyright (C) 2026
- * Neil Rackett, LGPL-2.1-or-later: https://github.com/neilrackett/atarist-stdl
+ * The mixer and the DMA helpers are ported from STDL - Atari ST DirectMedia
+ * Layer (src/voice.c, src/audio.c and src/stram.c), Copyright (C) 2026 Neil
+ * Rackett, LGPL-2.1-or-later: https://github.com/neilrackett/atarist-stdl
  */
 /*
  * atari_sfx.c - ROTT's sound effects on DMA sound (STE, Mega STE) for the
@@ -44,6 +43,7 @@
 #include "pitch.h"
 #include "atari_md.h"
 #include "atari_sfx.h"
+#include "atari_vbl.h"
 
 #define DMA_CTRL    (*(volatile uint8_t *)0xFFFF8901UL)
 #define DMA_START_H (*(volatile uint8_t *)0xFFFF8903UL)
@@ -58,9 +58,6 @@
 #define DMA_MODE    (*(volatile uint8_t *)0xFFFF8921UL)
 #define MW_DATA     (*(volatile uint16_t *)0xFFFF8922UL)
 #define MW_MASK     (*(volatile uint16_t *)0xFFFF8924UL)
-
-#define NVBLS       (*(volatile uint16_t *)0x454UL)
-#define VBLQUEUE    (*(void (***)(void))0x456UL)
 
 #define SFX_RATE     12517
 #define SFX_MODE     (0x80 | 1)         /* mono, 12517Hz */
@@ -106,7 +103,6 @@ static struct
    int voices;            /* how many may play at once */
    int8_t *ring;
    void *ring_alloc;
-   int vbl_slot;          /* -1: none */
    int fill_block;        /* next quarter to mix */
    uint8_t fresh;         /* first VBL after the start */
    uint8_t silent;        /* consecutive blocks mixed silent */
@@ -125,7 +121,6 @@ static void (*sfx_callback)(unsigned long);
 static int sfx_volume = 255;
 static int sfx_reverse;
 static int sfx_next_handle = 1;
-static void (*old_term)(void);
 
 /* ------------------------------------------------------------------ */
 /* the hardware (STDL's audio.c)                                      */
@@ -475,49 +470,17 @@ static void sfx_vbl(void)
    mx.fresh = 0;
 }
 
-/* Supervisor: the DMA stopped and the VBL slot back. Register and vector
- * writes only, as this also runs from the terminate vector. */
-static void hw_release(void)
+/* Supervisor: the DMA stopped (atari_vbl.c calls it on any way out). */
+static void sfx_release(void)
 {
    DMA_CTRL = 0;
-   if (mx.vbl_slot >= 0)
-   {
-      if (VBLQUEUE[mx.vbl_slot] == sfx_vbl)
-         VBLQUEUE[mx.vbl_slot] = NULL;
-      mx.vbl_slot = -1;
-   }
 }
 
-static long hw_stop_super(void)
-{
-   hw_release();
-   return 0;
-}
-
-/* Supervisor: a VBL queue slot, then the DMA looping over the ring. */
-static long hw_start_super(void)
+/* Supervisor: the DMA looping over the ring. */
+static long dma_start_super(void)
 {
    uint32_t start = (uint32_t)mx.ring;
    uint32_t end = start + RING_FRAMES;
-   unsigned short sr;
-   int i, n = NVBLS;
-
-   if (n > 16)
-      n = 16;
-   /* a slot is a long: the VBL must not land between its two words */
-   __asm__ volatile("move.w %%sr,%0\n\tori.w #0x0700,%%sr" : "=d"(sr) : : "cc");
-   for (i = 0; i < n; i++)
-   {
-      if (VBLQUEUE[i] == NULL)
-      {
-         VBLQUEUE[i] = sfx_vbl;
-         mx.vbl_slot = i;
-         break;
-      }
-   }
-   __asm__ volatile("move.w %0,%%sr" : : "d"(sr) : "cc");
-   if (mx.vbl_slot < 0)
-      return -1;
 
    /* stop first: the address registers latch into the counter when
     * playback starts, and writing them under a running DMA can be picked
@@ -535,22 +498,10 @@ static long hw_start_super(void)
    return 0;
 }
 
-/*
- * GEMDOS terminate vector: Error(), a crash and a normal exit that never
- * reached FX_Shutdown all end in Pterm, and GEMDOS is about to give this
- * program's memory away with the VBL queue still pointing into it and the
- * DMA still reading it.
- */
-static void sfx_term(void)
+static long dma_stop_super(void)
 {
-   (void)Setexc(0x102, (void *)old_term);
-   if (mx.open)
-   {
-      hw_release();
-      mx.open = 0;
-   }
-   if (old_term != NULL)
-      old_term();
+   sfx_release();
+   return 0;
 }
 
 /* Volume rows: row[byte] = (byte - 128) * level / 128, the unsigned
@@ -715,7 +666,7 @@ static int distance_volume(int distance)
 }
 
 /* Stop a voice and tell rt_sound.c, once: it unlocks the lump. */
-static void sfx_release(sfx_voice_t *v)
+static void voice_release(sfx_voice_t *v)
 {
    int handle = v->handle;
 
@@ -736,7 +687,7 @@ void ATARI_SFX_Service(void)
    for (i = 0; i < mx.voices; i++)
    {
       if (mx.v[i].handle != 0 && !mx.v[i].active)
-         sfx_release(&mx.v[i]);
+         voice_release(&mx.v[i]);
    }
 }
 
@@ -774,7 +725,7 @@ static sfx_voice_t *sfx_alloc(int priority, int take)
    if (lowest == NULL || lowest->priority > priority)
       return NULL;
    if (take)
-      sfx_release(lowest);
+      voice_release(lowest);
    return lowest;
 }
 
@@ -912,7 +863,6 @@ int FX_Init(int SoundCard, int numvoices, int numchannels, int samplebits,
       return FX_Error;
    }
    memset(&mx, 0, sizeof(mx));
-   mx.vbl_slot = -1;
    mx.voices = (numvoices < 1) ? 1 : (numvoices > MAX_VOICES ? MAX_VOICES : numvoices);
 
    /* guard bytes past the ring, all cleared: a real STE clicked once a
@@ -931,15 +881,16 @@ int FX_Init(int SoundCard, int numvoices, int numchannels, int samplebits,
    mx.fill_block = 1; /* playback starts in block 0 */
    mx.fresh = 1;
    mx.open = 1;
-   if (Supexec(hw_start_super) < 0)
+   Supexec(dma_start_super);
+   if (ATARI_VBL_Add(sfx_vbl, sfx_release) < 0)
    {
+      Supexec(dma_stop_super);
       mx.open = 0;
       Mfree(mx.ring_alloc);
       mx.ring_alloc = NULL;
       FX_ErrorCode = FX_SoundCardError;
       return FX_Error;
    }
-   old_term = (void (*)(void))Setexc(0x102, (void *)sfx_term);
    return FX_Ok;
 }
 
@@ -950,9 +901,8 @@ int FX_Shutdown(void)
    if (!mx.open)
       return FX_Ok;
    for (i = 0; i < mx.voices; i++)
-      sfx_release(&mx.v[i]);
-   Supexec(hw_stop_super);
-   (void)Setexc(0x102, (void *)old_term);
+      voice_release(&mx.v[i]);
+   ATARI_VBL_Remove(sfx_vbl); /* and stops the DMA */
    mx.open = 0;
    Mfree(mx.ring_alloc);
    mx.ring_alloc = NULL;
@@ -1200,7 +1150,7 @@ int FX_StopSound(int handle)
       FX_ErrorCode = FX_MultiVocError;
       return FX_Warning;
    }
-   sfx_release(v);
+   voice_release(v);
    return FX_Ok;
 }
 
@@ -1209,7 +1159,7 @@ int FX_StopAllSounds(void)
    int i;
 
    for (i = 0; i < mx.voices; i++)
-      sfx_release(&mx.v[i]);
+      voice_release(&mx.v[i]);
    return FX_Ok;
 }
 

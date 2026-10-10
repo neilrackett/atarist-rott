@@ -75,6 +75,14 @@ Input + Timing Notes (Critical)
   The native build reads only `MusicMode`, `FXMode`, `NumVoices` and
   `FXVolume` (`ReadAtariSoundToggles`) and never writes `sound.rot`. Help
   shows voices playing and late refills.
+- Music: ROTT's MIDI songs on the YM2149 (`rott/audiolib/atari_music.c`, the
+  `MUSIC_` calls in `atari_music_api.c`), stepped at 50Hz from the VBL off
+  the 200Hz clock; YM registers only in supervisor mode, select and write
+  with interrupts masked. TOS's key click and bell are off while it plays.
+  On by default (`MusicMode 6`); `MusicVolume` 0-255.
+- `rott/atari_vbl.c`: one TOS VBL queue slot for the sound effects mixer and
+  the music, and their hardware put back through the terminate vector on any
+  exit (`Error()`, a crash). Anything new on the VBL goes through it.
 - Gamepads: Xpad (submodule `lib/xpad`, consumer half only), `rott/atari_xpad.c`.
   In play it sets `buttonpoll[]` and `JX`/`JY` from `PollControls`; outside play
   (menus, key waits) it injects keys from `doEvents`. Only providers that read

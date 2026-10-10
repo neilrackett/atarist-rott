@@ -55,6 +55,8 @@ So, in terms of raw FPS it's 2-3x faster than the SDL build, which is great to s
 
 FPS based on running ROTT with automatic detail selection enabled.
 
+Music plays ROTT's MIDI songs on the ST's own sound chip, so it works on any ST. Set `MusicMode` to `0` in `SOUND.ROT` to turn it off, or `MusicVolume` (0-255) to change its volume.
+
 Sound effects use the STE's DMA sound, so they need an STE or Mega STE (an ST just plays without them). Set `FXMode` to `0` in `SOUND.ROT` to turn them off. `NumVoices` sets how many play at once, from 1 to 8; each one costs CPU time while it plays (about 5% of a Mega STE for one), and nothing when it's quiet. The default, `0`, plays one at a time, or four with the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device).
 
 ## Rise of the Triad (SDL)
