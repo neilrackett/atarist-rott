@@ -28,18 +28,19 @@ shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
    file the ST uses: the firmware checks its size and directory against
    the ST's copy and refuses a different one.
 4. On the Booster screen, press ESC for the app list and select ROTT
-   Accelerator. The ST restarts and prints this during boot (with
-   `not responding` in place of `ready` if the firmware isn't up):
+   Accelerator. The ST restarts and prints this during boot, with the
+   firmware's version (such as `v1.4.0-beta.2`), and `not responding` in
+   place of `ready` if the firmware isn't up:
 
    ```
-   ROTT Accelerator v1.4.0 ready
+   ROTT Accelerator <version> ready
    GPLv3 (c)2026 Neil Rackett
 
    Download ROTT: neilrackett.com/atarist
    ```
 
 5. Run `ROTT_ST.TOS` from disk as normal. At startup it prints
-   `ROTT Accelerator v1.4.0` when it will use the Multi-device, or the
+   `ROTT Accelerator <version>` when it will use the Multi-device, or the
    reason it will not, e.g. `ROTT Accelerator: /rott/HUNTBGIN.WAD missing`
    followed by `Using the ST renderer`.
 
