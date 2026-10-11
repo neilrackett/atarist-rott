@@ -330,7 +330,14 @@ void ATARI_MD_Init(void) {
   int rc;
 
   atari_md_active = 0;
-  if (!sidecart_md_present()) return;
+  if (!sidecart_md_present()) {
+    /* No Multi-device, or other firmware on it: where to get it, in 40
+     * columns. */
+    printf("\n*** Make ROTT truly playable ***\n"
+           "Download the ROTT Accelerator from\n"
+           "neilrackett.com/atarist\n\n");
+    return;
+  }
 
   if (!read_wad_header(wadname, &numlumps, &dirofs, &size)) {
     printf("ROTT Accelerator: cannot read %s\n", wadname);
