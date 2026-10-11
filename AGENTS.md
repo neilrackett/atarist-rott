@@ -85,7 +85,9 @@ Input + Timing Notes (Critical)
   `NumVoices` in `sound.rot` is 1-8, or 0 for 2 with the Accelerator, 1
   without. On by default (`FXMode 6`); an ST without DMA sound skips them.
   The native build reads only `MusicMode`, `FXMode`, `NumVoices` and
-  `FXVolume` (`ReadAtariSoundToggles`) and never writes `sound.rot`.
+  `FXVolume` (`ReadAtariSoundToggles`) and never writes `sound.rot`; without
+  the file (the shareware zip has none) or a key, music and effects are on
+  at the shipped file's volumes.
 - Music: ROTT's MIDI songs on the YM2149 (`rott/audiolib/atari_music.c`, the
   `MUSIC_` calls in `atari_music_api.c`), stepped at 50Hz from the VBL off
   the 200Hz clock; YM registers only in supervisor mode, select and write

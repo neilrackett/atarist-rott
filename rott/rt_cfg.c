@@ -1118,11 +1118,14 @@ void ReadAtariSoundToggles (void)
    struct stat st;
    void *buffer = NULL;
    long size = 0;
-   int parsed_music_mode = MusicMode;
-   int parsed_fx_mode = FXMode;
+   // On unless SOUND.ROT says otherwise, at the shipped file's volumes: the
+   // shareware zip has none (on DOS SETUP.EXE writes it), and ROTT's own
+   // 0s meant no sound at all.
+   int parsed_music_mode = 6;
+   int parsed_fx_mode = 6;
    int parsed_voices = 0; // automatic: see atari_sfx.c
-   int parsed_fx_volume = FXvolume;
-   int parsed_music_volume = MUvolume;
+   int parsed_fx_volume = 254;
+   int parsed_music_volume = 128;
    int parsed_fx_rate = 0;
 
    GetPathFromEnvironment(filename, ApogeePath, SoundName);
