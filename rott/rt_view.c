@@ -488,12 +488,17 @@ void DrawCPUJape
    {
    int width;
    int height;
+   char *jape = YourComputerSucksString;
 
+#if defined(ATARI_NATIVE)
+   // The ST's own renderer at its smallest: the way to a bigger view.
+   if (!ATARI_MD_Active())
+      jape = "Get ROTT Accelerator!";
+#endif
    CurrentFont = tinyfont;
-   VW_MeasurePropString( YourComputerSucksString, &width, &height );
+   VW_MeasurePropString( jape, &width, &height );
 
-   DrawGameString( 160 - width / 2, 100 + 48 / 2 + 2,
-      YourComputerSucksString, true );
+   DrawGameString( 160 - width / 2, 100 + 48 / 2 + 2, jape, true );
    }
 
 
