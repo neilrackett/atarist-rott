@@ -226,7 +226,8 @@ static void cmd_hello(const uint16_t *w, uint32_t n) {
                            md_get32(b + MD_HELLO_DIROFS));
   }
   /* Music comes from the WAD, so only with it (and RAM for it). */
-  status_set(MD_ST_CAPS, md_pack_wad_ok() && md_music_ok() ? MD_CAP_MUSIC : 0);
+  status_set(MD_ST_CAPS, (md_pack_wad_ok() && md_music_ok() ? MD_CAP_MUSIC : 0) |
+                             MD_CAP_PENS);
   /* A new session: the old errors are history. */
   s_errors = 0;
   status_set(MD_ST_ERRORS, 0);
@@ -352,16 +353,38 @@ static void publish_palette(void) {
   for (int i = 0; i < 16; i++) pal[i] = st[i];
 }
 
+#ifdef MDFW_VERSION
+/* EmuMD (emu/mdfw_app.c): each view as rendered, 8 bits a pixel, with
+ * the palette it is in. */
+void mdfw_app_view(const uint8_t *rgb768, const uint8_t *chunky, int pitch,
+                   int w, int h);
+static uint8_t s_view_rgb[768];
+#endif
+
+/* The view buffer is idle between frames: a PALETTE command's RGB at the
+ * front, then the ST's dither (MD_PAL_PENS), the rebuild's scratch after
+ * them. */
+#define PALETTE_SCRATCH (s_chunky + 2048)
+_Static_assert(MD_PAL_PENS_BYTES <= 2048, "PALETTE_SCRATCH");
+
 static void cmd_palette(const uint16_t *w, uint32_t n) {
-  /* The view buffer is idle between frames: RGB at the front, the
-   * rebuild's scratch after it. */
-  uint8_t *rgb = s_chunky;
-  if (n < 6 + 384) {
+  uint8_t *rgb = s_chunky, *mix = s_chunky + MD_PAL_RGB_BYTES;
+  const unsigned flags = md_get32(w + 2);
+  const int pens = (flags & MD_PAL_PENS) != 0;
+  uint16_t words[16];
+  if (n < 6 + (pens ? MD_PAL_PENS_BYTES : MD_PAL_RGB_BYTES) / 2) {
     add_error(MD_ERR_BAD_CMD);
     return;
   }
-  md_get_bytes(rgb, w + 6, 768);
-  md_video_set_palette(rgb, md_get32(w + 2), s_chunky + 1024);
+  md_get_bytes(rgb, w + 6, MD_PAL_RGB_BYTES);
+  if (pens) {
+    for (int i = 0; i < 16; i++) words[i] = w[6 + MD_PAL_RGB_BYTES / 2 + i];
+    md_get_bytes(mix, w + 6 + MD_PAL_RGB_BYTES / 2 + 16, 512);
+  }
+#ifdef MDFW_VERSION
+  memcpy(s_view_rgb, rgb, 768);
+#endif
+  md_video_set_palette(rgb, pens ? words : NULL, mix, flags, PALETTE_SCRATCH);
   publish_palette();
   status_set(MD_ST_PAL_SEQ, (uint16_t)md_get32(w));
 }
@@ -386,6 +409,9 @@ static void cmd_frame(const uint16_t *w, uint32_t n) {
     return;
   }
   R_RenderFrame(s_chunky);
+#ifdef MDFW_VERSION
+  mdfw_app_view(s_view_rgb, s_chunky, R_PITCH, viewwidth, viewheight);
+#endif
   const uint32_t t1 = time_us_32();
 
   const int buf = render_target();
@@ -547,7 +573,7 @@ void md_main_init(uintptr_t rom_base, const char *folder, bool sd_ok) {
   for (int i = 0; i < 256; i++) {
     s_chunky[i * 3] = s_chunky[i * 3 + 1] = s_chunky[i * 3 + 2] = (uint8_t)i;
   }
-  md_video_set_palette(s_chunky, 0, s_chunky + 1024);
+  md_video_set_palette(s_chunky, NULL, NULL, 0, PALETTE_SCRATCH);
   publish_palette();
   md_pack_init();
   md_music_init(rom_base);

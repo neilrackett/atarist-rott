@@ -34,7 +34,7 @@ This port talks directly to the ST's hardware alongside C2P rendering and aggres
 
 To achieve this, optimisations include:
 
-- 16 colours with dithering
+- 16 colours with dithering, chosen for what the game actually draws
 - Static intro screens
 - Optional 2x or 4x game area zoom for small view sizes (`ViewZoom 1` in `CONFIG.ROT`)
 - Event-driven menus

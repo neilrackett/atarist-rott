@@ -31,7 +31,7 @@
  *     written and read with md_put32() / md_get32(), which work on value
  *     level and so behave the same on the big-endian ST and the
  *     little-endian RP.
- *   - Byte strings (palette RGB, text) travel as the ST holds them in
+ *   - Byte strings (palette RGB and dither, text) travel as the ST holds them in
  *     memory: each word carries bytes 2i and 2i+1 as (high, low). The RP
  *     unpacks them with md_get_bytes(). Nothing else carries bytes.
  *
@@ -188,6 +188,7 @@
 /* MD_ST_CAPS bits. An older firmware leaves the word 0, so the ST does the
  * job itself. */
 #define MD_CAP_MUSIC 0x0001 /* MD_CMD_MUSIC: plays songs from the WAD */
+#define MD_CAP_PENS 0x0002  /* PALETTE takes MD_PAL_PENS */
 
 /* MD_ST_SPOTVIS_X: the columns (x) that hold any SPOTVIS bits for the
  * newest frame or the one before, so the ST need copy only those; set
@@ -254,10 +255,19 @@
 #define MD_CMD_WORLD 0x0044
 
 /* PALETTE (write). d3 = palette serial, d4 = MD_PAL_* flags. Buffer: the
- * 768-byte RGB palette exactly as the ST handed it to its own c2p. */
+ * 768-byte RGB palette exactly as the ST handed it to its own c2p. With
+ * MD_PAL_PENS (to firmware with MD_CAP_PENS) it goes on to say how the ST
+ * shows it, and the MD does the same: the 16 palette words, then for each
+ * of the 256 colours two bytes, (a << 4) | b and k: of each 4x4 Bayer
+ * cell's 16 thresholds, the lowest 16 - k get pen a and the rest pen b
+ * (a <= b; k = 0 is pen a alone). Without it the MD works the 16 colours
+ * out itself, as ST builds before MD_PAL_PENS did (the median cut). */
 #define MD_CMD_PALETTE 0x0045
 #define MD_PAL_NOIR 0x0001
 #define MD_PAL_NOIR_DITHER 0x0002
+#define MD_PAL_PENS 0x0004
+#define MD_PAL_RGB_BYTES 768
+#define MD_PAL_PENS_BYTES (MD_PAL_RGB_BYTES + 16 * 2 + 256 * 2)
 
 /* FRAME (write). d3 = frame seq, d4 = seq of the last frame the ST copied,
  * d5 = level serial. Buffer: records, starting with MD_REC_VIEW. */

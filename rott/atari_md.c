@@ -90,6 +90,7 @@ extern int CalcRotate(objtype *ob);
 
 int atari_md_active;
 static unsigned short md_caps; /* MD_ST_CAPS, read at HELLO */
+static int md_found;           /* it answered HELLO: it shares the screen */
 static int md_mste;            /* a Mega STE: its cache in the way */
 int atari_md_masked_dirty = 1;
 
@@ -384,6 +385,7 @@ void ATARI_MD_Init(void) {
   md_blit_init();
   printf("%s%s\n", result, md_blit_ok ? " (blitter)" : "");
   atari_md_active = 1;
+  md_found = 1;
   md_snapshot_needed = 1;
 }
 
@@ -450,12 +452,24 @@ void ATARI_MD_LightsChanged(int x, int y) {
 }
 
 static void send_palette(void) {
+  static unsigned short buf[MD_PAL_PENS_BYTES / 2];
   long flags = 0;
   if (!md_have_palette) return;
   if (ATARI_NOIR) flags |= MD_PAL_NOIR;
   if (ATARI_NOIR_DITHERING) flags |= MD_PAL_NOIR_DITHER;
-  sidecart_md_write(MD_CMD_PALETTE, md_palette, 768, (long)++md_palette_serial,
-                    flags, 0L);
+  if (!(md_caps & MD_CAP_PENS)) {
+    /* An older firmware works the colours out as the ST does then. */
+    sidecart_md_write(MD_CMD_PALETTE, md_palette, MD_PAL_RGB_BYTES,
+                      (long)++md_palette_serial, flags, 0L);
+    return;
+  }
+  /* With how atari_c2p.c shows it (I_SetPalette gave it the palette
+   * first), for the MD to do the same. */
+  memcpy(buf, md_palette, MD_PAL_RGB_BYTES);
+  atari_c2p_pens(buf + MD_PAL_RGB_BYTES / 2,
+                 (unsigned char(*)[2])(buf + MD_PAL_RGB_BYTES / 2 + 16));
+  sidecart_md_write(MD_CMD_PALETTE, buf, MD_PAL_PENS_BYTES, (long)++md_palette_serial,
+                    flags | MD_PAL_PENS, 0L);
 }
 
 void ATARI_MD_SetPalette(const unsigned char *palette) {
@@ -1534,6 +1548,10 @@ static volatile int md_gone;
 
 int ATARI_MD_Gone(void) { return md_gone; }
 
+int ATARI_MD_PaletteTableOK(void) {
+  return !md_found || md_gone || (md_caps & MD_CAP_PENS);
+}
+
 static void give_up(const char *why) {
   atari_md_active = 0;
   md_gone = 1;
@@ -1583,7 +1601,9 @@ static void autotest_report(void) {
 
 #if defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
 /* Every 8th of the first 64 frames, as a Degas .PI1 (resolution word,
- * palette, screen), with or without the MD: tests/emu compares the two. */
+ * palette, screen), with or without the MD: tests/emu compares the two.
+ * And the chunky screen before c2p as CHUNKnnn.RAW, 320x200 (the status
+ * bars, for tools/rottpalette). */
 void ATARI_MD_AutotestShot(int frame) {
   char name[16];
   unsigned short head[17];
@@ -1601,6 +1621,11 @@ void ATARI_MD_AutotestShot(int frame) {
   if (fh < 0) return;
   Fwrite((short)fh, sizeof(head), head);
   Fwrite((short)fh, 32000L, Physbase());
+  Fclose((short)fh);
+  sprintf(name, "CHUNK%03d.RAW", frame);
+  fh = Fcreate(name, 0);
+  if (fh < 0) return;
+  Fwrite((short)fh, 64000L, bufferofs);
   Fclose((short)fh);
 }
 #endif

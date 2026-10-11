@@ -71,6 +71,18 @@ Important Current Behavior
 - C2P zoom/no-overlap logic is in `rott/atari_c2p.c`; it runs only with
   `ViewZoom 1` (off by default), as does the Accelerator's matching rule
   (`view_rect` in `atari_md.c`).
+- Palette: the game palette (play and menus) is shown with
+  `rott/atari_palette.c`, 16 colours and each colour's dither chosen
+  offline for what the game draws (`tools/rottpalette`, generated: don't
+  edit it), one table for the STE (`_VDO` cookie) and one for the ST.
+  Any other palette (matched by hash) gets the old median cut. With the
+  Accelerator both halves of the screen must agree, so the ST sends how
+  it shows each palette (16 words, a pen pair and ratio a colour) with it
+  (`MD_PAL_PENS`, firmware with `MD_CAP_PENS`): the table is ST-only, and
+  a new one needs no firmware. Firmware without it gets the plain palette
+  and does the median cut, and so does the ST then; firmware given no
+  pens (an older ST build) does too. `MDDEBUG.TXT` in autotest runs shows
+  both sides' 16 colours.
 - Atari movie playback is intentionally static-last-frame style in `rott/cin_main.c`.
   - Static behavior is now code-based constants, not `ATARI_CINEMATIC_*` flags.
 - First title flow after logo jumps to menu on Atari (`rott/rt_main.c`).

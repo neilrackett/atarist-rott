@@ -138,7 +138,7 @@ overlapping it with the next.
 | `rp/src/md_proto.c`                         | Decodes ROM3 commands in an interrupt into a queue                                                     |
 | `rp/src/md_main.c`                          | Runs the commands: level setup, world updates, frames                                                  |
 | `rp/src/rott/`                              | ROTT's renderer (engine, walls, planes, sprites, text) against a mirror of the ST's world              |
-| `rp/src/md_video.c`                         | The ST's 16-colour palette choice and dither, identical on both sides, and chunky-to-planar            |
+| `rp/src/md_video.c`                         | The ST's 16 colours and dither, as the ST says (or the old median cut), and chunky-to-planar           |
 | `rp/src/md_pack.c`                          | Level packs in flash, and the demand-loading ring                                                      |
 | `rp/src/md_music.c`                         | Music: the ST build's player (`../rott/audiolib/atari_music.c`) on a timer, the song read from the WAD |
 | `target/atarist/`                           | The 1 KB cartridge header and boot message                                                             |
@@ -166,6 +166,18 @@ takes the next step from it and writes the changed registers to the
 chip (about 1% of an 8 MHz ST). Firmware without it leaves the
 capability word 0 and the ST plays the music itself, as before.
 `ATARI_MD_MUSIC=0` builds `ROTT_ST.TOS` without this.
+
+**Palette.** The ST's HUD and the firmware's view share the ST's 16
+colours, so both must reduce ROTT's palette the same way. The ST decides:
+the game palette from a table chosen offline (`../rott/atari_palette.c`,
+see `../tools/rottpalette`), anything else by median cut. With each
+PALETTE command it sends its 16 palette words and each colour's dither, a
+pair of pens and how many of a Bayer cell's 16 pixels get the second
+(`MD_PAL_PENS`), and the firmware does the same, so a new table needs only
+a new `ROTT_ST.TOS`. Firmware that takes them says `MD_CAP_PENS`; an older
+one gets the plain palette and works out the colours by the median cut
+(`md_video.c`, `atari_c2p.c`'s ported line for line), as the ST then does
+too, and so does this firmware for an older ST build that sends none.
 
 **Frames.** Two frame buffers live in the ROM4 window. With pipelining,
 the Multi-device draws frame N while the ST copies frame N-1 and runs the

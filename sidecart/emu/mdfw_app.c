@@ -8,6 +8,7 @@
  *              Core 1 run in line, and optional frame dumps:
  *                --md-option dump=<dir>        write mdNNNNN.ppm frames
  *                --md-option dump-every=<n>    every nth frame (default 1)
+ *                --md-option chunky=<dir>      write cNNNNN_WxH.raw views
  */
 #include <stdio.h>
 
@@ -71,6 +72,22 @@ static void dump_ready_frame(void) {
       }
     }
   }
+  fclose(f);
+}
+
+/* Each view as the firmware rendered it, before its 16 colours: the
+ * 768-byte palette, then w x h pixels, for tools/rottpalette. */
+void mdfw_app_view(const uint8_t *rgb768, const uint8_t *chunky, int pitch,
+                   int w, int h) {
+  static unsigned n;
+  const char *dir = mdfw_option("chunky");
+  if (!dir) return;
+  char name[1024];
+  snprintf(name, sizeof(name), "%s/c%05u_%dx%d.raw", dir, n++, w, h);
+  FILE *f = fopen(name, "wb");
+  if (!f) return;
+  fwrite(rgb768, 1, 768, f);
+  for (int y = 0; y < h; y++) fwrite(chunky + y * pitch, 1, (size_t)w, f);
   fclose(f);
 }
 

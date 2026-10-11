@@ -126,6 +126,11 @@ void ATARI_MD_MusicVbl(void);
  * as it is while "Preparing level" is drawn by the ST). */
 int ATARI_MD_Gone(void);
 
+/* May the ST show the game palette with atari_palette.c's table? Not while
+ * an Accelerator that can't be told how (firmware without MD_CAP_PENS)
+ * shares the screen: it works the 16 colours out itself, the old way. */
+int ATARI_MD_PaletteTableOK(void);
+
 #if defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
 /* Test runs: after frame `frame` is on screen, save it as SHOTnnn.PI1 if
  * it is one of the frames compared between MD and ST runs. */
@@ -142,6 +147,7 @@ void ATARI_MD_AutotestShot(int frame);
 #define ATARI_MD_MusicPlaying() 0
 #define ATARI_MD_MusicVbl() ((void)0)
 #define ATARI_MD_Gone() 1
+#define ATARI_MD_PaletteTableOK() 1
 
 #endif
 

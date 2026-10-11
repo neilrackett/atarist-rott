@@ -11,7 +11,9 @@
  * same 16 colours and dither identically. The reduction below is
  * atari_c2p.c's (median cut, two-nearest weights, 4x4 Bayer), ported
  * line for line; atari_c2p.c's colour sort breaks ties by index so that
- * the result does not depend on either side's qsort.
+ * the result does not depend on either side's qsort. That is for ST
+ * builds before MD_PAL_PENS: newer ones say how they show the palette, and
+ * the MD does the same.
  *
  * GPL-2.0-or-later because it carries atari_c2p.c's code.
  */
@@ -267,8 +269,8 @@ static short bayer4_color(const unsigned char *weights, short numcolors,
 
 /* ------------------------------------------------------------------ */
 
-void md_video_set_palette(const uint8_t *rgb768, unsigned flags,
-                          void *scratch) {
+void md_video_set_palette(const uint8_t *rgb768, const uint16_t *words,
+                          const uint8_t *mix, unsigned flags, void *scratch) {
   S = (palette_scratch_t *)scratch;
   unsigned char *scaled = S->scaled;
   const unsigned char *colors = rgb768;
@@ -277,23 +279,34 @@ void md_video_set_palette(const uint8_t *rgb768, unsigned flags,
   const int noir = (flags & MD_PAL_NOIR) != 0;
   const int noir_dither = (flags & MD_PAL_NOIR_DITHER) != 0;
 
-  for (i = 0; i < 256 * 3; ++i) {
-    if (colors[i] > maxv) maxv = colors[i];
-  }
-  if (maxv <= 63) {
-    for (i = 0; i < 256 * 3; ++i) scaled[i] = (unsigned char)(colors[i] << 2);
-    colors = scaled;
-  }
-
-  if (noir) {
-    build_noir_palette16(palette16, s_st_colors);
+  if (words) {
+    /* As the ST shows it. */
+    memset(weights256, 0, sizeof(weights256));
+    for (i = 0; i < 16; ++i) s_st_colors[i] = words[i];
+    for (i = 0; i < 256; ++i) {
+      const unsigned k = mix[i * 2 + 1] > 16 ? 16 : mix[i * 2 + 1];
+      weights256[i][mix[i * 2] >> 4] = (unsigned char)(16 - k);
+      weights256[i][mix[i * 2] & 15] += (unsigned char)k;
+    }
   } else {
-    build_palette16(colors, palette16);
-    for (i = 0; i < 16; ++i)
-      s_st_colors[i] = stcolor(palette16[i].r, palette16[i].g, palette16[i].b);
-  }
+    for (i = 0; i < 256 * 3; ++i) {
+      if (colors[i] > maxv) maxv = colors[i];
+    }
+    if (maxv <= 63) {
+      for (i = 0; i < 256 * 3; ++i) scaled[i] = (unsigned char)(colors[i] << 2);
+      colors = scaled;
+    }
 
-  build_weights(colors, (!noir || noir_dither));
+    if (noir) {
+      build_noir_palette16(palette16, s_st_colors);
+    } else {
+      build_palette16(colors, palette16);
+      for (i = 0; i < 16; ++i)
+        s_st_colors[i] = stcolor(palette16[i].r, palette16[i].g, palette16[i].b);
+    }
+
+    build_weights(colors, (!noir || noir_dither));
+  }
 
   /* The pen c2p_1x_lorez would put at (x, y): bayer4_color with phase
    * y & 3 and px & 3 = x & 3 (the ST's 16-pixel groups start on
