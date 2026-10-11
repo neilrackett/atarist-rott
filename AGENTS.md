@@ -18,8 +18,10 @@ Build + Artifacts
 - `make shareware`: `dist/HUNTBGIN.zip`, the ROTT 1.3 shareware release as
   its installer lays it out (`SHAREWARE_DIR`, default `tmp/ROTT_DOS`: a clean
   install, not the played-in `tmp/ROTT`), every file by name. VENDOR.DOC lets
-  the shareware be passed on only whole and unmodified; this is what goes on
-  the release page (uploaded by hand: CI has no shareware).
+  the shareware be passed on only whole and unmodified; beside its files the
+  zip adds `rott/sound.rot` as `SOUND.ROT` (music and effects on for
+  `ROTT_ST.TOS` before atarist.7; DOS ROTT 1.3 deletes it, as version 14).
+  This is what goes on the release page (uploaded by hand: CI has no shareware).
 - Output: everything in `dist/` (`ROTT_ST.TOS`, the SDL builds, config files,
   the data from `tmp/ROTT`, and the firmware's `<uuid>.uf2`/`.json`)
 - Run it in EmuMD (from the host, not stcmd): `make emu` (builds with stcmd
@@ -86,8 +88,8 @@ Input + Timing Notes (Critical)
   without. On by default (`FXMode 6`); an ST without DMA sound skips them.
   The native build reads only `MusicMode`, `FXMode`, `NumVoices` and
   `FXVolume` (`ReadAtariSoundToggles`) and never writes `sound.rot`; without
-  the file (the shareware zip has none) or a key, music and effects are on
-  at the shipped file's volumes.
+  the file (an install copied from DOS may have none) or a key, music and
+  effects are on at the shipped file's volumes.
 - Music: ROTT's MIDI songs on the YM2149 (`rott/audiolib/atari_music.c`, the
   `MUSIC_` calls in `atari_music_api.c`), stepped at 50Hz from the VBL off
   the 200Hz clock; YM registers only in supervisor mode, select and write

@@ -1118,9 +1118,9 @@ void ReadAtariSoundToggles (void)
    struct stat st;
    void *buffer = NULL;
    long size = 0;
-   // On unless SOUND.ROT says otherwise, at the shipped file's volumes: the
-   // shareware zip has none (on DOS SETUP.EXE writes it), and ROTT's own
-   // 0s meant no sound at all.
+   // On unless SOUND.ROT says otherwise, at the shipped file's volumes: an
+   // install copied from DOS may have none (SETUP.EXE writes it), and
+   // ROTT's own 0s meant no sound at all.
    int parsed_music_mode = 6;
    int parsed_fx_mode = 6;
    int parsed_voices = 0; // automatic: see atari_sfx.c

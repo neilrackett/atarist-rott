@@ -193,8 +193,11 @@ sidecart:
 # the release page: the data the games use and the DOS programs with it.
 # VENDOR.DOC lets it be passed on only whole and unmodified, so this is every
 # file of a clean install, by name, never whatever a played-in folder holds.
+# Beside them, ROTT_ST.TOS's SOUND.ROT (music and effects on), a file of our
+# own as SETUP.EXE would write one: ROTT.EXE (1.3) deletes it, as version 14.
 SHAREWARE_DIR ?= tmp/ROTT_DOS
 SHAREWARE_ZIP := $(BUILDDIR)/HUNTBGIN.zip
+SHAREWARE_SOUND := $(OBJDIR)/shareware/SOUND.ROT
 SHAREWARE_FILES := $(addprefix $(SHAREWARE_DIR)/, \
 	HUNTBGIN.WAD HUNTBGIN.RTL HUNTBGIN.RTC REMOTE1.RTS \
 	DEMO1_3.DMO DEMO2_3.DMO DEMO3_3.DMO DEMO4_3.DMO \
@@ -204,9 +207,13 @@ SHAREWARE_FILES := $(addprefix $(SHAREWARE_DIR)/, \
 
 shareware: $(SHAREWARE_ZIP)
 
-$(SHAREWARE_ZIP): $(SHAREWARE_FILES) Makefile | $(BUILDDIR)
+$(SHAREWARE_ZIP): $(SHAREWARE_FILES) $(SHAREWARE_SOUND) Makefile | $(BUILDDIR)
 	$(RM) $@
-	zip -X -j -9 $@ $(SHAREWARE_FILES)
+	zip -X -j -9 $@ $(SHAREWARE_FILES) $(SHAREWARE_SOUND)
+
+$(SHAREWARE_SOUND): $(SRCDIR)/sound.rot
+	@mkdir -p $(dir $@)
+	cp $< $@
 
 .PHONY: games st sdl sdl-030 sidecart shareware
 .PHONY: FORCE rott-huntbgin rott-darkwar rott-rottcd rott-rottsite rott-dev rott-68882 stage-runtime-files atari-stage-runtime-files
