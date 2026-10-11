@@ -36,6 +36,10 @@ void md_pack_init(void);
 uint16_t md_pack_open_wad(const char *folder, const char *name,
                           uint16_t numlumps, uint32_t size, uint32_t dirofs);
 
+/* Let go of the WAD's file, which is about to be replaced (until the next
+ * md_pack_open_wad). */
+void md_pack_close_wad(void);
+
 /* True if the current pack holds every lump set in `bitset` (lumps
  * 0..numlumps-1) that the WAD has data for. */
 bool md_pack_has_all(const uint16_t *bitset, unsigned numlumps);

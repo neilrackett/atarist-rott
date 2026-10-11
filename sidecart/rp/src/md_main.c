@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "debug.h"
+#include "ff.h"
 #include "hardware/sync.h"
 #include "md_music.h"
 #include "md_pack.h"
@@ -204,6 +205,10 @@ const byte *R_LumpFixed(int lump) { return md_pack_lump_fixed(lump); }
 /* Commands                                                             */
 /* ------------------------------------------------------------------ */
 
+/* The WAD HELLO named, for a copy from the ST (WAD_WRITE). */
+static char s_wad_name[MD_HELLO_NAME_WORDS * 2 + 1];
+static void wadcopy_reset(void);
+
 static void cmd_hello(const uint16_t *w, uint32_t n) {
   char text[96];
   uint16_t err = 0;
@@ -216,6 +221,8 @@ static void cmd_hello(const uint16_t *w, uint32_t n) {
   char name[MD_HELLO_NAME_WORDS * 2 + 1];
   md_get_bytes((uint8_t *)name, b + MD_HELLO_NAME, MD_HELLO_NAME_WORDS * 2);
   name[sizeof(name) - 1] = 0;
+  memcpy(s_wad_name, name, sizeof(s_wad_name));
+  wadcopy_reset(); /* a new session: no earlier copy's state */
 
   md_music_command(MD_MUSIC_STOP, 0, false, 0); /* the WAD reopens */
   if (!s_sd_ok) {
@@ -227,7 +234,7 @@ static void cmd_hello(const uint16_t *w, uint32_t n) {
   }
   /* Music comes from the WAD, so only with it (and RAM for it). */
   status_set(MD_ST_CAPS, (md_pack_wad_ok() && md_music_ok() ? MD_CAP_MUSIC : 0) |
-                             MD_CAP_PENS);
+                             MD_CAP_PENS | (s_sd_ok ? MD_CAP_WAD_COPY : 0));
   /* A new session: the old errors are history. */
   s_errors = 0;
   status_set(MD_ST_ERRORS, 0);
@@ -248,6 +255,134 @@ static void cmd_hello(const uint16_t *w, uint32_t n) {
   s_level_state = MD_LEVEL_NONE;
   status_set(MD_ST_LEVEL_STATE, MD_LEVEL_NONE);
   DPRINTF("HELLO: %s (flags %lx)\n", text, (unsigned long)md_get32(w + 4));
+}
+
+/* ------------------------------------------------------------------ */
+/* WAD copy from the ST                                                 */
+/* ------------------------------------------------------------------ */
+
+static volatile uint16_t *s_wadcopy; /* MD_WADCOPY_OFFSET */
+static FIL s_copy;
+static bool s_copy_open;
+static uint32_t s_copy_done;
+
+/* Bytes first, state last: the ST reads the state, then how far. */
+static void wadcopy_publish(uint16_t state) {
+  s_wadcopy[MD_WC_DONE] = (uint16_t)(s_copy_done & 0xFFFFu);
+  s_wadcopy[MD_WC_DONE + 1] = (uint16_t)(s_copy_done >> 16);
+  __dmb();
+  s_wadcopy[MD_WC_STATE] = state;
+}
+
+static void wadcopy_reset(void) {
+  if (s_copy_open) {
+    /* A copy the ST stopped: its part file is no use. */
+    char tmp[48];
+    f_close(&s_copy);
+    snprintf(tmp, sizeof(tmp), "%s/WADCOPY.TMP", s_folder);
+    f_unlink(tmp);
+  }
+  s_copy_open = false;
+  s_copy_done = 0;
+  wadcopy_publish(MD_WCS_IDLE);
+}
+
+static void wadcopy_fail(const char *why) {
+  char text[96];
+  if (s_copy_open) f_close(&s_copy);
+  s_copy_open = false;
+  snprintf(text, sizeof(text), "ROTT Accelerator: %s", why);
+  write_result(text);
+  wadcopy_publish(MD_WCS_ERROR);
+  DPRINTF("WAD copy: %s at %lu\n", why, (unsigned long)s_copy_done);
+}
+
+#ifndef FF_MAX_SS
+#define FF_MAX_SS 512 /* EmuMD's FatFs; ffconf.h's, too */
+#endif
+
+/* Room for `size` bytes on the card, if FatFs can say. */
+static bool wadcopy_room(uint32_t size) {
+  DWORD clusters = 0;
+  FATFS *fs = NULL;
+  if (f_getfree("", &clusters, &fs) != FR_OK || !fs) return true;
+  return (uint64_t)clusters * fs->csize * FF_MAX_SS >= size;
+}
+
+static void cmd_wad_write(const uint16_t *w, uint32_t n) {
+  char tmp[48], path[48];
+  if (n < 6) {
+    add_error(MD_ERR_BAD_CMD);
+    return;
+  }
+  const uint32_t offset = md_get32(w), size = md_get32(w + 2);
+  const uint32_t len = md_get32(w + 4);
+  if (len > MD_CMD_MAX_BYTES || n < 6 + (len + 1u) / 2u) {
+    add_error(MD_ERR_BAD_CMD);
+    return;
+  }
+  snprintf(tmp, sizeof(tmp), "%s/WADCOPY.TMP", s_folder);
+  snprintf(path, sizeof(path), "%s/%s", s_folder, s_wad_name);
+
+  if (offset == 0) {
+    if (s_copy_open) f_close(&s_copy);
+    s_copy_open = false;
+    s_copy_done = 0;
+    if (!s_sd_ok || !s_wad_name[0]) {
+      wadcopy_fail("no SD card");
+      return;
+    }
+    /* The music reads the WAD, whose file may be replaced. */
+    md_music_command(MD_MUSIC_STOP, 0, false, 0);
+    md_pack_close_wad();
+    f_mkdir(s_folder); /* fails harmlessly if it is there */
+    f_unlink(tmp);
+    /* Short of room, the file it replaces goes first (the ST asked). */
+    if (!wadcopy_room(size)) f_unlink(path);
+    if (!wadcopy_room(size)) {
+      wadcopy_fail("SD card full");
+      return;
+    }
+    if (f_open(&s_copy, tmp, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) {
+      wadcopy_fail("cannot write to SD card");
+      return;
+    }
+    s_copy_open = true;
+    wadcopy_publish(MD_WCS_COPYING);
+  }
+  if (!s_copy_open) return; /* stopped already: the ST sees why */
+  if (offset != s_copy_done || offset + len > size) {
+    wadcopy_fail("WAD copy out of order");
+    return;
+  }
+
+  /* The view buffer is idle: there is no level while the WAD is copied. */
+  UINT bw = 0;
+  md_get_bytes(s_chunky, w + 6, len);
+  const FRESULT fr = f_write(&s_copy, s_chunky, len, &bw);
+  if (fr != FR_OK || bw != len) {
+    wadcopy_fail(fr == FR_OK ? "SD card full" : "SD card write failed");
+    return;
+  }
+  s_copy_done += len;
+  if (s_copy_done < size) {
+    wadcopy_publish(MD_WCS_COPYING);
+    return;
+  }
+
+  s_copy_open = false;
+  if (f_close(&s_copy) != FR_OK) {
+    wadcopy_fail("SD card write failed");
+    return;
+  }
+  f_unlink(path);
+  if (f_rename(tmp, path) != FR_OK) {
+    wadcopy_fail("cannot rename the copy");
+    return;
+  }
+  write_result("ROTT Accelerator: WAD copied");
+  wadcopy_publish(MD_WCS_DONE);
+  DPRINTF("WAD copy: %s, %lu bytes\n", path, (unsigned long)size);
 }
 
 static void pack_progress(unsigned percent) {
@@ -543,6 +678,9 @@ static void dispatch(const md_cmd_t *c) {
     case MD_CMD_ECHO:
       cmd_echo(w, n);
       break;
+    case MD_CMD_WAD_WRITE:
+      cmd_wad_write(w, n);
+      break;
     default:
       add_error(MD_ERR_BAD_CMD);
       break;
@@ -560,6 +698,8 @@ void md_main_init(uintptr_t rom_base, const char *folder, bool sd_ok) {
   s_folder = folder;
   s_sd_ok = sd_ok;
   s_status = (volatile uint16_t *)(s_rom_base + MD_STATUS_OFFSET);
+  s_wadcopy = (volatile uint16_t *)(s_rom_base + MD_WADCOPY_OFFSET);
+  wadcopy_reset();
 
   status_set(MD_ST_MAGIC, MD_STATUS_MAGIC);
   status_set(MD_ST_PROTO, MD_PROTOCOL_VERSION);

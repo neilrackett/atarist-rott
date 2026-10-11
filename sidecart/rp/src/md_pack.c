@@ -149,6 +149,11 @@ static void wad_close(void) {
 
 bool md_pack_wad_ok(void) { return s_wad_ok; }
 
+void md_pack_close_wad(void) {
+  wad_close();
+  s_wad_ok = false;
+}
+
 bool md_pack_wad_lump(int lump, uint32_t *pos, uint32_t *size) {
   uint8_t e[16];
   if (!s_wad_ok || lump < 0 || lump >= (int)s_wad_numlumps) return false;

@@ -217,6 +217,12 @@ ROTT Accelerator (MD/ROTT in the source; SidecarTridge Multi-device renderer)
   `Super(0L)` calls in that stretch, and supervisor exits go through
   `sidecart_md_super_end` (GEMDOS `Super(ssp)` only works at the same stack depth).
 - Wire protocol: `sidecart/include/rott_md_protocol.h` (both sides; never hard-code offsets).
+- WAD copy: when HELLO finds the card's WAD missing or different, the ST
+  sends its own (`MD_CMD_WAD_WRITE`, firmware with `MD_CAP_WAD_COPY`;
+  Esc cancels, read through TOS, which still has the keyboard at
+  startup), written to `/rott/WADCOPY.TMP` and renamed, then HELLOs
+  again. Not in autotest or logic-check builds. Startup text ends lines in a bare `\n` and TOS
+  doesn't wrap, so new startup lines start with `\r` and fit 40 columns.
 - Firmware: `make -C sidecart build` (needs `PICO_TOOLCHAIN_PATH`); tests:
   `make -C sidecart tests` (PINGTEST/UPTEST), `make -C sidecart emu`,
   `make -C sidecart hatari`, `sidecart/tests/emu/run-hatari.sh`.

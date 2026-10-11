@@ -115,7 +115,7 @@ See the [ROTT Accelerator readme](sidecart/README.md) for installation, testing 
 
 - Download [`HUNTBGIN.zip`](https://github.com/neilrackett/atarist-rott/releases/download/latest/HUNTBGIN.zip), the ROTT 1.3 shareware release (plus a `SOUND.ROT` with music and sound effects on), from the [releases page](https://github.com/neilrackett/atarist-rott/releases) and unzip it into a folder on your Atari's hard disk (or install the [shareware from archive.org](https://archive.org/details/rott_shareware) for DOS using DOSBox and copy the installation folder across)
 - Copy `ROTT_ST.TOS`, `ROTT_SDL.TOS` and/or `ROTT_030.TOS` to the the same folder (the 030 build runs 20-30% faster on TT/Falcon)
-- Optionally, install the ROTT Accelerator on your SidecarTridge Multi-device (see the [ROTT Accelerator readme](sidecart/README.md))
+- Optionally, install the ROTT Accelerator on your SidecarTridge Multi-device (see the [ROTT Accelerator readme](sidecart/README.md)); `ROTT_ST.TOS` copies the WAD to its SD card for you
 - Run `ROTT_ST.TOS`, `ROTT_SDL.TOS` or `ROTT_030.TOS`
 - Enjoy!
 

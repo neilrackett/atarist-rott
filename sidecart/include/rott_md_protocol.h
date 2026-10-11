@@ -139,6 +139,19 @@
 #define MD_RESULT_OFFSET 0xF100
 #define MD_RESULT_SIZE 256
 
+/* WAD copy (MD_CAP_WAD_COPY, MD_CMD_WAD_WRITE): how far it has got. */
+#define MD_WADCOPY_OFFSET 0xF200
+#define MD_WC_STATE 0 /* MD_WCS_*                                         */
+#define MD_WC_DONE 1  /* 2 words: bytes written so far, low word first    */
+#define MD_WC_WORDS 3
+#define MD_WCS_IDLE 0
+#define MD_WCS_COPYING 1
+#define MD_WCS_DONE 2  /* in place under HELLO's name: send HELLO again  */
+#define MD_WCS_ERROR 3 /* stopped; why is in the result text              */
+
+#if (MD_WADCOPY_OFFSET < MD_RESULT_OFFSET + MD_RESULT_SIZE)
+#error "the WAD copy's progress overlaps the result text"
+#endif
 #if (MD_YM_NEWEST_OFFSET < MD_READY_OFFSET + 2) || \
     (MD_YM_SLOT_OFFSET < MD_YM_NEWEST_OFFSET + 2) || \
     (MD_YM_SLOT_OFFSET + MD_YM_SLOTS * MD_YM_WORDS * 2 > MD_RESULT_OFFSET)
@@ -189,6 +202,7 @@
  * job itself. */
 #define MD_CAP_MUSIC 0x0001 /* MD_CMD_MUSIC: plays songs from the WAD */
 #define MD_CAP_PENS 0x0002  /* PALETTE takes MD_PAL_PENS */
+#define MD_CAP_WAD_COPY 0x0004 /* MD_CMD_WAD_WRITE: the ST copies its WAD */
 
 /* MD_ST_SPOTVIS_X: the columns (x) that hold any SPOTVIS bits for the
  * newest frame or the one before, so the ST need copy only those; set
@@ -295,6 +309,17 @@
 #define MD_MUSIC_PAUSE 2
 #define MD_MUSIC_CONTINUE 3
 #define MD_MUSIC_VOLUME 4
+
+/* WAD_WRITE (write, MD_CAP_WAD_COPY). d3 = offset, d4 = the WAD's size,
+ * d5 = bytes in this chunk (at most MD_CMD_MAX_BYTES). Buffer: those bytes
+ * of the ST's WAD, sent in order; offset 0 starts a copy. The MD writes
+ * them to a temporary file in its folder and after the last renames it to
+ * HELLO's name, replacing what was there; progress at MD_WADCOPY_OFFSET.
+ * Writing to the SD card takes the MD longer than a chunk takes to send,
+ * so the ST sends one only while MD_WC_DONE is at most MD_WC_AHEAD chunks
+ * behind it, which keeps the command queue from filling. */
+#define MD_CMD_WAD_WRITE 0x004B
+#define MD_WC_AHEAD 2
 
 /* ------------------------------------------------------------------ */
 /* HELLO buffer                                                         */

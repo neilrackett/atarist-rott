@@ -317,6 +317,170 @@ static int read_wad_header(const char *name, long *numlumps, long *dirofs,
   return 1;
 }
 
+/* HELLO, and the firmware's answer in `result` and md_caps: 0, or the
+ * transport's failure. */
+static int say_hello(const unsigned short *hello, long flags, char *result,
+                     int size) {
+  int rc;
+  sidecart_md_bus_begin();
+  md_command_timeout = MD_TIMEOUT_DETECT;
+  rc = sidecart_md_write(MD_CMD_HELLO, hello, MD_HELLO_WORDS * 2,
+                         (long)MD_HELLO_MAGIC, (long)MD_PROTOCOL_VERSION,
+                         flags);
+  md_command_timeout = MD_TIMEOUT_NORMAL;
+  if (rc == 0) {
+    /* The firmware answers from its main loop, a moment after the ack. */
+    long t0 = I_GetTimeMS();
+    while (MD_STATUS[MD_ST_LAST_CMD] != MD_CMD_HELLO &&
+           I_GetTimeMS() - t0 < 1000) {
+    }
+  }
+  sidecart_md_result(result, size);
+  md_caps = MD_STATUS[MD_ST_CAPS]; /* 0 from an older firmware */
+  sidecart_md_bus_end();
+  return rc;
+}
+
+/* Test builds keep the card as it is. */
+#if (ATARI_MD_AUTOTEST > 0) || (ATARI_LOGIC_CHECK > 0)
+#define MD_WAD_COPY 0
+#else
+#define MD_WAD_COPY 1
+#endif
+
+#if MD_WAD_COPY
+/* The copy's state and how far it has got: the high word read twice, as
+ * the MD may write between the two. */
+static int wadcopy_state(unsigned long *done) {
+  volatile const unsigned short *wc =
+      (volatile const unsigned short *)(MD_ROM4_BASE + MD_WADCOPY_OFFSET);
+  unsigned short state, hi, lo;
+  sidecart_md_bus_begin();
+  do {
+    state = wc[MD_WC_STATE];
+    hi = wc[MD_WC_DONE + 1];
+    lo = wc[MD_WC_DONE];
+  } while (hi != wc[MD_WC_DONE + 1]);
+  sidecart_md_bus_end();
+  *done = ((unsigned long)hi << 16) | lo;
+  return state;
+}
+
+/* Waits until the MD has written `need` bytes: 1, or 0 if it stopped, or
+ * made no progress for 30 seconds (the first write may wait for FatFs to
+ * count the card's free space). */
+static int wadcopy_wait(long need, int *state) {
+  unsigned long done, last = 0;
+  long t = I_GetTimeMS();
+  for (;;) {
+    *state = wadcopy_state(&done);
+    if (*state == MD_WCS_ERROR) return 0;
+    if ((long)done >= need) return 1;
+    if (done != last) {
+      last = done;
+      t = I_GetTimeMS();
+    } else if (I_GetTimeMS() - t > 30000) {
+      return 0;
+    }
+  }
+}
+
+/* Copies the ST's WAD to the Accelerator's SD card (MD_CMD_WAD_WRITE),
+ * with its progress; Esc cancels (TOS still has the keyboard at startup:
+ * ROTT takes it in GraphicsMode). 1 once it is in place. */
+static int copy_wad(const char *name, long size) {
+  static unsigned char buf[16384];
+  char line[64];
+  long fh, offset = 0, t0 = I_GetTimeMS();
+  int shown = -1, state = MD_WCS_IDLE;
+
+  fh = Fopen(name, 0);
+  if (fh < 0) return 0;
+  while (Cconis()) Cnecin(); /* keys pressed while it loaded */
+  while (offset < size) {
+    const long got = Fread((short)fh, sizeof(buf), buf);
+    long i;
+    int percent;
+    if (got <= 0) {
+      Cconws("\r\nCannot read the WAD\r\n");
+      goto stop;
+    }
+    for (i = 0; i < got; i += MD_CMD_MAX_BYTES) {
+      const long at = offset + i;
+      const long len = got - i < MD_CMD_MAX_BYTES ? got - i : MD_CMD_MAX_BYTES;
+      if (!wadcopy_wait(at - MD_WC_AHEAD * MD_CMD_MAX_BYTES, &state)) goto failed;
+      if (sidecart_md_write(MD_CMD_WAD_WRITE, buf + i, (int)len, at, size, len)) {
+        Cconws("\r\nROTT Accelerator not answering\r\n");
+        goto stop;
+      }
+    }
+    offset += got;
+    percent = (int)((offset >> 10) * 100 / ((size >> 10) + 1));
+    if (percent != shown) {
+      sprintf(line, "\rCopying to SD (Esc to cancel): %d%%", percent);
+      Cconws(line);
+      shown = percent;
+    }
+    if (Cconis() && (Cnecin() & 0xFF) == 27) {
+      Cconws("\r\nCancelled\r\n");
+      goto stop;
+    }
+  }
+  {
+    /* The last chunks, then the rename: DONE, as the count comes first. */
+    unsigned long done;
+    const long t = I_GetTimeMS();
+    do {
+      state = wadcopy_state(&done);
+    } while (state != MD_WCS_DONE && state != MD_WCS_ERROR &&
+             I_GetTimeMS() - t < 30000);
+  }
+  if (state != MD_WCS_DONE) goto failed;
+  Fclose((short)fh);
+  sprintf(line, "\rCopied in %ld s                     \r\n",
+          (I_GetTimeMS() - t0 + 500) / 1000);
+  Cconws(line);
+  return 1;
+
+failed:
+  if (state == MD_WCS_ERROR) {
+    sidecart_md_result(line, sizeof(line));
+  } else {
+    strcpy(line, "ROTT Accelerator stopped writing");
+  }
+  Cconws("\r\n");
+  Cconws(line);
+  Cconws("\r\n");
+stop:
+  Fclose((short)fh);
+  return 0;
+}
+#endif
+
+/* HELLO found no SD card, or the card without the WAD or with another:
+ * says so, and copies the ST's WAD there (firmware with MD_CAP_WAD_COPY).
+ * 1 once it is copied. */
+static int wad_copy(unsigned short errors, const char *name, long size) {
+  char line[48];
+  /* In 40 columns from the start of a line: the startup's lines end in a
+   * bare \n, and TOS doesn't wrap (the firmware's text is longer). */
+  fflush(stdout);
+  if (errors & MD_ERR_NO_SD) {
+    Cconws("\rROTT Accelerator: no SD card\r\n");
+    return 0;
+  }
+  sprintf(line, (errors & MD_ERR_NO_WAD) ? "\rROTT Accelerator: %s missing\r\n"
+                                         : "\rAccelerator's %s differs\r\n",
+          name);
+  Cconws(line);
+#if MD_WAD_COPY
+  if (md_caps & MD_CAP_WAD_COPY) return copy_wad(name, size);
+#else
+  (void)size;
+#endif
+  return 0;
+}
+
 void ATARI_MD_Init(void) {
 #if (SHAREWARE)
   static const char wadname[] = "HUNTBGIN.WAD";
@@ -327,6 +491,7 @@ void ATARI_MD_Init(void) {
   char result[80];
   long numlumps, dirofs, size;
   long flags = 0;
+  unsigned short errors;
   int rc;
 
   atari_md_active = 0;
@@ -356,22 +521,7 @@ void ATARI_MD_Init(void) {
   strncpy((char *)(hello + MD_HELLO_NAME), wadname, MD_HELLO_NAME_WORDS * 2 - 1);
   if (ATARI_NOIR) flags |= MD_HELLO_NOIR;
 
-  sidecart_md_bus_begin();
-  md_command_timeout = MD_TIMEOUT_DETECT;
-  rc = sidecart_md_write(MD_CMD_HELLO, hello, sizeof(hello),
-                         (long)MD_HELLO_MAGIC, (long)MD_PROTOCOL_VERSION,
-                         flags);
-  md_command_timeout = MD_TIMEOUT_NORMAL;
-  if (rc == 0) {
-    /* The firmware answers from its main loop, a moment after the ack. */
-    long t0 = I_GetTimeMS();
-    while (MD_STATUS[MD_ST_LAST_CMD] != MD_CMD_HELLO &&
-           I_GetTimeMS() - t0 < 1000) {
-    }
-  }
-  sidecart_md_result(result, sizeof(result));
-  md_caps = MD_STATUS[MD_ST_CAPS]; /* 0 from an older firmware */
-  sidecart_md_bus_end();
+  rc = say_hello(hello, flags, result, sizeof(result));
   md_mste = is_megaste();
 
   if (rc != 0) {
@@ -384,10 +534,23 @@ void ATARI_MD_Init(void) {
            (unsigned)MD_STATUS[MD_ST_PROTO], (unsigned)MD_PROTOCOL_VERSION);
     return;
   }
-  if (MD_STATUS[MD_ST_ERRORS] &
-      (MD_ERR_NO_SD | MD_ERR_NO_WAD | MD_ERR_WAD_MISMATCH)) {
-    printf("%s\nUsing the ST renderer\n", result);
-    return;
+  errors = MD_STATUS[MD_ST_ERRORS] &
+           (MD_ERR_NO_SD | MD_ERR_NO_WAD | MD_ERR_WAD_MISMATCH);
+  if (errors) {
+    if (wad_copy(errors, wadname, size)) {
+      rc = say_hello(hello, flags, result, sizeof(result));
+      errors = MD_STATUS[MD_ST_ERRORS] &
+               (MD_ERR_NO_SD | MD_ERR_NO_WAD | MD_ERR_WAD_MISMATCH);
+      if (rc) {
+        printf("ROTT Accelerator not answering\n");
+      } else if (errors) {
+        printf("%s\n", result);
+      }
+    }
+    if (rc || errors) {
+      printf("Using the ST renderer\n");
+      return;
+    }
   }
   md_blit_init();
   printf("%s%s\n", result, md_blit_ok ? " (blitter)" : "");

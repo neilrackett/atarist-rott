@@ -28,7 +28,8 @@ shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
 2. Copy both files into `/apps` on the Multi-device's microSD card.
 3. Copy `HUNTBGIN.WAD` into `/rott` on the same card. It must be the same
    file the ST uses: the firmware checks its size and directory against
-   the ST's copy and refuses a different one.
+   the ST's copy and refuses a different one. Or leave it out:
+   `ROTT_ST.TOS` copies its own there the first time (step 5).
 4. On the Booster screen, press ESC for the app list and select ROTT
    Accelerator. The ST restarts and prints this during boot, with the
    firmware's version (such as `v1.4.0-beta.4`), and `not responding` in
@@ -45,8 +46,18 @@ shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
 
 5. Run `ROTT_ST.TOS` from disk as normal. At startup it prints
    `ROTT Accelerator <version>` when it will use the Multi-device, or the
-   reason it will not, e.g. `ROTT Accelerator: /rott/HUNTBGIN.WAD missing`
-   followed by `Using the ST renderer`.
+   reason it will not, e.g. `ROTT Accelerator: HUNTBGIN.WAD missing`
+   followed by `Using the ST renderer`. With firmware v1.4.0-beta.7 or
+   later, a missing or different WAD on the card is replaced by the ST's
+   instead:
+
+   ```
+   ROTT Accelerator: HUNTBGIN.WAD missing
+   Copying to SD (Esc to cancel): 42%
+   ```
+
+   It takes under a minute; then the game starts with the Multi-device
+   as usual. Esc cancels the copy, and the game uses the ST renderer.
 
 To go back to Booster, power on the ST while holding the SELECT button on
 the Multi-device.
@@ -166,6 +177,17 @@ takes the next step from it and writes the changed registers to the
 chip (about 1% of an 8 MHz ST). Firmware without it leaves the
 capability word 0 and the ST plays the music itself, as before.
 `ATARI_MD_MUSIC=0` builds `ROTT_ST.TOS` without this.
+
+**WAD copy.** When HELLO finds the WAD missing from the card, or
+different from the ST's, firmware that says `MD_CAP_WAD_COPY` is sent the
+ST's: the ST sends it in 2 KB `MD_CMD_WAD_WRITE` commands, in order, and
+the firmware writes them to `/rott/WADCOPY.TMP` (making `/rott` if need
+be), then renames that to the WAD's name, replacing what was there; a
+copy stopped part way leaves only the temporary file, deleted at the next
+HELLO. Writing to the card takes longer than sending, so the ST sends a
+chunk only while the firmware's count of bytes written
+(`MD_WADCOPY_OFFSET`) is at most two behind it, keeping the four-slot
+command queue from filling. Then the ST says HELLO again.
 
 **Palette.** The ST's HUD and the firmware's view share the ST's 16
 colours, so both must reduce ROTT's palette the same way. The ST decides:
