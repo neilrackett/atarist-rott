@@ -23,14 +23,15 @@ You need a SidecarTridge Multi-device with a microSD card, and the
 shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
 `REMOTE1.RTS` next to `ROTT_ST.TOS` on the ST, as usual).
 
-1. Build the firmware (`make -C sidecart build`, see below) or take the
-   `.uf2` and `.json` from `dist/`.
-2. Copy both files into `/apps` on the Multi-device's microSD card.
-3. Copy `HUNTBGIN.WAD` into `/rott` on the same card. It must be the same
+1. Install ROTT Accelerator from the Multi-device's app store in Booster.
+   Or install it manually: build the firmware (`make -C sidecart build`,
+   see below) or take the `.uf2` and `.json` from `dist/`, and copy both
+   files into `/apps` on the Multi-device's microSD card.
+2. Copy `HUNTBGIN.WAD` into `/rott` on the same card. It must be the same
    file the ST uses: the firmware checks its size and directory against
    the ST's copy and refuses a different one. Or leave it out:
-   `ROTT_ST.TOS` copies its own there the first time (step 5).
-4. On the Booster screen, press ESC for the app list and select ROTT
+   `ROTT_ST.TOS` copies its own there the first time (step 4).
+3. On the Booster screen, press ESC for the app list and select ROTT
    Accelerator. The ST restarts and prints this during boot, with the
    firmware's version (such as `v1.4.0-beta.4`), or `ROTT Accelerator not
    responding` in place of the first line if the firmware isn't up:
@@ -44,7 +45,7 @@ shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
 
    ```
 
-5. Run `ROTT_ST.TOS` from disk as normal. At startup it prints
+4. Run `ROTT_ST.TOS` from disk as normal. At startup it prints
    `ROTT Accelerator <version>` when it will use the Multi-device, or the
    reason it will not, e.g. `ROTT Accelerator: HUNTBGIN.WAD missing`
    followed by `Using the ST renderer`. With firmware v1.4.0-beta.7 or

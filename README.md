@@ -46,15 +46,15 @@ To achieve this, optimisations include:
 - Distant moving walls, elevator disks and idle enemies out of sight are updated less often
 - And more!
 
-| Model    | Music | SFX | Typical FPS |
-| -------- | ----- | --- | ----------- |
-| ST       | ✅    | ❌  | 2-3         |
-| STE      | ✅    | ✅  | 2-3         |
-| Mega STE | ✅    | ✅  | 3-5         |
+| Model    | Music | SFX | Native FPS | ROTT Accelerator FPS |
+| -------- | ----- | --- | ---------- | -------------------- |
+| ST       | ✅    | ❌  | 2          | 17                   |
+| STE      | ✅    | ✅  | 2          | 17                   |
+| Mega STE | ✅    | ✅  | 3          | 30                   |
 
-So, in terms of raw FPS it's 2-3x faster than the SDL build, which is great to see, but not quite as playable as I would like. Please feel free to fork it and send me a PR if you think you can squeeze a few more FPS out of it!
+On its own it runs up to twice as fast as the SDL build, though the game slows down to keep up. With the ROTT Accelerator it's up to 17 times as fast and the game runs at full speed, with a full-size view at high detail.
 
-FPS based on running ROTT with automatic detail selection enabled.
+Native FPS was recorded at the smallest view size (80x48, zoomed 4x with `ViewZoom 1`) and low detail, and ROTT Accelerator FPS at the default view size (320x168) and high detail.
 
 Music plays ROTT's MIDI songs on the ST's own sound chip, so it works on any ST. Set `MusicMode` to `0` in `SOUND.ROT` to turn it off, or `MusicVolume` (0-255) to change its volume. With the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device) (firmware v1.4.0-beta.4 or later), the Multi-device plays the songs and your ST just copies the notes to its sound chip, which gives an 8MHz ST about 7% of its time back.
 
@@ -64,15 +64,15 @@ Sound effects use the STE's DMA sound, so they need an STE or Mega STE (an ST ju
 
 <img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/1558c670-be05-427a-b1ce-1ee767a4870e" /> <img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/17067577-e151-4d6d-a9c6-69a1ef9d9837" />
 
-`ROTT_SDL.TOS` and `ROTT_030.TOS` use the Simple DirectMedia Layer (SDL) framework, patched to support Atari ST low-res, to bring ROTT to the Atari ST, TT & Falcon with a minimal number of tweaks and performance optimisations to retain as much of the game's original look and feel as possible, including intro videos and menu animations. TT screenshots shown.
+`ROTT_SDL.TOS` and `ROTT_030.TOS` use the Simple DirectMedia Layer (SDL) framework to bring ROTT to the Atari ST, TT & Falcon with a minimal number of tweaks and performance optimisations to retain as much of the game's original look and feel as possible, including intro videos and menu animations. TT screenshots shown.
 
 | Model    | Colours        | Music | SFX | Typical FPS |
 | -------- | -------------- | ----- | --- | ----------- |
-| ST       | 16 (greyscale) | ✅    | ❌  | 1-2         |
-| STE      | 16 (greyscale) | ✅    | ✅  | 1-2         |
-| Mega STE | 16 (greyscale) | ✅    | ✅  | 2-3         |
-| TT       | 256            | ✅    | ✅  | 12-15       |
-| Falcon   | 256            | ✅    | ✅  | 10-12       |
+| ST       | 16 (greyscale) | ✅    | ❌  | 1           |
+| STE      | 16 (greyscale) | ✅    | ✅  | 1           |
+| Mega STE | 16 (greyscale) | ✅    | ✅  | 2           |
+| TT       | 256            | ✅    | ✅  | 12          |
+| Falcon   | 256            | ✅    | ✅  | 10          |
 
 FPS based on running ROTT with automatic detail selection enabled. Music and sound are still WIP, so I recommend switching both off in `SDLSOUND.ROT` for now.
 
@@ -90,7 +90,7 @@ As well as taking the load off the ST, it brings back some of what the ST versio
 
 `ROTT_ST.TOS` looks for the ROTT Accelerator when it starts and falls back to the ST renderer if it isn't there, so there's still only one version to install. While the Accelerator is rendering, a small yellow lightning bolt shows on the bottom status bar.
 
-See the [ROTT Accelerator readme](sidecart/README.md) for installation, testing and build instructions.
+It can be installed from the SidecarTridge Multi-device app store or manually: see the [ROTT Accelerator readme](sidecart/README.md) for installation, testing and build instructions.
 
 ## Gamepads (Xpad)
 
