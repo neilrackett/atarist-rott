@@ -127,7 +127,7 @@ The firmware needs the Arm GNU toolchain and the submodules
 built with `stcmd` (atarist-toolkit-docker) as the game is.
 
 ```sh
-export PICO_TOOLCHAIN_PATH=/path/to/arm-none-eabi/bin
+export PICO_TOOLCHAIN_PATH=/path/to/arm-none-eabi/bin  # Arm GNU Toolchain 15.2.Rel1, as CI
 make -C sidecart build     # release firmware -> dist/<uuid>.uf2 + .json
 make -C sidecart debug     # debug firmware (serial console), bumps the patch version
 make -C sidecart tests     # PINGTEST.TOS, UPTEST.TOS in sidecart/tests/

@@ -4,16 +4,14 @@
 
 VERSION := $(shell cat version.txt)
 
-# GEMDOS date and time of the build, for the cartridge header
-YEAR = $(shell date +'%Y')
-MONTH = $(shell date +'%-m')
-DAY = $(shell date +'%-d')
+# GEMDOS date and time in the cartridge header: fixed, so that two builds of
+# the same source are the same firmware (TOS ignores them). The Mega STE's
+# launch, March 1991 (no source gives the day): 1 March 1991, 00:00.
+YEAR = 1991
+MONTH = 3
+DAY = 1
 GEMDOS_DATE_FORMATTED := $(shell echo "$$(($(YEAR) - 1980 << 9 | $(MONTH) << 5 | $(DAY)))")
-HOUR = $(shell date +'%-H')
-MINUTE = $(shell date +'%-M')
-SECOND = $(shell date +'%-S')
-HALVED_SECOND = $(shell echo "$$(( $(SECOND) / 2 ))")
-GEMDOS_TIME_FORMATTED := $(shell echo "$$(( $(HOUR) << 11 | $(MINUTE) << 5 | $(HALVED_SECOND) ))")
+GEMDOS_TIME_FORMATTED := 0
 
 SOURCES_DIR = ./src
 BUILD_DIR = ./build

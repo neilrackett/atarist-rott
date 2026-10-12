@@ -50,7 +50,15 @@ Build + Artifacts
   is also the fix if `latest` gets moved by hand. Documentation-only
   changes (`.md` files, `doc/`, `COPYING`, `LICENSE`) run neither workflow.
   The firmware ships `sidecart/version.txt` as it is, so bump it by hand
-  when it changes.
+  when it changes. Two builds of the same source on the same machine are
+  byte-identical, wherever the repository is: the cartridge header's date
+  is fixed at the Mega STE's launch, 1 March 1991, the binary info has no
+  build date (`PICO_NO_BI_PROGRAM_BUILD_DATE`) and source paths are mapped
+  (`-ffile-prefix-map`); so `target_firmware.h` only changes with the
+  firmware. CI uses Arm GNU Toolchain 15.2.Rel1 (pinned by version and
+  checksum in both workflows), as locally, but its firmware still differs
+  from a Mac's: CMake 3.28 (Ubuntu's) links the objects in another order
+  than CMake 4.x, so functions land elsewhere.
 
 Current Makefile Defaults
 

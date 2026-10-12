@@ -153,8 +153,14 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     settings
 )
 
+# No build date in the binary info (pico-sdk's __DATE__), and source paths
+# relative to the repository, so two builds of the same source are the same
+# firmware wherever they are made (with the same toolchain).
 target_compile_definitions(${PROJECT_NAME} PRIVATE
-        PICO_STACK_SIZE=0x1000 PICO_CORE1_STACK_SIZE=0x800)
+        PICO_STACK_SIZE=0x1000 PICO_CORE1_STACK_SIZE=0x800
+        PICO_NO_BI_PROGRAM_BUILD_DATE=1)
+target_compile_options(${PROJECT_NAME} PRIVATE
+        -ffile-prefix-map=${ROTT_ROOT}=.)
 
 # Link custom memmap with reserved memory for ROMs
 set_target_properties(${PROJECT_NAME} PROPERTIES
