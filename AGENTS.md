@@ -127,6 +127,12 @@ Input + Timing Notes (Critical)
   In play it sets `buttonpoll[]` and `JX`/`JY` from `PollControls`; outside play
   (menus, key waits) it injects keys from `doEvents`. Only providers that read
   hardware work: the IKBD example drivers hook TOS, which our ACIA handler bypasses.
+  Rumble (`ATARI_XpadRumble(low, high, vbls)`, provider with
+  `XPAD_CAP_RUMBLE`, e.g. COMpad): firing, damage, explosions near the
+  player, moving walls, dying. A VBL routine (atari_vbl.c) counts the
+  motors down and writes the request area only on a change (COMpad
+  sends each over a 200 bytes/s link), so a stalled loop can't leave
+  one running, and the terminate vector stops them on any exit.
 
 Performance Notes
 

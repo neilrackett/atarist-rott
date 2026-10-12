@@ -16,6 +16,9 @@ void ATARI_XpadPump(void);
  * left stick's turning and movement (just before PollMove). */
 void ATARI_XpadButtons(void);
 void ATARI_XpadMove(void);
+/* Rumble pad 0's low and high frequency motors (0-255) for `vbls`
+ * vertical blanks, if its provider can and the game is in play. */
+void ATARI_XpadRumble(int low, int high, int vbls);
 
 /* modexlib.c: a key going down or up, as if from the keyboard. */
 void ATARI_InjectKey(int scancode, int down);

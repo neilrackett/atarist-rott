@@ -49,6 +49,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //MED
 #include "memcheck.h"
 #include "atari_md.h"
+#include "atari_xpad.h"
 
 /*=============================================================================
 
@@ -3028,7 +3029,12 @@ void Teleport(elevator_t*eptr,int destination)
 			 MakeLastInArea (temp);
 			 }
 		 if (temp == player)
+			{
 			SHAKETICS = 10;
+#if defined(ATARI_NATIVE)
+			ATARI_XpadRumble(160, 0, 10); /* shoved by a moving wall */
+#endif
+			}
 		}
 	}
 

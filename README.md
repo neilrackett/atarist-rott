@@ -96,6 +96,8 @@ See the [ROTT Accelerator readme](sidecart/README.md) for installation, testing 
 
 `ROTT_ST.TOS` also plays with a gamepad through [Xpad](https://downloads.neilrackett.com/atarist-rott), with analogue turning and movement on the left stick. It needs an Xpad driver that reads the pad's hardware directly, such as the STE enhanced port driver or a cartridge-port adapter: the Xpad joystick and keyboard drivers cannot work here, because this version reads the keyboard itself.
 
+With a driver that can drive the pad's motors, such as [COMpad](https://github.com/neilrackett/pico-compad) on the modem port, the pad rumbles when you fire (a buzz for the guns, a kick for the missile weapons), take damage (harder for bigger hits), are caught in an explosion or shoved by a moving wall, and when you die.
+
 | Pad               | In the game              | In menus |
 | ----------------- | ------------------------ | -------- |
 | Left stick, D-pad | Turn and move            | Move     |
