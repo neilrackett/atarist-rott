@@ -470,7 +470,7 @@ static int wad_copy(unsigned short errors, const char *name, long size) {
     return 0;
   }
   sprintf(line, (errors & MD_ERR_NO_WAD) ? "\rROTT Accelerator: %s missing\r\n"
-                                         : "\rAccelerator's %s differs\r\n",
+                                         : "\rROTT Accelerator: wrong %s\r\n",
           name);
   Cconws(line);
 #if MD_WAD_COPY
@@ -505,7 +505,7 @@ void ATARI_MD_Init(void) {
   }
 
   if (!read_wad_header(wadname, &numlumps, &dirofs, &size)) {
-    printf("ROTT Accelerator: cannot read %s\n", wadname);
+    printf("ROTT Accelerator: no WAD to copy\nUsing the ST renderer\n");
     return;
   }
   md_numlumps = (int)numlumps;
