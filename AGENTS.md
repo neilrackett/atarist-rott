@@ -56,7 +56,8 @@ Build + Artifacts
   build date (`PICO_NO_BI_PROGRAM_BUILD_DATE`) and source paths are mapped
   (`-ffile-prefix-map`); so `target_firmware.h` only changes with the
   firmware. CI uses Arm GNU Toolchain 15.2.Rel1 (pinned by version and
-  checksum in both workflows), as locally, but its firmware still differs
+  checksum in `.github/actions/pico-toolchain`, which both workflows
+  use), as locally, but its firmware still differs
   from a Mac's: CMake 3.28 (Ubuntu's) links the objects in another order
   than CMake 4.x, so functions land elsewhere.
 
@@ -244,11 +245,11 @@ ROTT Accelerator (MD/ROTT in the source; SidecarTridge Multi-device renderer)
   Esc cancels, read through TOS, which still has the keyboard at
   startup), written to `/rott/WADCOPY.TMP` and renamed, then HELLOs
   again. Not in autotest or logic-check builds.
-- Startup text: TOS's console needs `\r\n` and libcmini writes a bare
-  `\n`, so the native build's `printf` is `atari_printf` (forced on every
-  C file with `-include rott/atari_printf.h`), which adds the `\r`.
-  Output that bypasses it (`Cconws`) ends lines in `\r\n` itself. TOS
-  doesn't wrap: keep startup lines within 40 columns.
+- Startup text: TOS's console needs `\r\n`. libcmini's `printf` sends
+  one for each `\n`, but GCC turns a constant `printf("...\n")` into
+  `puts()`, which doesn't, so the native build has `-fno-builtin-printf`
+  (and `-fprintf`). Print through `printf`, not `puts`, `putchar` or
+  `Cconws`. TOS doesn't wrap: keep startup lines within 40 columns.
 - Firmware: `make -C sidecart build` (needs `PICO_TOOLCHAIN_PATH`); tests:
   `make -C sidecart tests` (PINGTEST/UPTEST), `make -C sidecart emu`
   (host self-tests: the command protocol and the level pack's on-demand

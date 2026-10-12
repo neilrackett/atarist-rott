@@ -12,6 +12,10 @@ void atari_c2p_set_palette(const unsigned char *colors);
  * 16 palette words, and for each colour (a << 4) | b and k, k of a Bayer
  * cell's 16 thresholds getting pen b and the rest pen a (MD_PAL_PENS). */
 void atari_c2p_pens(unsigned short *words, unsigned char (*mix)[2]);
+/* Whether the game palette may come from atari_palette.c's table (it may
+ * at first): not while an Accelerator that can't be told how (firmware
+ * without MD_CAP_PENS) shares the screen. The next palette follows it. */
+void atari_c2p_use_table(int on);
 void atari_c2p_set_fast_mode(int enable);
 void atari_c2p_screen(unsigned char *out, const unsigned char *in, int zoom, int center_x, int center_y,
                       int view_x, int view_y, int view_w, int view_h,

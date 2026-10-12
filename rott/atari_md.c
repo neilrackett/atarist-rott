@@ -90,7 +90,6 @@ extern int CalcRotate(objtype *ob);
 
 int atari_md_active;
 static unsigned short md_caps; /* MD_ST_CAPS, read at HELLO */
-static int md_found;           /* it answered HELLO: it shares the screen */
 static int md_mste;            /* a Mega STE: its cache in the way */
 int atari_md_masked_dirty = 1;
 
@@ -165,7 +164,10 @@ static int md_nummsgs;
 static int md_msgs_dirty;
 
 /* Palette */
-static unsigned char md_palette[768];
+/* As I_SetPalette gave it, then room for how atari_c2p.c shows it (sent
+ * with it as MD_PAL_PENS). */
+static unsigned short md_palbuf[MD_PAL_PENS_BYTES / 2];
+static unsigned char *const md_palette = (unsigned char *)md_palbuf;
 static int md_have_palette;
 static unsigned long md_palette_serial;
 
@@ -317,8 +319,11 @@ static int read_wad_header(const char *name, long *numlumps, long *dirofs,
   return 1;
 }
 
-/* HELLO, and the firmware's answer in `result` and md_caps: 0, or the
- * transport's failure. */
+/* What keeps the Accelerator from the WAD, in HELLO's MD_ST_ERRORS. */
+#define MD_WAD_ERRORS (MD_ERR_NO_SD | MD_ERR_NO_WAD | MD_ERR_WAD_MISMATCH)
+
+/* HELLO, and the firmware's answer in `result` and md_caps: its
+ * MD_WAD_ERRORS, or -1 if the transport failed. */
 static int say_hello(const unsigned short *hello, long flags, char *result,
                      int size) {
   int rc;
@@ -334,6 +339,9 @@ static int say_hello(const unsigned short *hello, long flags, char *result,
     while (MD_STATUS[MD_ST_LAST_CMD] != MD_CMD_HELLO &&
            I_GetTimeMS() - t0 < 1000) {
     }
+    rc = MD_STATUS[MD_ST_ERRORS] & MD_WAD_ERRORS;
+  } else {
+    rc = -1;
   }
   sidecart_md_result(result, size);
   md_caps = MD_STATUS[MD_ST_CAPS]; /* 0 from an older firmware */
@@ -348,34 +356,31 @@ static int say_hello(const unsigned short *hello, long flags, char *result,
 #define MD_WAD_COPY 1
 #endif
 
-#if MD_WAD_COPY
 /* The copy's state and how far it has got: the high word read twice, as
- * the MD may write between the two. */
+ * the MD may write between the two. Inside copy_wad's bus bracket. */
 static int wadcopy_state(unsigned long *done) {
   volatile const unsigned short *wc =
       (volatile const unsigned short *)(MD_ROM4_BASE + MD_WADCOPY_OFFSET);
   unsigned short state, hi, lo;
-  sidecart_md_bus_begin();
   do {
     state = wc[MD_WC_STATE];
     hi = wc[MD_WC_DONE + 1];
     lo = wc[MD_WC_DONE];
   } while (hi != wc[MD_WC_DONE + 1]);
-  sidecart_md_bus_end();
   *done = ((unsigned long)hi << 16) | lo;
   return state;
 }
 
-/* Waits until the MD has written `need` bytes: 1, or 0 if it stopped, or
- * made no progress for 30 seconds (the first write may wait for FatFs to
- * count the card's free space). */
+/* Waits until the MD has written `need` bytes, or finished: 1, or 0 if it
+ * stopped, or made no progress for 30 seconds (the first write may wait
+ * for FatFs to count the card's free space). */
 static int wadcopy_wait(long need, int *state) {
   unsigned long done, last = 0;
   long t = I_GetTimeMS();
   for (;;) {
     *state = wadcopy_state(&done);
     if (*state == MD_WCS_ERROR) return 0;
-    if ((long)done >= need) return 1;
+    if (*state == MD_WCS_DONE || (long)done >= need) return 1;
     if (done != last) {
       last = done;
       t = I_GetTimeMS();
@@ -389,96 +394,82 @@ static int wadcopy_wait(long need, int *state) {
  * with its progress; Esc cancels (TOS still has the keyboard at startup:
  * ROTT takes it in GraphicsMode). 1 once it is in place. */
 static int copy_wad(const char *name, long size) {
-  static unsigned char buf[16384];
+  const long chunk = 16384; /* GEMDOS memory, only while copying */
   char line[64];
+  unsigned char *buf;
   long fh, offset = 0, t0 = I_GetTimeMS();
-  int shown = -1, state = MD_WCS_IDLE;
+  int shown = -1, state = MD_WCS_IDLE, ok = 0;
 
   fh = Fopen(name, 0);
   if (fh < 0) return 0;
+  buf = (unsigned char *)Malloc(chunk);
+  if ((long)buf <= 0) {
+    Fclose((short)fh);
+    return 0;
+  }
   while (Cconis()) Cnecin(); /* keys pressed while it loaded */
+  sidecart_md_bus_begin();  /* once, not for each poll and chunk */
   while (offset < size) {
-    const long got = Fread((short)fh, sizeof(buf), buf);
+    const long got = Fread((short)fh, chunk, buf);
     long i;
     int percent;
     if (got <= 0) {
-      Cconws("\r\nCannot read the WAD\r\n");
-      goto stop;
+      printf("\nCannot read the WAD\n");
+      goto done;
     }
     for (i = 0; i < got; i += MD_CMD_MAX_BYTES) {
       const long at = offset + i;
       const long len = got - i < MD_CMD_MAX_BYTES ? got - i : MD_CMD_MAX_BYTES;
       if (!wadcopy_wait(at - MD_WC_AHEAD * MD_CMD_MAX_BYTES, &state)) goto failed;
       if (sidecart_md_write(MD_CMD_WAD_WRITE, buf + i, (int)len, at, size, len)) {
-        Cconws("\r\nROTT Accelerator not answering\r\n");
-        goto stop;
+        printf("\nROTT Accelerator not answering\n");
+        goto done;
       }
     }
     offset += got;
     percent = (int)((offset >> 10) * 100 / ((size >> 10) + 1));
     if (percent != shown) {
-      sprintf(line, "\rCopying to SD (Esc to cancel): %d%%", percent);
-      Cconws(line);
+      printf("\rCopying to SD (Esc to cancel): %d%%", percent);
       shown = percent;
     }
     if (Cconis() && (Cnecin() & 0xFF) == 27) {
-      Cconws("\r\nCancelled\r\n");
-      goto stop;
+      printf("\nCancelled\n");
+      goto done;
     }
   }
-  {
-    /* The last chunks, then the rename: DONE, as the count comes first. */
-    unsigned long done;
-    const long t = I_GetTimeMS();
-    do {
-      state = wadcopy_state(&done);
-    } while (state != MD_WCS_DONE && state != MD_WCS_ERROR &&
-             I_GetTimeMS() - t < 30000);
-  }
-  if (state != MD_WCS_DONE) goto failed;
-  Fclose((short)fh);
-  sprintf(line, "\rCopied in %ld s                     \r\n",
-          (I_GetTimeMS() - t0 + 500) / 1000);
-  Cconws(line);
-  return 1;
+  /* The last chunks, then the rename: the count never passes the size. */
+  if (!wadcopy_wait(size + 1, &state) || state != MD_WCS_DONE) goto failed;
+  printf("\rCopied in %ld s                     \n",
+         (I_GetTimeMS() - t0 + 500) / 1000);
+  ok = 1;
+  goto done;
 
 failed:
-  if (state == MD_WCS_ERROR) {
+  if (state == MD_WCS_ERROR)
     sidecart_md_result(line, sizeof(line));
-  } else {
+  else
     strcpy(line, "ROTT Accelerator stopped writing");
-  }
-  Cconws("\r\n");
-  Cconws(line);
-  Cconws("\r\n");
-stop:
+  printf("\n%s\n", line);
+done:
+  sidecart_md_bus_end();
+  Mfree(buf);
   Fclose((short)fh);
-  return 0;
+  return ok;
 }
-#endif
 
 /* HELLO found no SD card, or the card without the WAD or with another:
- * says so, and copies the ST's WAD there (firmware with MD_CAP_WAD_COPY).
+ * says so, in 40 columns (TOS doesn't wrap, and the firmware's text is
+ * longer), and copies the ST's WAD there (firmware with MD_CAP_WAD_COPY).
  * 1 once it is copied. */
-static int wad_copy(unsigned short errors, const char *name, long size) {
-  char line[48];
-  /* In 40 columns from the start of a line: TOS doesn't wrap, and the
-   * firmware's text is longer. */
-  fflush(stdout);
+static int report_wad_problem(int errors, const char *name, long size) {
   if (errors & MD_ERR_NO_SD) {
-    Cconws("\rROTT Accelerator: no SD card\r\n");
+    printf("ROTT Accelerator: no SD card\n");
     return 0;
   }
-  sprintf(line, (errors & MD_ERR_NO_WAD) ? "\rROTT Accelerator: %s missing\r\n"
-                                         : "\rROTT Accelerator: wrong %s\r\n",
-          name);
-  Cconws(line);
-#if MD_WAD_COPY
-  if (md_caps & MD_CAP_WAD_COPY) return copy_wad(name, size);
-#else
-  (void)size;
-#endif
-  return 0;
+  printf((errors & MD_ERR_NO_WAD) ? "ROTT Accelerator: %s missing\n"
+                                  : "ROTT Accelerator: wrong %s\n",
+         name);
+  return MD_WAD_COPY && (md_caps & MD_CAP_WAD_COPY) && copy_wad(name, size);
 }
 
 void ATARI_MD_Init(void) {
@@ -491,7 +482,6 @@ void ATARI_MD_Init(void) {
   char result[80];
   long numlumps, dirofs, size;
   long flags = 0;
-  unsigned short errors;
   int rc;
 
   atari_md_active = 0;
@@ -524,7 +514,7 @@ void ATARI_MD_Init(void) {
   rc = say_hello(hello, flags, result, sizeof(result));
   md_mste = is_megaste();
 
-  if (rc != 0) {
+  if (rc < 0) {
     printf("ROTT Accelerator not answering\nUsing the ST renderer\n");
     return;
   }
@@ -534,29 +524,23 @@ void ATARI_MD_Init(void) {
            (unsigned)MD_STATUS[MD_ST_PROTO], (unsigned)MD_PROTOCOL_VERSION);
     return;
   }
-  errors = MD_STATUS[MD_ST_ERRORS] &
-           (MD_ERR_NO_SD | MD_ERR_NO_WAD | MD_ERR_WAD_MISMATCH);
-  if (errors) {
-    if (wad_copy(errors, wadname, size)) {
-      rc = say_hello(hello, flags, result, sizeof(result));
-      errors = MD_STATUS[MD_ST_ERRORS] &
-               (MD_ERR_NO_SD | MD_ERR_NO_WAD | MD_ERR_WAD_MISMATCH);
-      if (rc) {
-        printf("ROTT Accelerator not answering\n");
-      } else if (errors) {
-        printf("%s\n", result);
-      }
-    }
-    if (rc || errors) {
-      printf("Using the ST renderer\n");
-      return;
-    }
+  if (rc && report_wad_problem(rc, wadname, size)) {
+    rc = say_hello(hello, flags, result, sizeof(result));
+    if (rc < 0)
+      printf("ROTT Accelerator not answering\n");
+    else if (rc)
+      printf("%s\n", result);
+  }
+  if (rc) {
+    printf("Using the ST renderer\n");
+    return;
   }
   md_blit_init();
   printf("%s%s\n", result, md_blit_ok ? " (blitter)" : "");
   atari_md_active = 1;
-  md_found = 1;
   md_snapshot_needed = 1;
+  /* An older firmware works out the colours itself, as the ST did then. */
+  if (!(md_caps & MD_CAP_PENS)) atari_c2p_use_table(0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -622,7 +606,6 @@ void ATARI_MD_LightsChanged(int x, int y) {
 }
 
 static void send_palette(void) {
-  static unsigned short buf[MD_PAL_PENS_BYTES / 2];
   long flags = 0;
   if (!md_have_palette) return;
   if (ATARI_NOIR) flags |= MD_PAL_NOIR;
@@ -635,11 +618,10 @@ static void send_palette(void) {
   }
   /* With how atari_c2p.c shows it (I_SetPalette gave it the palette
    * first), for the MD to do the same. */
-  memcpy(buf, md_palette, MD_PAL_RGB_BYTES);
-  atari_c2p_pens(buf + MD_PAL_RGB_BYTES / 2,
-                 (unsigned char(*)[2])(buf + MD_PAL_RGB_BYTES / 2 + 16));
-  sidecart_md_write(MD_CMD_PALETTE, buf, MD_PAL_PENS_BYTES, (long)++md_palette_serial,
-                    flags | MD_PAL_PENS, 0L);
+  atari_c2p_pens(md_palbuf + MD_PAL_RGB_BYTES / 2,
+                 (unsigned char(*)[2])(md_palbuf + MD_PAL_RGB_BYTES / 2 + 16));
+  sidecart_md_write(MD_CMD_PALETTE, md_palbuf, MD_PAL_PENS_BYTES,
+                    (long)++md_palette_serial, flags | MD_PAL_PENS, 0L);
 }
 
 void ATARI_MD_SetPalette(const unsigned char *palette) {
@@ -1718,13 +1700,10 @@ static volatile int md_gone;
 
 int ATARI_MD_Gone(void) { return md_gone; }
 
-int ATARI_MD_PaletteTableOK(void) {
-  return !md_found || md_gone || (md_caps & MD_CAP_PENS);
-}
-
 static void give_up(const char *why) {
   atari_md_active = 0;
   md_gone = 1;
+  atari_c2p_use_table(1); /* the ST alone shows the screen now */
   md_hud_redraw = 1; /* the bars again, without the Accelerator's sign */
   AddMessage((char *)why, MSG_SYSTEM);
 }

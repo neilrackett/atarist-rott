@@ -269,8 +269,22 @@ static short bayer4_color(const unsigned char *weights, short numcolors,
 
 /* ------------------------------------------------------------------ */
 
-void md_video_set_palette(const uint8_t *rgb768, const uint16_t *words,
-                          const uint8_t *mix, unsigned flags, void *scratch) {
+/* The pen c2p_1x_lorez would put at (x, y), from weights256: bayer4_color
+ * with phase y & 3 and px & 3 = x & 3 (the ST's 16-pixel groups start on
+ * multiples of 16, and so do the MD's). -1 cannot happen (the weights
+ * always sum to 16) but maps to 15 as the ST's bit tests would. */
+static void build_lut(void) {
+  for (int cell = 0; cell < 16; cell++) {
+    for (int i = 0; i < 256; i++) {
+      short c = bayer4_color(weights256[i], 16, (short)(cell >> 2),
+                             (short)(cell & 3));
+      s_lut[cell][i] = (uint8_t)(c < 0 ? 15 : c);
+    }
+  }
+}
+
+void md_video_set_palette(const uint8_t *rgb768, unsigned flags,
+                          void *scratch) {
   S = (palette_scratch_t *)scratch;
   unsigned char *scaled = S->scaled;
   const unsigned char *colors = rgb768;
@@ -279,46 +293,32 @@ void md_video_set_palette(const uint8_t *rgb768, const uint16_t *words,
   const int noir = (flags & MD_PAL_NOIR) != 0;
   const int noir_dither = (flags & MD_PAL_NOIR_DITHER) != 0;
 
-  if (words) {
-    /* As the ST shows it. */
-    memset(weights256, 0, sizeof(weights256));
-    for (i = 0; i < 16; ++i) s_st_colors[i] = words[i];
-    for (i = 0; i < 256; ++i) {
-      const unsigned k = mix[i * 2 + 1] > 16 ? 16 : mix[i * 2 + 1];
-      weights256[i][mix[i * 2] >> 4] = (unsigned char)(16 - k);
-      weights256[i][mix[i * 2] & 15] += (unsigned char)k;
-    }
+  for (i = 0; i < 256 * 3; ++i) {
+    if (colors[i] > maxv) maxv = colors[i];
+  }
+  if (maxv <= 63) {
+    for (i = 0; i < 256 * 3; ++i) scaled[i] = (unsigned char)(colors[i] << 2);
+    colors = scaled;
+  }
+
+  if (noir) {
+    build_noir_palette16(palette16, s_st_colors);
   } else {
-    for (i = 0; i < 256 * 3; ++i) {
-      if (colors[i] > maxv) maxv = colors[i];
-    }
-    if (maxv <= 63) {
-      for (i = 0; i < 256 * 3; ++i) scaled[i] = (unsigned char)(colors[i] << 2);
-      colors = scaled;
-    }
-
-    if (noir) {
-      build_noir_palette16(palette16, s_st_colors);
-    } else {
-      build_palette16(colors, palette16);
-      for (i = 0; i < 16; ++i)
-        s_st_colors[i] = stcolor(palette16[i].r, palette16[i].g, palette16[i].b);
-    }
-
-    build_weights(colors, (!noir || noir_dither));
+    build_palette16(colors, palette16);
+    for (i = 0; i < 16; ++i)
+      s_st_colors[i] = stcolor(palette16[i].r, palette16[i].g, palette16[i].b);
   }
 
-  /* The pen c2p_1x_lorez would put at (x, y): bayer4_color with phase
-   * y & 3 and px & 3 = x & 3 (the ST's 16-pixel groups start on
-   * multiples of 16, and so do the MD's). -1 cannot happen (the weights
-   * always sum to 16) but maps to 15 as the ST's bit tests would. */
-  for (int cell = 0; cell < 16; cell++) {
-    for (i = 0; i < 256; i++) {
-      short c = bayer4_color(weights256[i], 16, (short)(cell >> 2),
-                             (short)(cell & 3));
-      s_lut[cell][i] = (uint8_t)(c < 0 ? 15 : c);
-    }
-  }
+  build_weights(colors, (!noir || noir_dither));
+  build_lut();
+}
+
+void md_video_set_pens(const uint16_t *words, const uint8_t *mix,
+                       void *scratch) {
+  S = (palette_scratch_t *)scratch;
+  for (int i = 0; i < 16; ++i) s_st_colors[i] = words[i];
+  for (int i = 0; i < 256; ++i) md_pal_weights(mix + i * 2, weights256[i]);
+  build_lut();
 }
 
 const uint16_t *md_video_st_colors(void) { return s_st_colors; }

@@ -99,16 +99,12 @@ static XPAD_REQ *req;
 static volatile unsigned char rumble_want[2];  /* low, high motor        */
 static volatile unsigned short rumble_left[2]; /* VBLs each still runs   */
 static volatile unsigned char rumble_ok;       /* in play, not paused    */
-static unsigned char rumble_shown[2];          /* in the request area    */
-static int rumble_vbl_added;
 
 /* Supervisor. */
 static void rumble_write(unsigned char low, unsigned char high) {
   req->rumble[0][0] = low;
   req->rumble[0][1] = high;
   req->seq++; /* last, so the provider sees the pair */
-  rumble_shown[0] = low;
-  rumble_shown[1] = high;
 }
 
 /* The VBL. */
@@ -123,12 +119,12 @@ static void rumble_vbl(void) {
       if (rumble_ok) now[m] = rumble_want[m];
     }
   }
-  if (now[0] != rumble_shown[0] || now[1] != rumble_shown[1]) rumble_write(now[0], now[1]);
+  if (now[0] != req->rumble[0][0] || now[1] != req->rumble[0][1]) rumble_write(now[0], now[1]);
 }
 
 /* However the program ends (and ATARI_VBL_Remove). */
 static void rumble_release(void) {
-  if (rumble_shown[0] || rumble_shown[1]) rumble_write(0, 0);
+  if (req->rumble[0][0] || req->rumble[0][1]) rumble_write(0, 0);
 }
 
 void ATARI_XpadRumble(int low, int high, int vbls) {
@@ -138,10 +134,7 @@ void ATARI_XpadRumble(int low, int high, int vbls) {
   if (!pads || !rumble_ok || vbls <= 0) return;
   if (!req && !(req = xpad_req(pads))) return;
   if (!(pads->caps & XPAD_CAP_RUMBLE)) return;
-  if (!rumble_vbl_added) {
-    if (ATARI_VBL_Add(rumble_vbl, rumble_release)) return;
-    rumble_vbl_added = 1;
-  }
+  if (ATARI_VBL_Add(rumble_vbl, rumble_release)) return; /* 0 once it is */
   /* A stronger one takes over, the longer one sets how long. */
   for (m = 0; m < 2; m++) {
     if (level[m] <= 0) continue;
@@ -153,9 +146,12 @@ void ATARI_XpadRumble(int low, int high, int vbls) {
 void ATARI_XpadPump(void) {
   uint32_t want = 0;
   unsigned i;
+  int play;
 
   sample();
-  rumble_ok = in_play() && !GamePaused;
+  if (!pads) return;
+  play = in_play();
+  rumble_ok = play && !GamePaused;
   {
     /* Dying, however it comes (shot, burnt, a fall): both motors for most
      * of a second. */
@@ -164,8 +160,7 @@ void ATARI_XpadPump(void) {
     if (was_alive && !alive && rumble_ok) ATARI_XpadRumble(255, 255, 45);
     was_alive = alive;
   }
-  if (!pads) return;
-  if (!in_play()) {
+  if (!play) {
     for (i = 0; i < sizeof(key_map) / sizeof(key_map[0]); i++)
       want |= pad.buttons & key_map[i].button;
   } else {

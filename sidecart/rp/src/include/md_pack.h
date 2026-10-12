@@ -40,6 +40,9 @@ uint16_t md_pack_open_wad(const char *folder, const char *name,
  * md_pack_open_wad). */
 void md_pack_close_wad(void);
 
+/* The WAD the last md_pack_open_wad looked for, folder/name ("" before). */
+const char *md_pack_wad_path(void);
+
 /* True if the current pack holds every lump set in `bitset` (lumps
  * 0..numlumps-1) that the WAD has data for. */
 bool md_pack_has_all(const uint16_t *bitset, unsigned numlumps);

@@ -154,6 +154,8 @@ void md_pack_close_wad(void) {
   s_wad_ok = false;
 }
 
+const char *md_pack_wad_path(void) { return s_wad_path; }
+
 bool md_pack_wad_lump(int lump, uint32_t *pos, uint32_t *size) {
   uint8_t e[16];
   if (!s_wad_ok || lump < 0 || lump >= (int)s_wad_numlumps) return false;
@@ -444,8 +446,7 @@ uint16_t md_pack_open_wad(const char *folder, const char *name,
   uint8_t hdr[12];
   UINT br = 0;
 
-  wad_close();
-  s_wad_ok = false;
+  md_pack_close_wad();
   snprintf(s_wad_path, sizeof(s_wad_path), "%s/%s", folder, name);
   if (f_open(&f, s_wad_path, FA_READ) != FR_OK) {
     DPRINTF("pack: cannot open %s\n", s_wad_path);

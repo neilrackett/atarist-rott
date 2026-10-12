@@ -140,27 +140,10 @@ jobs:
         run: git submodule update --init lib/xpad
 
       - name: Install the Pico toolchain
-        # As pr.yml.
+        # .github/actions/pico-toolchain: cmake, and the Arm toolchain
+        # pinned by version and checksum.
         if: env.BUILD_FIRMWARE == '1'
-        env:
-          # Arm's own GNU toolchain, the release the firmware is developed
-          # with, rather than Ubuntu's gcc-arm-none-eabi, which moves with
-          # the runner image. (CI's builds still differ from a Mac's: CMake
-          # 3.28 links the objects in another order than 4.x.) The checksum
-          # is Arm's, from the .sha256asc beside the download.
-          ARM_GNU: 15.2.rel1
-          ARM_GNU_SHA256: 597893282ac8c6ab1a4073977f2362990184599643b4c5ee34870a8215783a16
-        run: |
-          sudo grep -l dl.google.com /etc/apt/sources.list.d/* | xargs -r sudo rm -f
-          sudo DEBIAN_FRONTEND=noninteractive apt update || true
-          sudo DEBIAN_FRONTEND=noninteractive apt install -y cmake build-essential
-          NAME="arm-gnu-toolchain-$ARM_GNU-x86_64-arm-none-eabi"
-          curl -sSfL -o "$RUNNER_TEMP/$NAME.tar.xz" \
-            "https://developer.arm.com/-/media/Files/downloads/gnu/$ARM_GNU/binrel/$NAME.tar.xz"
-          echo "$ARM_GNU_SHA256  $RUNNER_TEMP/$NAME.tar.xz" | sha256sum -c -
-          tar -xJf "$RUNNER_TEMP/$NAME.tar.xz" -C "$RUNNER_TEMP"
-          echo "PICO_TOOLCHAIN_PATH=$RUNNER_TEMP/$NAME/bin" >> "$GITHUB_ENV"
-          "$RUNNER_TEMP/$NAME/bin/arm-none-eabi-gcc" --version | head -1
+        uses: ./.github/actions/pico-toolchain
 
       - name: Install the Atari ST toolkit
         run: curl -sL https://github.com/sidecartridge/atarist-toolkit-docker/releases/latest/download/install_atarist_toolkit_docker.sh | bash

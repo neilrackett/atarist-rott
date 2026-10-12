@@ -30,9 +30,6 @@ uint16_t mdemu_rom4_word(uint32_t offset);
 /* A read of ROM3; `addr16` is the low 16 bits of the address. */
 void mdemu_rom3_read(uint32_t addr16);
 
-/* The emulator's clock in microseconds, for the protocol's timeouts. */
-void mdemu_set_time_us(uint32_t us);
-
 /* Write the rendered view of every Nth frame to <dir>/mdNNNNN.ppm. */
 void mdemu_dump_frames(const char *dir, int every);
 

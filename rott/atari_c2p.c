@@ -12,8 +12,8 @@ Based on STDOOM's atari_c2p.c, adapted for dynamic palette weighting.
 #include <string.h>
 #include <stdlib.h>
 #include "atari_c2p.h"
-#include "atari_md.h"
 #include "atari_palette.h"
+#include "rott_md_protocol.h"
 
 typedef struct
 {
@@ -38,7 +38,7 @@ static unsigned short saved_palette[16];
 static int palette_saved = 0;
 static unsigned int last_palette_hash = 0;
 static int palette_hash_valid = 0;
-static int palette_table = 0; /* 0, or the table: 1 the STE's, 2 the ST's */
+static int use_table = 1;     /* atari_c2p_use_table */
 static int c2p_fast_mode = 0;
 
 #ifndef ATARI_C2P_STRICT_NO_OVERLAP
@@ -469,11 +469,16 @@ static void table_palette(int table, unsigned short *stpalette)
         palette16[i].b = rgb[i][2];
         stpalette[i] = words[i];
     }
-    memset(weights256, 0, sizeof(weights256));
     for (i = 0; i < 256; ++i)
+        md_pal_weights(mix[i], weights256[i]); /* as the Accelerator does */
+}
+
+void atari_c2p_use_table(int on)
+{
+    if (on != use_table)
     {
-        weights256[i][mix[i][0] >> 4] = (unsigned char)(16 - mix[i][1]);
-        weights256[i][mix[i][0] & 15] += mix[i][1];
+        use_table = on;
+        palette_hash_valid = 0; /* the next palette is rebuilt */
     }
 }
 
@@ -925,51 +930,53 @@ void atari_c2p_set_palette(const unsigned char *colors)
 
     for (i = 0; i < 256 * 3; ++i)
     {
+        /* FNV-1a; times 16777619 = 2^24 + 2^8 + 2^7 + 2^4 + 2^1 + 1 in
+         * shifts, not a 32-bit multiply's library call (__mulsi3). */
         hash ^= (unsigned int)colors[i];
-        hash *= 16777619u;
+        hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
     }
-    /* The game palette from the table, unless an Accelerator that cannot
-     * do the same shares the screen. */
-    table = !ATARI_NOIR && hash == atari_palette_hash && ATARI_MD_PaletteTableOK()
-                ? (ste_palette() ? 1 : 2)
-                : 0;
-    if (palette_hash_valid && hash == last_palette_hash && table == palette_table)
+    if (palette_hash_valid && hash == last_palette_hash)
     {
         return;
     }
     c2p_invalidate_dirty_cache();
     last_palette_hash = hash;
     palette_hash_valid = 1;
-    palette_table = table;
 
-    if (ATARI_NOIR)
-    {
-        build_noir_palette16(palette16, stpalette);
-    }
-    else if (force_bright_palette)
-    {
-        for (i = 0; i < 16; ++i)
-        {
-            unsigned char v = i * 16;
-            palette16[i].r = 0;
-            palette16[i].g = v;
-            palette16[i].b = v;
-            stpalette[i] = stcolor(0, v, v);
-        }
-    }
-    else if (table)
+    /* The game palette from the table, unless an Accelerator that cannot
+     * do the same shares the screen (atari_c2p_use_table). */
+    table = use_table && !ATARI_NOIR && hash == atari_palette_hash
+                ? (ste_palette() ? 1 : 2)
+                : 0;
+    if (table)
     {
         table_palette(table, stpalette);
     }
     else
     {
-        build_palette16(colors, palette16);
-        for (i = 0; i < 16; ++i)
-            stpalette[i] = stcolor(palette16[i].r, palette16[i].g, palette16[i].b);
-    }
-
-    if (!table)
+        if (ATARI_NOIR)
+        {
+            build_noir_palette16(palette16, stpalette);
+        }
+        else if (force_bright_palette)
+        {
+            for (i = 0; i < 16; ++i)
+            {
+                unsigned char v = i * 16;
+                palette16[i].r = 0;
+                palette16[i].g = v;
+                palette16[i].b = v;
+                stpalette[i] = stcolor(0, v, v);
+            }
+        }
+        else
+        {
+            build_palette16(colors, palette16);
+            for (i = 0; i < 16; ++i)
+                stpalette[i] = stcolor(palette16[i].r, palette16[i].g, palette16[i].b);
+        }
         build_weights(colors, (!ATARI_NOIR || ATARI_NOIR_DITHERING));
+    }
     install_st_palette(stpalette);
 
     for (i = 0; i < 256; ++i)

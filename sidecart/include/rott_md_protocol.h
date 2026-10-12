@@ -143,7 +143,6 @@
 #define MD_WADCOPY_OFFSET 0xF200
 #define MD_WC_STATE 0 /* MD_WCS_*                                         */
 #define MD_WC_DONE 1  /* 2 words: bytes written so far, low word first    */
-#define MD_WC_WORDS 3
 #define MD_WCS_IDLE 0
 #define MD_WCS_COPYING 1
 #define MD_WCS_DONE 2  /* in place under HELLO's name: send HELLO again  */
@@ -282,6 +281,18 @@
 #define MD_PAL_PENS 0x0004
 #define MD_PAL_RGB_BYTES 768
 #define MD_PAL_PENS_BYTES (MD_PAL_RGB_BYTES + 16 * 2 + 256 * 2)
+
+/* One colour's MD_PAL_PENS dither, {(a << 4) | b, k}, as the weights of
+ * the 16 pens (shares of a Bayer cell's 16 thresholds) the c2p tables are
+ * built from. Both sides decode it here, so the two halves of the screen
+ * cannot differ. */
+static inline void md_pal_weights(const uint8_t *mix, uint8_t *w) {
+  const unsigned k = mix[1] > 16 ? 16 : mix[1];
+  unsigned i;
+  for (i = 0; i < 16; i++) w[i] = 0;
+  w[mix[0] >> 4] = (uint8_t)(16 - k);
+  w[mix[0] & 15] += (uint8_t)k;
+}
 
 /* FRAME (write). d3 = frame seq, d4 = seq of the last frame the ST copied,
  * d5 = level serial. Buffer: records, starting with MD_REC_VIEW. */

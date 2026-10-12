@@ -15,16 +15,20 @@
 
 #include "pico.h"
 
-/* Rebuild the 16 colours and the dither LUT: as the ST says with `words`
- * and `mix` (MD_PAL_PENS: its 16 palette words, then 256 x 2 bytes), or
- * without them (NULL) from the 768-byte palette, as ST builds before
- * MD_PAL_PENS did. `flags` = MD_PAL_*. `scratch` is MD_VIDEO_SCRATCH_BYTES
- * of RAM the rebuild may use. */
+/* Rebuild the 16 colours and the dither LUT from a 768-byte palette,
+ * exactly as ST builds before MD_PAL_PENS did (atari_c2p_set_palette's
+ * median cut). `flags` = MD_PAL_*. `scratch` is MD_VIDEO_SCRATCH_BYTES of
+ * RAM the rebuild may use. */
 #define MD_VIDEO_SCRATCH_BYTES 6144
-void md_video_set_palette(const uint8_t *rgb768, const uint16_t *words,
-                          const uint8_t *mix, unsigned flags, void *scratch);
+void md_video_set_palette(const uint8_t *rgb768, unsigned flags,
+                          void *scratch);
 
-/* The 16 ST palette words of the last md_video_set_palette(). */
+/* The same as the ST says it shows a palette (MD_PAL_PENS): its 16
+ * palette words, and 256 x {(a << 4) | b, k}. */
+void md_video_set_pens(const uint16_t *words, const uint8_t *mix,
+                       void *scratch);
+
+/* The 16 ST palette words of the last rebuild. */
 const uint16_t *md_video_st_colors(void);
 
 /* Convert `height` rows of `width` (a multiple of 16) chunky pixels into

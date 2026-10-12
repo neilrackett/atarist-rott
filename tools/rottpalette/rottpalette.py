@@ -98,12 +98,16 @@ def fnv(pal):
 
 # ---- usage: how much the game draws each colour ----------------------
 
+RAW_NAME = re.compile(r'_(\d+)x(\d+)\.raw$')
+
+
 def read_raw_frame(path):
-    """EmuMD's chunky=DIR frames: the 768-byte palette, then the view."""
-    m = re.search(r'_(\d+)x(\d+)\.raw$', path)
+    """EmuMD's chunky=DIR frames, cNNNNN_WxH.raw: the 768-byte palette,
+    then the view."""
+    m = RAW_NAME.search(path)
     w, h = int(m.group(1)), int(m.group(2))
     data = open(path, 'rb').read()
-    return np.frombuffer(data[768:768 + w * h], np.uint8)
+    return np.frombuffer(data[768:768 + w * h], np.uint8).reshape(h, w)
 
 
 def read_screen(path):
@@ -121,7 +125,7 @@ def cmd_usage(args):
             sys.exit('%s: no frames' % d)
         h = np.zeros(256)
         for f in frames:
-            h += np.bincount(read_raw_frame(f), minlength=256)
+            h += np.bincount(read_raw_frame(f).ravel(), minlength=256)
         play += h / len(frames)
     play /= len(args.play)
     hud = np.zeros(256)
@@ -189,19 +193,20 @@ def split_kmeans(target, w, levels, chroma, k=16, rounds=40):
     """A start: weighted median cut in OKLab, then k-means, onto the grid."""
     boxes = [np.arange(256)]
 
+    def mean(b):
+        return (target[b] * w[b, None]).sum(0) / w[b].sum()
+
     def spread(b):
-        m = (target[b] * w[b, None]).sum(0) / w[b].sum()
-        return (w[b, None] * (target[b] - m) ** 2).sum() if len(b) > 1 else -1
+        return (w[b, None] * (target[b] - mean(b)) ** 2).sum() if len(b) > 1 else -1
 
     while len(boxes) < k:
         b = boxes.pop(int(np.argmax([spread(b) for b in boxes])))
-        m = (target[b] * w[b, None]).sum(0) / w[b].sum()
-        axis = int(np.argmax((w[b, None] * (target[b] - m) ** 2).sum(0)))
+        axis = int(np.argmax((w[b, None] * (target[b] - mean(b)) ** 2).sum(0)))
         o = b[np.argsort(target[b, axis], kind='stable')]
         cw = np.cumsum(w[o])
         cut = min(max(int(np.searchsorted(cw, cw[-1] / 2)) + 1, 1), len(o) - 1)
         boxes += [o[:cut], o[cut:]]
-    C = np.array([(target[b] * w[b, None]).sum(0) / w[b].sum() for b in boxes])
+    C = np.array([mean(b) for b in boxes])
     for _ in range(rounds):
         a = np.argmin(((target[:, None] - C[None]) ** 2).sum(-1), 1)
         for c in range(k):
@@ -262,15 +267,16 @@ def dithers(target, pens, penalty, chroma):
     return a, b, k
 
 
-def make_table(pal, w, levels, chroma, opt_penalty, mix_penalty, log):
+def make_table(pal, w, levels, chroma, opt_penalty, mix_penalty):
     target = oklab(linear(pal), chroma)
     q = split_kmeans(target, w, levels, chroma)
     q, err = optimise(target, w, levels, opt_penalty, chroma, q)
     order = np.argsort(oklab(linear(shown(levels, q)))[:, 0], kind='stable')
     q = q[order]  # dark to light: the Bayer cell's low thresholds get the darker pen
     a, b, k = dithers(target, shown(levels, q), mix_penalty, chroma)
-    log('%s: %s (error %.5f)' % ('STE' if levels == 16 else 'ST',
-                                 ' '.join('%x%x%x' % tuple(p) for p in q), err))
+    print('%s: %s (error %.5f)' % ('STE' if levels == 16 else 'ST',
+                                   ' '.join('%x%x%x' % tuple(p) for p in q), err),
+          file=sys.stderr)
     return q, a, b, k
 
 
@@ -278,8 +284,7 @@ def cmd_generate(args):
     pal = wad_palette(args.wad)
     usage = read_usage(args.usage)
     w = importance(usage, args.game, args.menus, args.floor)
-    tables = {m: make_table(pal, w, n, chroma, args.opt_penalty, args.mix_penalty,
-                            lambda s: print(s, file=sys.stderr))
+    tables = {m: make_table(pal, w, n, chroma, args.opt_penalty, args.mix_penalty)
               for m, (n, chroma) in MACHINES.items()}
     out = open(args.output, 'w')
     out.write('/*\n'
@@ -338,12 +343,7 @@ def cmd_preview(args):
     tables = {m: read_table(args.table, m) for m in MACHINES}
     os.makedirs(args.output, exist_ok=True)
     for f in args.frames:
-        s = read_raw_frame(f) if f.endswith('.raw') and '_' in os.path.basename(f) else None
-        if s is not None:
-            m = re.search(r'_(\d+)x(\d+)\.raw$', f)
-            s = s.reshape(int(m.group(2)), int(m.group(1)))
-        else:
-            s = read_screen(f)
+        s = read_raw_frame(f) if RAW_NAME.search(f) else read_screen(f)
         row = [pal[s].astype(np.uint8)] + [render(s, *tables[m]) for m in MACHINES]
         im = Image.fromarray(np.concatenate(row, 1))
         im = im.resize((im.width * 2, im.height * 2), Image.NEAREST)

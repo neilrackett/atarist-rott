@@ -205,56 +205,6 @@ const byte *R_LumpFixed(int lump) { return md_pack_lump_fixed(lump); }
 /* Commands                                                             */
 /* ------------------------------------------------------------------ */
 
-/* The WAD HELLO named, for a copy from the ST (WAD_WRITE). */
-static char s_wad_name[MD_HELLO_NAME_WORDS * 2 + 1];
-static void wadcopy_reset(void);
-
-static void cmd_hello(const uint16_t *w, uint32_t n) {
-  char text[96];
-  uint16_t err = 0;
-
-  if (n < 6 + MD_HELLO_WORDS || md_get32(w) != MD_HELLO_MAGIC) {
-    add_error(MD_ERR_BAD_CMD);
-    return;
-  }
-  const uint16_t *b = w + 6;
-  char name[MD_HELLO_NAME_WORDS * 2 + 1];
-  md_get_bytes((uint8_t *)name, b + MD_HELLO_NAME, MD_HELLO_NAME_WORDS * 2);
-  name[sizeof(name) - 1] = 0;
-  memcpy(s_wad_name, name, sizeof(s_wad_name));
-  wadcopy_reset(); /* a new session: no earlier copy's state */
-
-  md_music_command(MD_MUSIC_STOP, 0, false, 0); /* the WAD reopens */
-  if (!s_sd_ok) {
-    err = MD_ERR_NO_SD;
-  } else {
-    err = md_pack_open_wad(s_folder, name, b[MD_HELLO_NUMLUMPS],
-                           md_get32(b + MD_HELLO_WADSIZE),
-                           md_get32(b + MD_HELLO_DIROFS));
-  }
-  /* Music comes from the WAD, so only with it (and RAM for it). */
-  status_set(MD_ST_CAPS, (md_pack_wad_ok() && md_music_ok() ? MD_CAP_MUSIC : 0) |
-                             MD_CAP_PENS | (s_sd_ok ? MD_CAP_WAD_COPY : 0));
-  /* A new session: the old errors are history. */
-  s_errors = 0;
-  status_set(MD_ST_ERRORS, 0);
-  if (err) add_error(err);
-
-  if (err & MD_ERR_NO_SD) {
-    snprintf(text, sizeof(text), "ROTT Accelerator: no SD card");
-  } else if (err & MD_ERR_NO_WAD) {
-    snprintf(text, sizeof(text), "ROTT Accelerator: %s missing", name);
-  } else if (err & MD_ERR_WAD_MISMATCH) {
-    snprintf(text, sizeof(text), "ROTT Accelerator: wrong %s", name);
-  } else {
-    snprintf(text, sizeof(text), "ROTT Accelerator %s", RELEASE_VERSION);
-  }
-  write_result(text);
-  s_level_state = MD_LEVEL_NONE;
-  status_set(MD_ST_LEVEL_STATE, MD_LEVEL_NONE);
-  DPRINTF("HELLO: %s (flags %lx)\n", text, (unsigned long)md_get32(w + 4));
-}
-
 /* ------------------------------------------------------------------ */
 /* WAD copy from the ST                                                 */
 /* ------------------------------------------------------------------ */
@@ -272,12 +222,18 @@ static void wadcopy_publish(uint16_t state) {
   s_wadcopy[MD_WC_STATE] = state;
 }
 
+/* Where the copy goes until it is all there. */
+static void wadcopy_tmp(char *buf, size_t size) {
+  snprintf(buf, size, "%s/WADCOPY.TMP", s_folder);
+}
+
+/* No copy under way; one left open was stopped by the ST, so its part
+ * file is no use. */
 static void wadcopy_reset(void) {
   if (s_copy_open) {
-    /* A copy the ST stopped: its part file is no use. */
-    char tmp[48];
+    char tmp[112];
     f_close(&s_copy);
-    snprintf(tmp, sizeof(tmp), "%s/WADCOPY.TMP", s_folder);
+    wadcopy_tmp(tmp, sizeof(tmp));
     f_unlink(tmp);
   }
   s_copy_open = false;
@@ -295,20 +251,18 @@ static void wadcopy_fail(const char *why) {
   DPRINTF("WAD copy: %s at %lu\n", why, (unsigned long)s_copy_done);
 }
 
-#ifndef FF_MAX_SS
-#define FF_MAX_SS 512 /* EmuMD's FatFs; ffconf.h's, too */
-#endif
-
-/* Room for `size` bytes on the card, if FatFs can say. */
+/* Room for `size` bytes on the card, if FatFs can say (512-byte sectors,
+ * as ffconf.h has them). */
 static bool wadcopy_room(uint32_t size) {
   DWORD clusters = 0;
   FATFS *fs = NULL;
   if (f_getfree("", &clusters, &fs) != FR_OK || !fs) return true;
-  return (uint64_t)clusters * fs->csize * FF_MAX_SS >= size;
+  return (uint64_t)clusters * fs->csize * 512u >= size;
 }
 
 static void cmd_wad_write(const uint16_t *w, uint32_t n) {
-  char tmp[48], path[48];
+  const char *path = md_pack_wad_path(); /* HELLO's folder/name */
+  char tmp[112];
   if (n < 6) {
     add_error(MD_ERR_BAD_CMD);
     return;
@@ -319,14 +273,10 @@ static void cmd_wad_write(const uint16_t *w, uint32_t n) {
     add_error(MD_ERR_BAD_CMD);
     return;
   }
-  snprintf(tmp, sizeof(tmp), "%s/WADCOPY.TMP", s_folder);
-  snprintf(path, sizeof(path), "%s/%s", s_folder, s_wad_name);
 
   if (offset == 0) {
-    if (s_copy_open) f_close(&s_copy);
-    s_copy_open = false;
-    s_copy_done = 0;
-    if (!s_sd_ok || !s_wad_name[0]) {
+    wadcopy_reset();
+    if (!s_sd_ok || !path[0]) {
       wadcopy_fail("no SD card");
       return;
     }
@@ -334,6 +284,7 @@ static void cmd_wad_write(const uint16_t *w, uint32_t n) {
     md_music_command(MD_MUSIC_STOP, 0, false, 0);
     md_pack_close_wad();
     f_mkdir(s_folder); /* fails harmlessly if it is there */
+    wadcopy_tmp(tmp, sizeof(tmp));
     f_unlink(tmp);
     /* Short of room, the file it replaces goes first (the ST asked). */
     if (!wadcopy_room(size)) f_unlink(path);
@@ -373,6 +324,7 @@ static void cmd_wad_write(const uint16_t *w, uint32_t n) {
     wadcopy_fail("SD card write failed");
     return;
   }
+  wadcopy_tmp(tmp, sizeof(tmp));
   f_unlink(path);
   if (f_rename(tmp, path) != FR_OK) {
     wadcopy_fail("cannot rename the copy");
@@ -381,6 +333,51 @@ static void cmd_wad_write(const uint16_t *w, uint32_t n) {
   write_result("ROTT Accelerator: WAD copied");
   wadcopy_publish(MD_WCS_DONE);
   DPRINTF("WAD copy: %s, %lu bytes\n", path, (unsigned long)size);
+}
+
+static void cmd_hello(const uint16_t *w, uint32_t n) {
+  char text[96];
+  uint16_t err = 0;
+
+  if (n < 6 + MD_HELLO_WORDS || md_get32(w) != MD_HELLO_MAGIC) {
+    add_error(MD_ERR_BAD_CMD);
+    return;
+  }
+  const uint16_t *b = w + 6;
+  char name[MD_HELLO_NAME_WORDS * 2 + 1];
+  md_get_bytes((uint8_t *)name, b + MD_HELLO_NAME, MD_HELLO_NAME_WORDS * 2);
+  name[sizeof(name) - 1] = 0;
+  wadcopy_reset(); /* a new session: no earlier copy's state */
+
+  md_music_command(MD_MUSIC_STOP, 0, false, 0); /* the WAD reopens */
+  if (!s_sd_ok) {
+    err = MD_ERR_NO_SD;
+  } else {
+    err = md_pack_open_wad(s_folder, name, b[MD_HELLO_NUMLUMPS],
+                           md_get32(b + MD_HELLO_WADSIZE),
+                           md_get32(b + MD_HELLO_DIROFS));
+  }
+  /* Music comes from the WAD, so only with it (and RAM for it). */
+  status_set(MD_ST_CAPS, (md_pack_wad_ok() && md_music_ok() ? MD_CAP_MUSIC : 0) |
+                             MD_CAP_PENS | (s_sd_ok ? MD_CAP_WAD_COPY : 0));
+  /* A new session: the old errors are history. */
+  s_errors = 0;
+  status_set(MD_ST_ERRORS, 0);
+  if (err) add_error(err);
+
+  if (err & MD_ERR_NO_SD) {
+    snprintf(text, sizeof(text), "ROTT Accelerator: no SD card");
+  } else if (err & MD_ERR_NO_WAD) {
+    snprintf(text, sizeof(text), "ROTT Accelerator: %s missing", name);
+  } else if (err & MD_ERR_WAD_MISMATCH) {
+    snprintf(text, sizeof(text), "ROTT Accelerator: wrong %s", name);
+  } else {
+    snprintf(text, sizeof(text), "ROTT Accelerator %s", RELEASE_VERSION);
+  }
+  write_result(text);
+  s_level_state = MD_LEVEL_NONE;
+  status_set(MD_ST_LEVEL_STATE, MD_LEVEL_NONE);
+  DPRINTF("HELLO: %s (flags %lx)\n", text, (unsigned long)md_get32(w + 4));
 }
 
 static void pack_progress(unsigned percent) {
@@ -504,20 +501,20 @@ static void cmd_palette(const uint16_t *w, uint32_t n) {
   uint8_t *rgb = s_chunky, *mix = s_chunky + MD_PAL_RGB_BYTES;
   const unsigned flags = md_get32(w + 2);
   const int pens = (flags & MD_PAL_PENS) != 0;
-  uint16_t words[16];
   if (n < 6 + (pens ? MD_PAL_PENS_BYTES : MD_PAL_RGB_BYTES) / 2) {
     add_error(MD_ERR_BAD_CMD);
     return;
   }
   md_get_bytes(rgb, w + 6, MD_PAL_RGB_BYTES);
-  if (pens) {
-    for (int i = 0; i < 16; i++) words[i] = w[6 + MD_PAL_RGB_BYTES / 2 + i];
-    md_get_bytes(mix, w + 6 + MD_PAL_RGB_BYTES / 2 + 16, 512);
-  }
 #ifdef MDFW_VERSION
   memcpy(s_view_rgb, rgb, 768);
 #endif
-  md_video_set_palette(rgb, pens ? words : NULL, mix, flags, PALETTE_SCRATCH);
+  if (pens) {
+    md_get_bytes(mix, w + 6 + MD_PAL_RGB_BYTES / 2 + 16, 512);
+    md_video_set_pens(w + 6 + MD_PAL_RGB_BYTES / 2, mix, PALETTE_SCRATCH);
+  } else {
+    md_video_set_palette(rgb, flags, PALETTE_SCRATCH);
+  }
   publish_palette();
   status_set(MD_ST_PAL_SEQ, (uint16_t)md_get32(w));
 }
@@ -711,7 +708,7 @@ void md_main_init(uintptr_t rom_base, const char *folder, bool sd_ok) {
   for (int i = 0; i < 256; i++) {
     s_chunky[i * 3] = s_chunky[i * 3 + 1] = s_chunky[i * 3 + 2] = (uint8_t)i;
   }
-  md_video_set_palette(s_chunky, NULL, NULL, 0, PALETTE_SCRATCH);
+  md_video_set_palette(s_chunky, 0, PALETTE_SCRATCH);
   publish_palette();
   md_pack_init();
   md_music_init(rom_base);

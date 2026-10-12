@@ -28,11 +28,8 @@ OBJDIR ?= obj/atarist
 # v*-atarist.* tag this checkout has (the release workflow passes the one
 # it is about to tag, as it builds before tagging), or "dev" without git.
 ifeq ($(origin ROTT_VERSION),undefined)
-ROTT_VERSION := $(shell git describe --tags --abbrev=0 --match 'v*-atarist.*' 2>/dev/null)
+ROTT_VERSION := $(or $(shell git describe --tags --abbrev=0 --match 'v*-atarist.*' 2>/dev/null),dev)
 endif
-ROTT_VERSION := $(or $(ROTT_VERSION),dev)
-# Only rt_main.c is told, so a new version rebuilds just that.
-ROTT_VERSION_CFLAGS = $(if $(filter %/rott/rt_main.o,$@),-DROTT_PORT_VERSION='"$(ROTT_VERSION)"')
 
 # Debugging
 
@@ -97,9 +94,11 @@ ATARI_WALL_ANIM_DIVISOR ?= 2 # Wall animation divisor
 # Compiler and linker settings
 
 ATARI_CC ?= m68k-atari-mint-gcc
-# atari_printf.h: printf ending lines in \r\n, for TOS's console.
+# No built-in printf: GCC turns printf("...\n") into puts(), which ends the
+# line with a bare \n, where libcmini's printf sends \r\n as TOS's console
+# needs.
 ATARI_CFLAGS ?= -O3 -fomit-frame-pointer -s -std=gnu99 -m68000 \
-	-include $(SRCDIR)/atari_printf.h \
+	-fno-builtin-printf -fno-builtin-fprintf \
 	-fno-strict-aliasing -DPLATFORM_TIMER_HZ=200 -DATARI_NATIVE=1 \
 		-DSHAREWARE=$(ATARI_SHAREWARE) \
 	-DSUPERROTT=$(ATARI_SUPERROTT) -DSITELICENSE=$(ATARI_SITELICENSE) \
@@ -436,7 +435,11 @@ $(SDL_030_OBJDIR)/%.o: %.c $(SDL_030_OBJDIR)/.sdl_flags
 	@mkdir -p $(dir $@)
 	$(SDL_CC) -m68030 $(SDL_GAME_CFLAGS) $(ROTT_VERSION_CFLAGS) -MMD -MP -c $< -o $@
 
-# As the flags stamps, for the version: rt_main.o rebuilds when it changes.
+# Only rt_main.c is told the version (ROTT_VERSION_CFLAGS is empty for the
+# rest), and, as with the flags stamps, rebuilt when it changes.
+RT_MAIN_OBJECTS := $(OBJDIR)/rott/rt_main.o $(SDL_OBJDIR)/rott/rt_main.o \
+	$(SDL_030_OBJDIR)/rott/rt_main.o
+$(RT_MAIN_OBJECTS): ROTT_VERSION_CFLAGS = -DROTT_PORT_VERSION='"$(ROTT_VERSION)"'
 $(OBJDIR)/rott/rt_main.o: $(OBJDIR)/.rott_version
 $(SDL_OBJDIR)/rott/rt_main.o: $(SDL_OBJDIR)/.rott_version
 $(SDL_030_OBJDIR)/rott/rt_main.o: $(SDL_030_OBJDIR)/.rott_version

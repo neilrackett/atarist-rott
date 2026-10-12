@@ -54,7 +54,6 @@ static emu_timer_hw_t s_timer;
 emu_timer_hw_t *timer_hw = &s_timer;
 
 uint32_t time_us_32(void) { return s_timer.timerawl; }
-void mdemu_set_time_us(uint32_t us) { s_timer.timerawl = us; }
 
 /* ---- the ROM3 capture ring and its interrupt -------------------------- */
 
@@ -97,8 +96,8 @@ static void sd_path(char *full, size_t size, const char *path) {
 FRESULT f_open(FIL *fp, const char *path, int mode) {
   char full[1024];
   sd_path(full, sizeof(full), path);
-  if (mode & FA_WRITE) {
-    fp->fp = fopen(full, (mode & FA_CREATE_ALWAYS) ? "wb" : "r+b");
+  if (mode & FA_WRITE) { /* always with FA_CREATE_ALWAYS (the WAD copy) */
+    fp->fp = fopen(full, "wb");
     fp->size = 0;
     return fp->fp ? FR_OK : FR_DISK_ERR;
   }

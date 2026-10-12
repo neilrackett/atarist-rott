@@ -24,6 +24,8 @@ void ATARI_XpadRumble(int low, int high, int vbls);
 void ATARI_InjectKey(int scancode, int down);
 /* rt_build.c: a menu is up. */
 int ATARI_MenuActive(void);
+#else
+#define ATARI_XpadRumble(low, high, vbls) ((void)0)
 #endif
 
 #endif

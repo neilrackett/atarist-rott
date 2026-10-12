@@ -440,7 +440,7 @@ void SetTextMode(void)
 void TurnOffTextCursor(void)
 {
 #if defined(__MINT__)
-   /* Off, where it is: homing it put the startup text over main's banner. */
+   /* Off, where it is: homing it put the title over what came before. */
    Cconws("\33f");
 #endif
 }

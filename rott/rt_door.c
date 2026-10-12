@@ -3031,9 +3031,7 @@ void Teleport(elevator_t*eptr,int destination)
 		 if (temp == player)
 			{
 			SHAKETICS = 10;
-#if defined(ATARI_NATIVE)
 			ATARI_XpadRumble(160, 0, 10); /* shoved by a moving wall */
-#endif
 			}
 		}
 	}

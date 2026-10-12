@@ -647,12 +647,11 @@ int main (int argc, char *argv[])
    return 0;
 }
 
-#if defined(__MINT__)
-#ifndef ROTT_PORT_VERSION
+#if defined(__MINT__) && !defined(ROTT_PORT_VERSION)
 #define ROTT_PORT_VERSION "dev" /* the Makefile's ROTT_VERSION */
 #endif
 
-/* The edition, as the title's second line has always said. */
+/* The edition: the title's second line. */
 static const char *RottEdition ( void )
 {
    if (gamestate.Product == ROTT_SHAREWARE)
@@ -669,7 +668,6 @@ static const char *RottEdition ( void )
       return "Site License CD Version";
    return "Commercial Version";
 }
-#endif
 
 void DrawRottTitle ( void )
 {
@@ -718,24 +716,7 @@ void DrawRottTitle ( void )
 
          UL_printf(title);
 
-         memset (title,0,sizeof(title));
-
-         if (gamestate.Product == ROTT_SHAREWARE)
-            {
-#if (DELUXE==1)
-            strcpy(title,"Lasersoft Deluxe Version");
-#elif (LOWCOST==1)
-            strcpy(title,"Episode One");
-#else
-            strcpy(title,"Shareware Version");
-#endif
-            }
-         else if (gamestate.Product == ROTT_SUPERCD)
-             strcpy(title,"CD Version");
-         else if (gamestate.Product == ROTT_SITELICENSE)
-             strcpy(title,"Site License CD Version");
-         else
-             strcpy(title,"Commercial Version");
+         strcpy(title,RottEdition());
 
          px=(80-strlen(title))>>1;
          py=1;

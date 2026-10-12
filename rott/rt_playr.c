@@ -4816,12 +4816,10 @@ void  T_Attack (objtype *ob)
       #endif
                {
                GunAttack(ob);
-#if defined(ATARI_NATIVE)
                /* A light buzz a shot, long enough that the MP40's run
                 * together. */
                if (ob == player)
                   ATARI_XpadRumble(0, 110, 8);
-#endif
                }
 
             break;
@@ -4842,10 +4840,8 @@ void  T_Attack (objtype *ob)
             if (ob==player)
                SetIllumination(2);
             PlayerMissileAttack(ob);
-#if defined(ATARI_NATIVE)
             if (ob == player)
                ATARI_XpadRumble(220, 90, 12); /* the launch's kick */
-#endif
 
 
             if (!(ob->flags & FL_GODMODE) && !godmode)

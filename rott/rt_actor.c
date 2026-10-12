@@ -2633,9 +2633,7 @@ void SpawnFirebomb(objtype*ob,int damage,int which)
          )
          {
          SHAKETICS = 35;
-#if defined(ATARI_NATIVE)
          ATARI_XpadRumble(255, 128, 25); /* half a second, as it shakes */
-#endif
          }
       }
 
@@ -11123,10 +11121,8 @@ void DamagePlayerActor(objtype *ob, int damage)
       damagecount += damage;
       if (cybermanenabled)
          SWIFT_TactileFeedback (10*damage, 15, 15);
-#if defined(ATARI_NATIVE)
       /* As hard and as long as it hurts, like the CyberMan's above. */
       ATARI_XpadRumble(96 + (damage << 3), damage << 3, 4 + (damage >> 1));
-#endif
       if ( SHOW_BOTTOM_STATUS_BAR() )
          DrawBarHealth (false);
       }
