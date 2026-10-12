@@ -209,7 +209,7 @@ after repeated failures the ST switches to its own renderer and says so.
 ## Testing without hardware
 
 The firmware also builds for [EmuMD](https://github.com/neilrackett/emumd),
-which runs Multi-device firmware in a patched Hatari. EmuMD is a submodule
+which runs Multi-device firmware in its own fork of Hatari. EmuMD is a submodule
 in `emu/emumd`; `mdfw.ini` says how to build the firmware for it, and the
 glue is in `emu/`.
 
@@ -218,7 +218,7 @@ firmware and runs them; `EMU_ARGS` are passed to `mdfw run`. By hand:
 
 ```sh
 cd sidecart
-emu/emumd/tools/mdfw hatari   # once: patched Hatari + EmuTOS in ~/.cache/emumd
+emu/emumd/tools/mdfw hatari   # once: EmuMD's Hatari + EmuTOS in ~/.cache/emumd
 emu/emumd/tools/mdfw build    # build/rott-accelerator.mdfw
 emu/emumd/tools/mdfw run      # dist/ROTT_ST.TOS, 16 MHz Mega STE
 ```
