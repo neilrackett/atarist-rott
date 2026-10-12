@@ -87,7 +87,9 @@ ATARI_WALL_ANIM_DIVISOR ?= 2 # Wall animation divisor
 # Compiler and linker settings
 
 ATARI_CC ?= m68k-atari-mint-gcc
+# atari_printf.h: printf ending lines in \r\n, for TOS's console.
 ATARI_CFLAGS ?= -O3 -fomit-frame-pointer -s -std=gnu99 -m68000 \
+	-include $(SRCDIR)/atari_printf.h \
 	-fno-strict-aliasing -DPLATFORM_TIMER_HZ=200 -DATARI_NATIVE=1 \
 		-DSHAREWARE=$(ATARI_SHAREWARE) \
 	-DSUPERROTT=$(ATARI_SUPERROTT) -DSITELICENSE=$(ATARI_SITELICENSE) \

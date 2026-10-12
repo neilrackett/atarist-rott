@@ -462,8 +462,8 @@ stop:
  * 1 once it is copied. */
 static int wad_copy(unsigned short errors, const char *name, long size) {
   char line[48];
-  /* In 40 columns from the start of a line: the startup's lines end in a
-   * bare \n, and TOS doesn't wrap (the firmware's text is longer). */
+  /* In 40 columns from the start of a line: TOS doesn't wrap, and the
+   * firmware's text is longer. */
   fflush(stdout);
   if (errors & MD_ERR_NO_SD) {
     Cconws("\rROTT Accelerator: no SD card\r\n");
