@@ -32,8 +32,8 @@ shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
    `ROTT_ST.TOS` copies its own there the first time (step 5).
 4. On the Booster screen, press ESC for the app list and select ROTT
    Accelerator. The ST restarts and prints this during boot, with the
-   firmware's version (such as `v1.4.0-beta.4`), and `not responding` in
-   place of `ready` if the firmware isn't up:
+   firmware's version (such as `v1.4.0-beta.4`), or `ROTT Accelerator not
+   responding` in place of the first line if the firmware isn't up:
 
    ```
    ROTT Accelerator <version> ready

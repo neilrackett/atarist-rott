@@ -243,11 +243,9 @@ static void cmd_hello(const uint16_t *w, uint32_t n) {
   if (err & MD_ERR_NO_SD) {
     snprintf(text, sizeof(text), "ROTT Accelerator: no SD card");
   } else if (err & MD_ERR_NO_WAD) {
-    snprintf(text, sizeof(text), "ROTT Accelerator: %s/%s missing", s_folder,
-             name);
+    snprintf(text, sizeof(text), "ROTT Accelerator: %s missing", name);
   } else if (err & MD_ERR_WAD_MISMATCH) {
-    snprintf(text, sizeof(text), "ROTT Accelerator: %s/%s differs", s_folder,
-             name);
+    snprintf(text, sizeof(text), "ROTT Accelerator: wrong %s", name);
   } else {
     snprintf(text, sizeof(text), "ROTT Accelerator %s", RELEASE_VERSION);
   }

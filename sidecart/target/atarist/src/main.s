@@ -65,17 +65,17 @@ start_rom_code:
 	addq.l #2,sp
 	dbf d6,.poll
 
-	pea msg_not_ready(pc)
+	pea msg_not_ready(pc)		; "ROTT Accelerator not responding"
 	bra.s .print
 
 .found:
-	pea msg_ready(pc)
-.print:
 	pea banner_txt(pc)		; "ROTT Accelerator <version>"
 	move.w #9,-(sp)			; GEMDOS Cconws
 	trap #1
 	addq.l #6,sp
-	move.w #9,-(sp)			; then " ready" or " not responding"
+	pea msg_ready(pc)		; then " ready"
+.print:
+	move.w #9,-(sp)
 	trap #1
 	addq.l #6,sp
 	pea msg_footer(pc)
@@ -93,7 +93,7 @@ start_rom_code:
 msg_ready:
 	dc.b " ready",$d,$a,0
 msg_not_ready:
-	dc.b " not responding",$d,$a,0
+	dc.b "ROTT Accelerator not responding",$d,$a,0
 msg_footer:
 	dc.b "GPLv3 (c)2026 Neil Rackett",$d,$a,$d,$a
 	dc.b "Get ROTT from neilrackett.com/atarist",$d,$a
