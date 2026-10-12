@@ -250,8 +250,9 @@ ROTT Accelerator (MD/ROTT in the source; SidecarTridge Multi-device renderer)
   Output that bypasses it (`Cconws`) ends lines in `\r\n` itself. TOS
   doesn't wrap: keep startup lines within 40 columns.
 - Firmware: `make -C sidecart build` (needs `PICO_TOOLCHAIN_PATH`); tests:
-  `make -C sidecart tests` (PINGTEST/UPTEST), `make -C sidecart emu`,
-  `make -C sidecart hatari`, `sidecart/tests/emu/run-hatari.sh`.
+  `make -C sidecart tests` (PINGTEST/UPTEST), `make -C sidecart emu`
+  (host self-tests: the command protocol and the level pack's on-demand
+  loading; no music).
 - EmuMD (submodule `sidecart/emu/emumd`): in `sidecart/`,
   `emu/emumd/tools/mdfw build` / `run --headless --frames N --screenshot
   out.png --log out.log` (config in `sidecart/mdfw.ini`, glue in `sidecart/emu/`).

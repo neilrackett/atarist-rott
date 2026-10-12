@@ -10,6 +10,8 @@ CPPFLAGS := -Ishim -I. -I$(RP)/include -I$(RP) -I../../include -I$(ROTT) \
 	-DRELEASE_VERSION=\"emu\" -D_DEBUG=1
 OUT ?= build
 
+# Not md_music.c, which wants the RP's timers and USB RAM: mdemu.c stands
+# in for it with no music (EmuMD plays it).
 SRCS := mdemu.c $(RP)/md_main.c $(RP)/md_proto.c $(RP)/tprotocol.c \
 	$(RP)/md_pack.c $(RP)/md_video.c $(wildcard $(RP)/rott/*.c) \
 	$(ROTT)/atari_tables.c

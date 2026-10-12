@@ -243,29 +243,23 @@ cd sidecart && emu/emumd/tools/mdfw run --headless --frames 13000 \
 cmp ../build/check/LOGIC.TXT /path/to/reference/LOGIC.TXT
 ```
 
-`tests/emu` builds the firmware for the host (`libmdemu`) with the Pico
-SDK, flash and FatFs replaced, plus a patch that plugs it into Hatari's
-cartridge port.
+`tests/emu` holds the firmware's self-tests on the host, a couple of
+seconds with no emulator: `libmdemu` is the firmware with the Pico SDK,
+flash and FatFs replaced (and no music); `selftest` drives the command
+protocol word for word the way `ROTT_ST.TOS` does (HELLO against the real
+WAD, 10,000 ECHO packets, a test pattern), and `packtest` plays 3,000
+random frames against the level pack and its on-demand loading.
 
 ```sh
-make -C sidecart emu        # libmdemu + self-tests (WAD from tmp/ROTT)
-make -C sidecart hatari     # Hatari 2.6.1 with the emulated cartridge
+make -C sidecart emu        # WAD from tmp/ROTT
 ```
 
-`tests/emu/run-hatari.sh` runs a program unattended and records the
-screen. For ROTT, build it with `ATARI_MD_AUTOTEST=8` (it starts a game
-and turns a fixed step each frame) so runs with and without the
-Multi-device show the same views; it saves `SHOT008.PI1` ... `SHOT064.PI1`
-and `MDDEBUG.TXT` (both palettes and the firmware's status block) next
-to itself. `tests/emu/pi1topng.py` converts the shots. In the emulator the
-Multi-device is infinitely fast.
-
-```sh
-make st ATARI_MD_AUTOTEST=8 ATARI_SHOW_FPS=1 \
-    BUILDDIR=build/autotest OBJDIR=obj/autotest
-mkdir -p /tmp/run/sd/rott && ln -s $PWD/tmp/ROTT/HUNTBGIN.WAD /tmp/run/sd/rott/
-sidecart/tests/emu/run-hatari.sh <hatari> <tos.img> build/autotest /tmp/run 8000 md
-```
+`ATARI_MD_AUTOTEST=8` builds start a game and turn a fixed step each
+frame, so runs with and without the Multi-device show the same views (in
+EmuMD, `--sd` pointing at a card without the WAD runs the ST renderer);
+they save `SHOT008.PI1` ... `SHOT064.PI1` and `MDDEBUG.TXT` (both sides'
+16 colours and the firmware's status block) next to themselves.
+`tests/emu/pi1topng.py` converts the shots.
 
 ## Licence
 

@@ -1771,7 +1771,7 @@ static void autotest_report(void) {
 
 #if defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
 /* Every 8th of the first 64 frames, as a Degas .PI1 (resolution word,
- * palette, screen), with or without the MD: tests/emu compares the two.
+ * palette, screen), with or without the MD, so the two can be compared.
  * And the chunky screen before c2p as CHUNKnnn.RAW, 320x200 (the status
  * bars, for tools/rottpalette). */
 void ATARI_MD_AutotestShot(int frame) {

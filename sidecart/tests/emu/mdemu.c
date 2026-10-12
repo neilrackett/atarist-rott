@@ -7,6 +7,7 @@
 #include "mdemu.h"
 
 #include <stdlib.h>
+#include <sys/stat.h>
 
 #include "commemul.h"
 #include "constants.h"
@@ -15,6 +16,7 @@
 #include "hardware/flash.h"
 #include "md_core1.h"
 #include "md_main.h"
+#include "md_music.h"
 #include "md_proto.h"
 #include "rott/r_local.h"
 #include "rott_md_protocol.h"
@@ -88,10 +90,18 @@ void md_core1_unpark(void) {}
 
 static char s_sd_root[512];
 
+static void sd_path(char *full, size_t size, const char *path) {
+  snprintf(full, size, "%s%s", s_sd_root, path);
+}
+
 FRESULT f_open(FIL *fp, const char *path, int mode) {
   char full[1024];
-  (void)mode;
-  snprintf(full, sizeof(full), "%s%s", s_sd_root, path);
+  sd_path(full, sizeof(full), path);
+  if (mode & FA_WRITE) {
+    fp->fp = fopen(full, (mode & FA_CREATE_ALWAYS) ? "wb" : "r+b");
+    fp->size = 0;
+    return fp->fp ? FR_OK : FR_DISK_ERR;
+  }
   fp->fp = fopen(full, "rb");
   if (!fp->fp) return FR_NO_FILE;
   fseek(fp->fp, 0, SEEK_END);
@@ -103,6 +113,33 @@ FRESULT f_read(FIL *fp, void *buff, UINT btr, UINT *br) {
   *br = (UINT)fread(buff, 1, btr, fp->fp);
   return FR_OK;
 }
+FRESULT f_write(FIL *fp, const void *buff, UINT btw, UINT *bw) {
+  *bw = (UINT)fwrite(buff, 1, btw, fp->fp);
+  return *bw == btw ? FR_OK : FR_DISK_ERR;
+}
+FRESULT f_unlink(const char *path) {
+  char full[1024];
+  sd_path(full, sizeof(full), path);
+  return remove(full) ? FR_NO_FILE : FR_OK;
+}
+FRESULT f_rename(const char *path_old, const char *path_new) {
+  char from[1024], to[1024];
+  sd_path(from, sizeof(from), path_old);
+  sd_path(to, sizeof(to), path_new);
+  return rename(from, to) ? FR_DISK_ERR : FR_OK;
+}
+FRESULT f_mkdir(const char *path) {
+  char full[1024];
+  sd_path(full, sizeof(full), path);
+  return mkdir(full, 0777) ? FR_DISK_ERR : FR_OK;
+}
+FRESULT f_getfree(const char *path, DWORD *nclst, FATFS **fatfs) {
+  static FATFS fs = {64}; /* 32 KB clusters, and room for anything */
+  (void)path;
+  *nclst = 1u << 20;
+  *fatfs = &fs;
+  return FR_OK;
+}
 FRESULT f_lseek(FIL *fp, FSIZE_t ofs) {
   return fseek(fp->fp, (long)ofs, SEEK_SET) ? FR_DISK_ERR : FR_OK;
 }
@@ -110,6 +147,18 @@ FRESULT f_close(FIL *fp) {
   fclose(fp->fp);
   return FR_OK;
 }
+
+/* ---- music: none (md_music.c wants the RP's timers and USB RAM) ------ */
+
+bool md_music_ok(void) { return false; } /* so no MD_CAP_MUSIC */
+void md_music_init(uintptr_t rom_base) { (void)rom_base; }
+void md_music_command(unsigned action, int lump, bool loop, unsigned volume) {
+  (void)action;
+  (void)lump;
+  (void)loop;
+  (void)volume;
+}
+void md_music_service(void) {}
 
 /* ---- frame dumps ------------------------------------------------------ */
 

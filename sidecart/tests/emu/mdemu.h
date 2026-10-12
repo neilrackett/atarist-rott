@@ -2,15 +2,17 @@
  * Copyright (C) 2026 Neil Rackett
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * mdemu.h - the MD/ROTT firmware as a library an Atari emulator can drive.
+ * mdemu.h - the MD/ROTT firmware as a library the host self-tests drive
+ * (selftest.c, packtest.c). Running it with an emulated ST is EmuMD's job
+ * (../../emu/emumd).
  *
  * The firmware's portable parts (md_main.c, md_proto.c, md_pack.c,
  * md_video.c and the renderer) compiled for the host, with the Pico SDK,
- * FatFs and flash replaced by shims. The emulator routes reads of the
- * cartridge port here: ROM4 ($FA0000-$FAFFFF) returns the firmware's
+ * FatFs and flash replaced by shims, and no music (md_music.c wants the
+ * RP's timers). A test reads the cartridge port through it: ROM4 ($FA0000-$FAFFFF) returns the firmware's
  * window, ROM3 ($FB0000-$FBFFFF) feeds the command decoder. Commands run
- * to completion the moment their last word arrives, so to the emulated ST
- * the Multi-device is infinitely fast. The firmware's idle loop runs on
+ * to completion the moment their last word arrives, so the Multi-device
+ * is infinitely fast. The firmware's idle loop runs on
  * every 256th ROM4 read.
  */
 #ifndef MDEMU_H

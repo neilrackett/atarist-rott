@@ -9,7 +9,6 @@
 #   make debug      debug firmware (UART console) + test apps
 #   make tests      the ST test apps in tests/
 #   make emu        firmware emulator library + self-tests (host, needs WAD)
-#   make hatari     Hatari with the emulated cartridge (tests/emu)
 #   make census     sizes in the shareware WAD vs the pack window
 #   make uart       serial console
 
@@ -57,8 +56,8 @@ uptest:
 	$(ST_CC) $(ST_TEST_FLAGS) -o sidecart/tests/UPTEST.TOS \
 		sidecart/tests/uptest.c rott/atari_md_s.S $(ST_TEST_LIBS)
 
-## The firmware on the host (tests/emu): libmdemu, its self-test, and a
-## Hatari with the emulated cartridge. See tests/emu/run-hatari.sh.
+## The firmware's self-tests on the host (tests/emu): the command protocol
+## the way the ST drives it, and the level pack's on-demand loading.
 .PHONY: emu
 emu:
 	$(MAKE) -C tests/emu
@@ -66,10 +65,6 @@ emu:
 	ln -sf $(WAD) tests/emu/build/sd/rott/$(notdir $(WAD))
 	tests/emu/build/selftest tests/emu/build/sd tests/emu/build/selftest-out
 	tests/emu/build/packtest tests/emu/build/sd
-
-.PHONY: hatari
-hatari:
-	tests/emu/build-hatari.sh
 
 .PHONY: census
 census:
