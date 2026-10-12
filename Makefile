@@ -24,6 +24,16 @@ DATADIR ?= tmp/ROTT
 BUILDDIR ?= dist
 OBJDIR ?= obj/atarist
 
+# The port's version, which the games print first at startup: the newest
+# v*-atarist.* tag this checkout has (the release workflow passes the one
+# it is about to tag, as it builds before tagging), or "dev" without git.
+ifeq ($(origin ROTT_VERSION),undefined)
+ROTT_VERSION := $(shell git describe --tags --abbrev=0 --match 'v*-atarist.*' 2>/dev/null)
+endif
+ROTT_VERSION := $(or $(ROTT_VERSION),dev)
+# Only rt_main.c is told, so a new version rebuilds just that.
+ROTT_VERSION_CFLAGS = $(if $(filter %/rott/rt_main.o,$@),-DROTT_PORT_VERSION='"$(ROTT_VERSION)"')
+
 # Debugging
 
 ATARI_DEBUG ?= 0 # Enable debug logging
@@ -176,7 +186,8 @@ ATARI_FLAGS_STAMP := $(OBJDIR)/.atari_flags
 TOOLCHAIN := $(shell command -v $(ATARI_CC) 2>/dev/null)
 JOBS ?= 4
 STCMD_MAKE = STCMD_NO_TTY=1 STCMD_QUIET=1 stcmd make -j$(JOBS) \
-	$(filter ATARI_% SDL_% BUILDDIR=% OBJDIR=% DATADIR=%,$(MAKEOVERRIDES))
+	$(filter ATARI_% SDL_% BUILDDIR=% OBJDIR=% DATADIR=%,$(MAKEOVERRIDES)) \
+	ROTT_VERSION=$(ROTT_VERSION)
 
 ifneq ($(TOOLCHAIN),)
 games: st sdl sdl-030
@@ -391,7 +402,7 @@ $(ATARI_FLAGS_STAMP): FORCE | $(OBJDIR)
 
 $(OBJDIR)/%.o: %.c $(ATARI_FLAGS_STAMP)
 	mkdir -p $(dir $@)
-	$(ATARI_CC) $(ATARI_CFLAGS) $(ATARI_INCLUDES) -MMD -MP -c $< -o $@
+	$(ATARI_CC) $(ATARI_CFLAGS) $(ROTT_VERSION_CFLAGS) $(ATARI_INCLUDES) -MMD -MP -c $< -o $@
 
 # Headers too: an object rebuilds when one it includes changes.
 -include $(ATARI_OBJECTS:.o=.d)
@@ -419,10 +430,19 @@ $(SDL_OBJDIR)/.sdl_flags $(SDL_030_OBJDIR)/.sdl_flags: FORCE
 
 $(SDL_OBJDIR)/%.o: %.c $(SDL_OBJDIR)/.sdl_flags
 	@mkdir -p $(dir $@)
-	$(SDL_CC) -m68000 $(SDL_GAME_CFLAGS) -MMD -MP -c $< -o $@
+	$(SDL_CC) -m68000 $(SDL_GAME_CFLAGS) $(ROTT_VERSION_CFLAGS) -MMD -MP -c $< -o $@
 
 $(SDL_030_OBJDIR)/%.o: %.c $(SDL_030_OBJDIR)/.sdl_flags
 	@mkdir -p $(dir $@)
-	$(SDL_CC) -m68030 $(SDL_GAME_CFLAGS) -MMD -MP -c $< -o $@
+	$(SDL_CC) -m68030 $(SDL_GAME_CFLAGS) $(ROTT_VERSION_CFLAGS) -MMD -MP -c $< -o $@
+
+# As the flags stamps, for the version: rt_main.o rebuilds when it changes.
+$(OBJDIR)/rott/rt_main.o: $(OBJDIR)/.rott_version
+$(SDL_OBJDIR)/rott/rt_main.o: $(SDL_OBJDIR)/.rott_version
+$(SDL_030_OBJDIR)/rott/rt_main.o: $(SDL_030_OBJDIR)/.rott_version
+%/.rott_version: FORCE
+	@mkdir -p $(@D)
+	@echo "$(ROTT_VERSION)" > "$@.tmp"; \
+	if [ -f "$@" ] && cmp -s "$@.tmp" "$@"; then rm -f "$@.tmp"; else mv "$@.tmp" "$@"; fi
 
 -include $(SDL_OBJECTS:.o=.d) $(SDL_030_OBJECTS:.o=.d)

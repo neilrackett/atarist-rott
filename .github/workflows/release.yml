@@ -149,7 +149,9 @@ jobs:
         run: curl -sL https://github.com/sidecartridge/atarist-toolkit-docker/releases/latest/download/install_atarist_toolkit_docker.sh | bash
 
       - name: Build the games
-        run: stcmd make -j4 games
+        # The version the games print at startup: the tag this release is
+        # about to get (git describe would find the one before).
+        run: stcmd make -j4 games ROTT_VERSION="$VERSION"
 
       - name: Build the ROTT Accelerator firmware
         # make build releases sidecart/version.txt as it is, without the

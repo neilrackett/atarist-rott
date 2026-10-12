@@ -647,10 +647,36 @@ int main (int argc, char *argv[])
    return 0;
 }
 
+#if defined(__MINT__)
+#ifndef ROTT_PORT_VERSION
+#define ROTT_PORT_VERSION "dev" /* the Makefile's ROTT_VERSION */
+#endif
+
+/* The edition, as the title's second line has always said. */
+static const char *RottEdition ( void )
+{
+   if (gamestate.Product == ROTT_SHAREWARE)
+#if (DELUXE==1)
+      return "Lasersoft Deluxe Version";
+#elif (LOWCOST==1)
+      return "Episode One";
+#else
+      return "Shareware Version";
+#endif
+   if (gamestate.Product == ROTT_SUPERCD)
+      return "CD Version";
+   if (gamestate.Product == ROTT_SITELICENSE)
+      return "Site License CD Version";
+   return "Commercial Version";
+}
+#endif
+
 void DrawRottTitle ( void )
 {
+#if !defined(__MINT__)
    char title[80];
    char buf[5];
+#endif
 
    SetTextMode();
    TurnOffTextCursor ();
@@ -659,6 +685,14 @@ void DrawRottTitle ( void )
       {
       SetTextMode();
       TurnOffTextCursor ();
+#if defined(__MINT__)
+      /* The port's: its version (the newest v*-atarist.* tag), the
+       * edition, who ported it and where, in 40 columns. The first text
+       * the game prints. */
+      printf("Rise of the Triad " ROTT_PORT_VERSION "\n%s\n\n"
+             "Ported to Atari ST by Neil Rackett\n"
+             "neilrackett.com/atarist\n\n", RottEdition());
+#else
 #ifdef DOS
       if (CheckParm ("SOUNDSETUP") == 0)
          {
@@ -730,6 +764,7 @@ void DrawRottTitle ( void )
          UL_ColorBox (0, 0, 80, 1, 0x1e);
          }
 #endif
+#endif /* __MINT__ */
       }
    else
       {

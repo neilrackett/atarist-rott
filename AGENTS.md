@@ -27,6 +27,14 @@ Build + Artifacts
 - Run it in EmuMD (from the host, not stcmd): `make emu` (builds with stcmd
   first; `EMU_ARGS` go to `mdfw run`, e.g. `--headless --frames N --screenshot out.png`)
 - Object files: `obj/atarist`, `obj/sdl`, `obj/sdl-030`
+- All three games' first text is `DrawRottTitle()`'s (`rt_main.c`), the
+  port's own on `__MINT__`: `Rise of the Triad <version>`, the edition
+  (`Shareware Version`), the port credit and neilrackett.com/atarist,
+  in place of ROTT's `Rise of the Triad Startup  Version 1.4`. The version is
+  `ROTT_VERSION`: the newest `v*-atarist.*` tag the checkout has (`dev`
+  without), or what the release workflow passes, as it builds before it
+  tags. Only `rt_main.o` gets it (`.rott_version` stamps), so a new tag
+  rebuilds just that.
 - The native build's startup is `rott/atari_crt0.S`, linked first: libcmini's
   crt0 plus a clear of the BSS, as a second run from the desktop on a real
   Mega STE (TOS 2.06) kept the first run's statics.
