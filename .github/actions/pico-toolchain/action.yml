@@ -20,8 +20,9 @@ runs:
       run: |
         # The runner image ships Google's Chrome apt source, which has
         # served mismatched index files and failed `apt update` outright;
-        # nothing here needs it.
-        sudo grep -l dl.google.com /etc/apt/sources.list.d/* | xargs -r sudo rm -f
+        # nothing here needs it. (Images without it are fine: a composite
+        # step's bash has pipefail, so grep finding nothing mustn't fail.)
+        { sudo grep -l dl.google.com /etc/apt/sources.list.d/* || true; } | xargs -r sudo rm -f
         sudo DEBIAN_FRONTEND=noninteractive apt update || true
         sudo DEBIAN_FRONTEND=noninteractive apt install -y cmake build-essential
         NAME="arm-gnu-toolchain-$ARM_GNU-x86_64-arm-none-eabi"
