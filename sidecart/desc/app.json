@@ -1,7 +1,7 @@
 {
   "uuid": "<APP_UUID>",
   "name": "ROTT Accelerator",
-  "description": "The ROTT Accelerator enables you to play Rise of the Triad at up to 30fps on your Atari ST. ROTT for Atari ST is available at <a href=\"https://neilrackett.com/atarist\">neilrackett.com/atarist</a>. To use it, run ROTT_ST.TOS from the GEM Desktop.",
+  "description": "The ROTT Accelerator turns your SidecarTridge Multi-device into a graphics card for Rise of the Triad, enabling you to play it at up to 30fps on your Atari ST. Your ST runs the game while the Multi-device takes care of the 3D rendering to give you a fast, playable game. Still experimental. Find out more at <a href=\"https://neilrackett.com/atarist/atarist-rott-accelerator\">neilrackett.com</a>.",
   "image": "https://downloads.neilrackett.com/atarist-rott.webp",
   "tags": [
     "Game",
