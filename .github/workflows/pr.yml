@@ -47,13 +47,17 @@ jobs:
       - name: Check out the code
         uses: actions/checkout@v5
 
-      - name: Fetch the Xpad submodule
-        # The game compiles lib/xpad/src/xpad.c. Only Xpad, deliberately:
-        # checkout's own `submodules:` clones every submodule at depth 1,
-        # and a shallow pico-sdk has no tags for sidecart/rp/build.sh to
-        # pin to. That script fetches the SDKs itself, and EmuMD is not
-        # needed to build either binary.
-        run: git submodule update --init lib/xpad
+      - name: Fetch the Xpad and STDL submodules
+        # The game compiles lib/xpad/src/xpad.c, and the SDL builds link
+        # STDL (lib/stdl, with its own Xpad inside: hence --recursive; at
+        # full depth, as its start-up line's version comes from its tags).
+        # Only these, deliberately: checkout's own `submodules:` clones
+        # every submodule at depth 1, and a shallow pico-sdk has no tags
+        # for sidecart/rp/build.sh to pin to. That script fetches the SDKs
+        # itself, and EmuMD is not needed to build either binary.
+        run: |
+          git submodule update --init lib/xpad
+          git submodule update --init --recursive lib/stdl
 
       - name: Install the Pico toolchain
         # .github/actions/pico-toolchain: cmake, and the Arm toolchain
@@ -63,7 +67,7 @@ jobs:
       - name: Install the Atari ST toolkit
         # Generates /usr/local/bin/stcmd, which runs the m68k builds in a
         # container: the games, and the firmware's cartridge stub. The image
-        # carries SDL 1.2 and MiNTLib for the SDL builds as well.
+        # carries MiNTLib for the SDL builds as well; their SDL is lib/stdl.
         run: curl -sL https://github.com/sidecartridge/atarist-toolkit-docker/releases/latest/download/install_atarist_toolkit_docker.sh | bash
 
       - name: Build the games

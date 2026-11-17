@@ -51,6 +51,9 @@ static SDL_Surface *video_surface;
 static SDL_Surface *blit_surface;
 static byte *screenpixels;
 static int video_initialized;
+/* The game draws straight into STDL's screen surface: no buffer of its own
+ * and no copy a frame. */
+static int screen_is_surface;
 
 extern int iG_X_center;
 extern int iG_Y_center;
@@ -482,7 +485,14 @@ void GraphicsMode(void)
     SDL_WM_SetCaption("Rise of the Triad", "ROTT");
     SDL_ShowCursor(SDL_DISABLE);
 
-    screenpixels = (byte *)malloc((size_t)iGLOBAL_SCREENWIDTH * (size_t)iGLOBAL_SCREENHEIGHT);
+    /* A byte a pixel in rows of the screen's width, never locked: the
+     * surface is as the game's own buffer would be. */
+    screen_is_surface = (blit_surface == video_surface)
+                        && (video_surface->pitch == iGLOBAL_SCREENWIDTH);
+    if (screen_is_surface)
+        screenpixels = (byte *)video_surface->pixels;
+    else
+        screenpixels = (byte *)malloc((size_t)iGLOBAL_SCREENWIDTH * (size_t)iGLOBAL_SCREENHEIGHT);
     if (screenpixels == NULL)
         Error("Failed to allocate %dx%d framebuffer", iGLOBAL_SCREENWIDTH, iGLOBAL_SCREENHEIGHT);
 
@@ -510,6 +520,11 @@ void GraphicsMode(void)
 
 void SetTextMode(void)
 {
+    if (screen_is_surface)
+    {
+        screenpixels = NULL; /* the surface's, which SDL_Quit frees */
+        screen_is_surface = 0;
+    }
     if (screenpixels != NULL)
     {
         free(screenpixels);
@@ -630,7 +645,11 @@ void I_FinishUpdate(void)
 
     src = screenpixels;
     dst = (byte *)target->pixels;
-    if (target->pitch == iGLOBAL_SCREENWIDTH)
+    if (screen_is_surface)
+    {
+        /* drawn in place */
+    }
+    else if (target->pitch == iGLOBAL_SCREENWIDTH)
     {
         memcpy(dst, src, (size_t)iGLOBAL_SCREENWIDTH * (size_t)iGLOBAL_SCREENHEIGHT);
     }
@@ -654,7 +673,12 @@ void I_FinishUpdate(void)
     if (blit_surface != video_surface)
         SDL_BlitSurface(blit_surface, NULL, video_surface, NULL);
 
+    /* STDL refills the sound's ring from the event pump alone, and it wants
+     * that every 150ms: once more here, between the drawing and the flip's
+     * conversion, the two long stretches of a frame, and after it. */
+    (void)SDL_PollEvent(NULL);
     SDL_Flip(video_surface);
+    (void)SDL_PollEvent(NULL);
 
 #if defined(__MINT__)
     ATARI_EndRenderFrame();

@@ -64,17 +64,17 @@ Sound effects use the STE's DMA sound, so they need an STE or Mega STE (an ST ju
 
 <img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/1558c670-be05-427a-b1ce-1ee767a4870e" /> <img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/17067577-e151-4d6d-a9c6-69a1ef9d9837" />
 
-`ROTT_SDL.TOS` and `ROTT_030.TOS` use the Simple DirectMedia Layer (SDL) framework to bring ROTT to the Atari ST, TT & Falcon with a minimal number of tweaks and performance optimisations to retain as much of the game's original look and feel as possible, including intro videos and menu animations. TT screenshots shown.
+`ROTT_SDL.TOS` and `ROTT_030.TOS` use the Simple DirectMedia Layer (SDL) framework, through [STDL](https://github.com/neilrackett/atarist-stdl)'s SDL 1.2 add-on, to bring ROTT to the Atari ST, TT & Falcon with a minimal number of tweaks and performance optimisations to retain as much of the game's original look and feel as possible, including intro videos and menu animations. TT screenshots shown.
 
 | Model    | Colours        | Music | SFX | Typical FPS |
 | -------- | -------------- | ----- | --- | ----------- |
-| ST       | 16 (greyscale) | ✅    | ❌  | 1           |
-| STE      | 16 (greyscale) | ✅    | ✅  | 1           |
-| Mega STE | 16 (greyscale) | ✅    | ✅  | 2           |
+| ST       | 16 (dithered)  | ✅    | ❌  | 1           |
+| STE      | 16 (dithered)  | ✅    | ✅  | 1           |
+| Mega STE | 16 (dithered)  | ✅    | ✅  | 2           |
 | TT       | 256            | ✅    | ✅  | 12          |
 | Falcon   | 256            | ✅    | ✅  | 10          |
 
-FPS based on running ROTT with automatic detail selection enabled. Music and sound are still WIP, so I recommend switching both off in `SDLSOUND.ROT` for now.
+FPS based on running ROTT with automatic detail selection enabled. Music and sound effects cost a little of the frame rate: set `MusicMode` and `FXMode` to `0` in `SDLSOUND.ROT` to switch them off.
 
 The SDL versions keep their settings in `SDLCONF.ROT` and `SDLSOUND.ROT`, so they can share a folder with `ROTT_ST.TOS`, whose `CONFIG.ROT` and `SOUND.ROT` are tuned for a very different renderer. Edit `SDLCONF.ROT` to adjust rendering and performance settings; `rott/sdlconf_st.rot` is a starting point for an ST.
 
@@ -123,7 +123,7 @@ With a driver that can drive the pad's motors, such as [COMpad](https://github.c
 
 ## Build
 
-The quickest way to build ROTT for yourself is to install [atarist-toolkit-docker](https://github.com/sidecartridge/atarist-toolkit-docker), fetch the submodules (`git submodule update --init`), then run:
+The quickest way to build ROTT for yourself is to install [atarist-toolkit-docker](https://github.com/sidecartridge/atarist-toolkit-docker), fetch the submodules (`git submodule update --init`, then `git submodule update --init --recursive lib/stdl` for the SDL builds), then run:
 
 ```bash
 make             # the three games

@@ -134,10 +134,12 @@ jobs:
           APP_UUID_KEY: ${{ secrets.APP_UUID_KEY }}
         run: test -n "$APP_UUID_KEY" || { echo "The APP_UUID_KEY secret is not set."; exit 1; }
 
-      - name: Fetch the Xpad submodule
-        # Only Xpad: sidecart/rp/build.sh fetches the SDKs itself, at full
+      - name: Fetch the Xpad and STDL submodules
+        # Only these: sidecart/rp/build.sh fetches the SDKs itself, at full
         # depth so it can pin their tags (see pr.yml).
-        run: git submodule update --init lib/xpad
+        run: |
+          git submodule update --init lib/xpad
+          git submodule update --init --recursive lib/stdl
 
       - name: Install the Pico toolchain
         # .github/actions/pico-toolchain: cmake, and the Arm toolchain

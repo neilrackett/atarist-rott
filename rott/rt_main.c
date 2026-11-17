@@ -36,6 +36,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #if ATARI_SDL
 #include <signal.h>
 #include "atari_megaste.h"
+void ATARI_SDL_BenchFrame(void);
 #endif
  
  
@@ -1037,6 +1038,9 @@ void CheckCommandLineParameters( void )
 #if defined(ATARI_NATIVE) && ((ATARI_MD_AUTOTEST > 0) || (ATARI_LOGIC_CHECK > 0))
    // Unattended test runs (Hatari): straight into a game, as with NOW.
    turbo = true;
+#endif
+#if ATARI_SDL && (ATARI_SDL_BENCH > 0)
+   turbo = true; // benchmark builds (ATARI_SDL_BenchFrame): the same
 #endif
 }
 
@@ -2567,6 +2571,9 @@ fromloadedgame:
 	            UpdateGameObjects();
 #if defined(ATARI_NATIVE) && (ATARI_LOGIC_CHECK > 0)
          ATARI_CheckFrame();
+#endif
+#if ATARI_SDL && (ATARI_SDL_BENCH > 0)
+         ATARI_SDL_BenchFrame(); // atari_sdl.c
 #endif
 #if defined(ATARI_NATIVE) && defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
          // Unattended test runs: turn a fixed step per frame, so frame N

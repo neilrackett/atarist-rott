@@ -8,8 +8,8 @@
 #include "SDL.h"
 
 /*
- * Atari MiNT SDL compatibility helpers.
- * Keeps the ST low-resolution video-mode fallback logic in one place.
+ * The SDL builds' screen. SDL.h is STDL's SDL1 add-on's (lib/stdl): one
+ * screen, 320x200 at a byte a pixel, always full screen.
  */
 int ATARI_SDL_OpenVideo(int width, int height, int *fullscreen,
                         SDL_Surface **video_surface,

@@ -4,7 +4,8 @@
 #
 #   make             the three games below
 #   make st          ROTT_ST.TOS: the native ST renderers (C2P, ROTT Accelerator)
-#   make sdl         ROTT_SDL.TOS: ROTT's own renderer through SDL, any ST-compatible
+#   make sdl         ROTT_SDL.TOS: ROTT's own renderer through SDL (STDL's SDL1
+#                    add-on, lib/stdl), any ST-compatible
 #   make sdl-030     ROTT_030.TOS: the same for 68030 + 68882 (TT, Falcon)
 #   make sidecart    the ROTT Accelerator firmware (make -C sidecart build)
 #   make shareware   HUNTBGIN.zip: the ROTT 1.3 shareware release, from SHAREWARE_DIR
@@ -181,11 +182,11 @@ ATARI_FLAGS_STAMP := $(OBJDIR)/.atari_flags
 
 # With the m68k toolchain at hand (inside stcmd), the games build directly.
 # Without it (on the host) they build through stcmd, passing on ATARI_*,
-# SDL_*, BUILDDIR, OBJDIR and DATADIR; JOBS is its -j.
+# SDL_*, STDL_*, BUILDDIR, OBJDIR and DATADIR; JOBS is its -j.
 TOOLCHAIN := $(shell command -v $(ATARI_CC) 2>/dev/null)
 JOBS ?= 4
 STCMD_MAKE = STCMD_NO_TTY=1 STCMD_QUIET=1 stcmd make -j$(JOBS) \
-	$(filter ATARI_% SDL_% BUILDDIR=% OBJDIR=% DATADIR=%,$(MAKEOVERRIDES)) \
+	$(filter ATARI_% SDL_% STDL_% BUILDDIR=% OBJDIR=% DATADIR=%,$(MAKEOVERRIDES)) \
 	ROTT_VERSION=$(ROTT_VERSION)
 
 ifneq ($(TOOLCHAIN),)
@@ -274,8 +275,13 @@ rott-rottsite: ATARI_SUPERROTT = 0
 rott-rottsite: ATARI_SITELICENSE = 1
 rott-rottsite: atari-stage-runtime-files $(ATARI_OUTPUT)
 
-# SDL builds: ROTT's own renderer through SDL 1.2 and MiNTLib, as close to
-# the original game as the hardware allows (from the sdl branch). Shared code
+# SDL builds: ROTT's own renderer through SDL 1.2's API and MiNTLib, as
+# close to the original game as the hardware allows (from the sdl branch).
+# The SDL is STDL's SDL1 add-on (lib/stdl, a submodule pinned to a release;
+# its docs/sdl1.md), not SDL 1.2 itself: faster on a TT and a Falcon, and
+# smaller. ROTT_SDL.TOS is one 68000 program for every machine, as the
+# add-on is: 256 colours on a TT or a Falcon, 16 on an ST. ROTT_030.TOS is
+# 68030 + 68882 code on the add-on's TT and Falcon archive. Shared code
 # tells the two kinds of build apart with ATARI_NATIVE (the native renderers'
 # hardware code) and ATARI_SDL. They keep their settings in sdlconf.rot and
 # sdlsound.rot, so they can sit beside ROTT_ST.TOS without upsetting it.
@@ -289,10 +295,20 @@ SDL_SKIP_FIZZLE ?= 0 # Skip fizzle transition
 SDL_SKIP_LIGHTLEVEL ?= 0 # Skip lightlevel setup
 SDL_TARGET_FPS ?= 12 # Frame rate cap
 SDL_TIC_WAIT_MS ?= 0 # Sleep while waiting for the next tic
+SDL_BENCH ?= 0 # Benchmark builds: E1A1, turning for N seconds, result in BENCH.TXT
 
 SDL_CC ?= m68k-atari-mint-gcc
-SDL_CFLAGS ?= -I/usr/m68k-atari-mint/include/SDL -D_GNU_SOURCE=1
-SDL_LIBS ?= -lSDL -lgem -lldg -lgem -lm
+STDL_DIR ?= lib/stdl
+SDL_CFLAGS ?= -I$(STDL_DIR)/addons/sdl1/include/SDL1 -I$(STDL_DIR)/include -D_GNU_SOURCE=1
+SDL_LIBS := $(addprefix $(STDL_DIR)/,libstdl-sdl1.a libstdl-sdl2-st.a libstdl.a)
+SDL_030_LIBS := $(addprefix $(STDL_DIR)/,libstdl-sdl1.a libstdl-sdl2.a libstdl.a)
+STDL_ARCHIVES := $(sort $(SDL_LIBS) $(SDL_030_LIBS))
+STDL_STAMP ?= obj/.stdl_libs
+# What the archives are built from, so a change in the submodule rebuilds them.
+STDL_LIB_SOURCES := $(wildcard $(STDL_DIR)/src/*.[chS] $(STDL_DIR)/include/stdl/*.h \
+	$(STDL_DIR)/include/compat/*.h $(STDL_DIR)/lib/xpad/src/*.[ch] \
+	$(STDL_DIR)/addons/sdl1/src/*.[ch] $(STDL_DIR)/addons/sdl1/include/SDL1/*.h \
+	$(STDL_DIR)/addons/sdl2/src/*.[chS] $(STDL_DIR)/addons/sdl2/include/SDL2/*.h)
 SDL_GAME_CFLAGS := -O3 -fomit-frame-pointer -fno-strict-aliasing -ffast-math -std=gnu99 \
 	-DPLATFORM_UNIX=1 -DATARI_SDL=1 -DC_FIXED_MATH=1 -DUSE_SDL=0 \
 	-DSHAREWARE=$(ATARI_SHAREWARE) -DSUPERROTT=$(ATARI_SUPERROTT) \
@@ -300,6 +316,7 @@ SDL_GAME_CFLAGS := -O3 -fomit-frame-pointer -fno-strict-aliasing -ffast-math -st
 	-DATARI_SHOW_FPS=$(SDL_SHOW_FPS) -DATARI_SKIP_FADES=$(SDL_SKIP_FADES) \
 	-DATARI_SKIP_FIZZLE=$(SDL_SKIP_FIZZLE) -DATARI_SKIP_LIGHTLEVEL=$(SDL_SKIP_LIGHTLEVEL) \
 	-DATARI_TARGET_FPS=$(SDL_TARGET_FPS) -DATARI_TIC_WAIT_MS=$(SDL_TIC_WAIT_MS) \
+	-DATARI_SDL_BENCH=$(SDL_BENCH) \
 	-I$(SRCDIR) -I$(SRCDIR)/audiolib -Isidecart/include $(SDL_CFLAGS)
 SDL_SOURCES := $(addprefix $(SRCDIR)/, \
 	atari_megaste.c atari_sdl.c audio_stubs.c byteordr.c cin_actr.c cin_efct.c \
@@ -327,7 +344,7 @@ sdl-030: sdl-stage-runtime-files $(SDL_030_OUTPUT)
 endif
 
 clean:
-	$(RM) -r $(ATARI_OUTPUT) $(SDL_OUTPUT) $(SDL_030_OUTPUT) $(SHAREWARE_ZIP) $(OBJDIR) $(SDL_OBJDIR) $(SDL_030_OBJDIR)
+	$(RM) -r $(ATARI_OUTPUT) $(SDL_OUTPUT) $(SDL_030_OUTPUT) $(SHAREWARE_ZIP) $(OBJDIR) $(SDL_OBJDIR) $(SDL_030_OBJDIR) $(STDL_STAMP)
 
 # The game in EmuMD (sidecart/emu/emumd): Hatari with the ROTT Accelerator
 # emulated on the cartridge port. Run on the host, not in stcmd: builds
@@ -413,11 +430,25 @@ $(OBJDIR)/%.o: %.S $(ATARI_FLAGS_STAMP)
 sdl-stage-runtime-files: stage-runtime-files
 	$(call STAGE_CONFIG_FILES,$(SDL_RUNTIME_CONFIG_FILES))
 
-$(SDL_OUTPUT): $(SDL_OBJECTS) | $(BUILDDIR)
-	$(SDL_CC) -s -m68000 $(SDL_OBJECTS) $(SDL_LIBS) -o $@
+# STDL's archives, built by its own Makefile (for mintlib, as the game is)
+# and stamped, so they are made once however many jobs there are (and again
+# when one is missing). Built from here, not from inside the submodule, where
+# the container would not see the repository its start-up line's version
+# comes from.
+$(STDL_ARCHIVES): $(STDL_STAMP) ;
+$(STDL_STAMP): $(STDL_LIB_SOURCES) \
+		$(if $(filter-out $(wildcard $(STDL_ARCHIVES)),$(STDL_ARCHIVES)),FORCE)
+	@test -f $(STDL_DIR)/Makefile -a -f $(STDL_DIR)/lib/xpad/src/xpad.c || { \
+		echo "*** $(STDL_DIR) is not checked out: git submodule update --init --recursive $(STDL_DIR)"; exit 1; }
+	@mkdir -p $(@D)
+	$(MAKE) -C $(STDL_DIR) OBJDIR=obj $(notdir $(STDL_ARCHIVES))
+	@touch $@
 
-$(SDL_030_OUTPUT): $(SDL_030_OBJECTS) | $(BUILDDIR)
-	$(SDL_CC) -s -m68030 -m68882 $(SDL_030_OBJECTS) $(SDL_LIBS) -o $@
+$(SDL_OUTPUT): $(SDL_OBJECTS) $(SDL_LIBS) | $(BUILDDIR)
+	$(SDL_CC) -s -m68000 $(SDL_OBJECTS) $(SDL_LIBS) -lm -o $@
+
+$(SDL_030_OUTPUT): $(SDL_030_OBJECTS) $(SDL_030_LIBS) | $(BUILDDIR)
+	$(SDL_CC) -s -m68030 -m68882 $(SDL_030_OBJECTS) $(SDL_030_LIBS) -lm -o $@
 
 # As ATARI_FLAGS_STAMP: objects rebuild when the flags change.
 $(SDL_OBJDIR)/.sdl_flags: SDL_STAMP = $(SDL_CC) -m68000 $(SDL_GAME_CFLAGS)

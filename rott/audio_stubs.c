@@ -14,6 +14,7 @@
 #include "w_wad.h"
 #include "fx_man.h"
 #include "music.h"
+#include "rt_cfg.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -179,6 +180,13 @@ static midi_event_t *music_events = NULL;
 static int music_event_count = 0;
 static int music_event_index = 0;
 static midi_voice_t music_voices[MIDI_MAX_VOICES];
+
+/* The sound is mixed at a rate the DMA sound has, FX_MIX_CHUNK frames at a
+ * time, in one channel or two (NumChannels in sdlsound.rot). */
+#define FX_OUTPUT_RATE 12517
+#define FX_MIX_CHUNK 256
+static int fx_channels = 2;
+static int fx_mix_acc[FX_MIX_CHUNK * 2];
 
 extern int SoundNumber(int x);
 
@@ -871,59 +879,126 @@ static void music_reset_playback_locked(void)
     }
 }
 
-static int music_render_sample_locked(void)
+/*
+ * The music's square waves for `frames` frames, added into `acc` (`stride`
+ * ints a frame, the same in each). A voice at a time over the stretch up
+ * to the song's next event, so its volume is worked out once a stretch and
+ * the loop a sample is an add.
+ */
+static void music_render_block_locked(int *acc, int frames, int stride)
 {
-    int i;
-    int sample;
-    unsigned long current_tick;
+#if FX_ENABLE_MUSIC_SYNTH
+    while (frames > 0)
+    {
+        unsigned long current_tick;
+        int run;
+        int i;
 
-#if !FX_ENABLE_MUSIC_SYNTH
-    return 0;
+        if (!music_playing || music_paused)
+            return;
+
+        current_tick = music_tick_fp >> MUSIC_TICK_FP_SHIFT;
+        while (music_event_index < music_event_count &&
+               music_events[music_event_index].tick <= current_tick)
+        {
+            music_apply_event_locked(&music_events[music_event_index]);
+            music_event_index++;
+        }
+
+        if (music_event_index >= music_event_count)
+        {
+            if (music_loopflag == MUSIC_LoopSong)
+            {
+                music_reset_playback_locked();
+            }
+            else
+            {
+                music_playing = 0;
+                music_clear_voices_locked();
+                return;
+            }
+        }
+
+        /* How many samples until the next event is due: all of them see
+         * the same voices. */
+        run = frames;
+        if (music_event_index < music_event_count)
+        {
+            unsigned long next_fp;
+
+            next_fp = music_events[music_event_index].tick << MUSIC_TICK_FP_SHIFT;
+            if (next_fp > music_tick_fp)
+            {
+                unsigned long until;
+
+                until = (next_fp - music_tick_fp + music_ticks_per_sample_fp - 1)
+                        / music_ticks_per_sample_fp;
+                if (until < (unsigned long)run)
+                    run = (int)until;
+            }
+            else
+            {
+                run = 1;
+            }
+        }
+
+        for (i = 0; i < MIDI_MAX_VOICES; i++)
+        {
+            midi_voice_t *mv;
+            unsigned int phase;
+            unsigned int step;
+            int level;
+            int *p;
+            int n;
+
+            mv = &music_voices[i];
+            if (!mv->active)
+                continue;
+
+            phase = mv->phase;
+            step = mv->step;
+            level = (music_volume > 0) ? (mv->level * music_volume) / 255 : 0;
+            if (level == 0)
+            {
+                mv->phase = phase + step * (unsigned int)run;
+                continue;
+            }
+
+            p = acc;
+            if (stride == 1)
+            {
+                for (n = run; n > 0; n--)
+                {
+                    phase += step;
+                    *p++ += (phase & 0x8000U) ? -level : level;
+                }
+            }
+            else
+            {
+                for (n = run; n > 0; n--)
+                {
+                    int sample;
+
+                    phase += step;
+                    sample = (phase & 0x8000U) ? -level : level;
+                    p[0] += sample;
+                    p[1] += sample;
+                    p += 2;
+                }
+            }
+            mv->phase = phase;
+        }
+
+        music_tick_fp += music_ticks_per_sample_fp * (unsigned long)run;
+        music_samples_played += (unsigned long)run;
+        acc += run * stride;
+        frames -= run;
+    }
+#else
+    (void)acc;
+    (void)frames;
+    (void)stride;
 #endif
-
-    if (!music_playing || music_paused)
-        return 0;
-
-    current_tick = music_tick_fp >> MUSIC_TICK_FP_SHIFT;
-    while (music_event_index < music_event_count &&
-           music_events[music_event_index].tick <= current_tick)
-    {
-        music_apply_event_locked(&music_events[music_event_index]);
-        music_event_index++;
-    }
-
-    if (music_event_index >= music_event_count)
-    {
-        if (music_loopflag == MUSIC_LoopSong)
-        {
-            music_reset_playback_locked();
-        }
-        else
-        {
-            music_playing = 0;
-            music_clear_voices_locked();
-            return 0;
-        }
-    }
-
-    sample = 0;
-    for (i = 0; i < MIDI_MAX_VOICES; i++)
-    {
-        if (music_voices[i].active)
-        {
-            music_voices[i].phase += music_voices[i].step;
-            sample += (music_voices[i].phase & 0x8000U) ? -music_voices[i].level : music_voices[i].level;
-        }
-    }
-
-    music_tick_fp += music_ticks_per_sample_fp;
-    music_samples_played++;
-
-    if (music_volume <= 0)
-        return 0;
-
-    sample = (sample * music_volume) / 255;
-    return sample;
 }
 
 static void fx_stop_voice_locked(int index, int queue_callback)
@@ -991,84 +1066,143 @@ static int fx_find_voice_locked(int handle)
     return -1;
 }
 
+/*
+ * One sound effect's samples for `frames` frames, added into `acc`: its
+ * volumes are worked out here, once, and a sample is then a multiply.
+ */
+static void fx_mix_voice_locked(int index, int *acc, int frames)
+{
+    fx_voice_t *v;
+    const Sint16 *samples;
+    unsigned long pos;
+    unsigned long step;
+    unsigned long end;
+    int gl;
+    int gr;
+    int n;
+
+    v = &fx_voices[index];
+    samples = v->samples;
+    pos = (unsigned long)v->pos_fp;
+    step = (unsigned long)v->step_fp;
+    /* 16.16: a position past 65535 frames would wrap round to the start */
+    end = (unsigned long)min(v->frames, 65535);
+
+    gl = (v->left * v->vol) / 255;
+    gr = (v->right * v->vol) / 255;
+    gl = (gl * fx_global_volume) / 255;
+    gr = (gr * fx_global_volume) / 255;
+    if (fx_reverse_stereo)
+    {
+        int t;
+        t = gl;
+        gl = gr;
+        gr = t;
+    }
+
+    if (fx_channels == 1)
+    {
+        short g;
+
+        g = (short)((gl + gr) >> 1);
+        for (n = frames; n > 0; n--)
+        {
+            unsigned long idx;
+
+            idx = pos >> 16;
+            if (idx >= end)
+                break;
+            *acc++ += ((int)samples[idx] * g) >> 8;
+            pos += step;
+        }
+    }
+    else
+    {
+        short sl;
+        short sr;
+
+        sl = (short)gl;
+        sr = (short)gr;
+        for (n = frames; n > 0; n--)
+        {
+            unsigned long idx;
+            short sample;
+
+            idx = pos >> 16;
+            if (idx >= end)
+                break;
+            sample = samples[idx];
+            acc[0] += ((int)sample * sl) >> 8;
+            acc[1] += ((int)sample * sr) >> 8;
+            acc += 2;
+            pos += step;
+        }
+    }
+
+    v->pos_fp = (int)pos;
+    if ((n > 0) || ((pos >> 16) >= end))
+        fx_stop_voice_locked(index, 1);
+}
+
+/*
+ * STDL's callback, in the DMA sound's own format (signed 8 bits, at a rate
+ * it has), which STDL plays as it is: the mix is made 16 bits wide a block
+ * at a time, a voice at a time, and its top 8 bits are the sound.
+ */
 static void fx_audio_callback(void *userdata, Uint8 *stream, int len)
 {
-    Sint16 *out;
+    signed char *out;
     int frames;
-    int frame;
     int i;
 
     (void)userdata;
 
-    out = (Sint16 *)stream;
-    frames = len / (int)(sizeof(Sint16) * 2);
-    memset(stream, 0, (size_t)len);
+    for (i = 0; i < fx_num_voices; i++)
+    {
+        if (fx_voices[i].active && fx_voices[i].samples != NULL)
+            break;
+    }
+    if ((i >= fx_num_voices) && (!music_playing || music_paused))
+    {
+        memset(stream, 0, (size_t)len);
+        return;
+    }
+
+    out = (signed char *)stream;
+    frames = (fx_channels == 1) ? len : (len >> 1);
     fx_in_audio_callback = 1;
 
-    for (frame = 0; frame < frames; frame++)
+    while (frames > 0)
     {
-        int mix_l;
-        int mix_r;
-        int music_sample;
+        int n;
+        int count;
+        const int *acc;
 
-        mix_l = 0;
-        mix_r = 0;
+        n = min(frames, FX_MIX_CHUNK);
+        count = n * fx_channels;
+        memset(fx_mix_acc, 0, (size_t)count * sizeof(fx_mix_acc[0]));
 
         for (i = 0; i < fx_num_voices; i++)
         {
-            fx_voice_t *v;
-            int idx;
-            int s;
-            int gl;
-            int gr;
-
-            v = &fx_voices[i];
-            if (!v->active || v->samples == NULL)
-                continue;
-
-            idx = v->pos_fp >> 16;
-            if (idx >= v->frames)
-            {
-                fx_stop_voice_locked(i, 1);
-                continue;
-            }
-
-            s = v->samples[idx];
-            gl = (v->left * v->vol) / 255;
-            gr = (v->right * v->vol) / 255;
-            gl = (gl * fx_global_volume) / 255;
-            gr = (gr * fx_global_volume) / 255;
-
-            mix_l += (s * gl) / 255;
-            mix_r += (s * gr) / 255;
-
-            v->pos_fp += v->step_fp;
-            if ((v->pos_fp >> 16) >= v->frames)
-                fx_stop_voice_locked(i, 1);
+            if (fx_voices[i].active && fx_voices[i].samples != NULL)
+                fx_mix_voice_locked(i, fx_mix_acc, n);
         }
+        music_render_block_locked(fx_mix_acc, n, fx_channels);
 
-        music_sample = music_render_sample_locked();
-        mix_l += music_sample;
-        mix_r += music_sample;
-
-#if FX_MIX_ATTENUATION_SHIFT > 0
-        mix_l >>= FX_MIX_ATTENUATION_SHIFT;
-        mix_r >>= FX_MIX_ATTENUATION_SHIFT;
-#endif
-
-        if (fx_reverse_stereo)
+        acc = fx_mix_acc;
+        for (i = count; i > 0; i--)
         {
-            int t;
-            t = mix_l;
-            mix_l = mix_r;
-            mix_r = t;
+            int sample;
+
+            sample = *acc++ >> (8 + FX_MIX_ATTENUATION_SHIFT);
+            if (sample > 127)
+                sample = 127;
+            else if (sample < -128)
+                sample = -128;
+            *out++ = (signed char)sample;
         }
 
-        mix_l = max(-32768, min(32767, mix_l));
-        mix_r = max(-32768, min(32767, mix_r));
-
-        out[frame * 2] = (Sint16)mix_l;
-        out[frame * 2 + 1] = (Sint16)mix_r;
+        frames -= n;
     }
 
     fx_in_audio_callback = 0;
@@ -1121,14 +1255,14 @@ static int fx_ensure_audio(int mixrate)
         fx_audio_owned = 1;
     }
 
+    /* Signed 8 bits at a DMA rate is what STDL plays without a conversion
+     * pass (lib/stdl/docs/sdl1.md), whatever rate the game asks for. */
+    (void)mixrate;
+    fx_channels = (NumChannels >= 2) ? 2 : 1;
     memset(&want, 0, sizeof(want));
-#if defined(__MINT__)
-    if (mixrate <= 0 || mixrate > FX_DEFAULT_RATE)
-        mixrate = FX_DEFAULT_RATE;
-#endif
-    want.freq = (mixrate > 0) ? mixrate : FX_DEFAULT_RATE;
-    want.format = AUDIO_S16SYS;
-    want.channels = 2;
+    want.freq = FX_OUTPUT_RATE;
+    want.format = AUDIO_S8;
+    want.channels = (Uint8)fx_channels;
     want.samples = FX_BUFFER_SAMPLES;
     want.callback = fx_audio_callback;
 
@@ -1143,7 +1277,7 @@ static int fx_ensure_audio(int mixrate)
         return 0;
     }
 
-    fx_mix_rate = (got.freq > 0) ? got.freq : want.freq;
+    fx_mix_rate = want.freq;
     fx_audio_opened = 1;
     music_update_timing_locked();
     music_build_note_steps_locked();
@@ -1538,6 +1672,10 @@ char *FX_ErrorString(int ErrorNumber)
         case FX_Warning:
             return fx_warning_message[0] ? fx_warning_message : "Audio warning";
         case FX_Error:
+            /* as the DOS library: the last call's result, which start-up
+             * prints whether it failed or not */
+            if (FX_ErrorCode == FX_Ok)
+                return "Fx ok.";
             return fx_error_message[0] ? fx_error_message : "Audio error";
         case FX_Ok:
             return "OK; no error.";
@@ -2046,6 +2184,8 @@ char *MUSIC_ErrorString(int ErrorNumber)
         case MUSIC_Warning:
             return music_warning_message[0] ? music_warning_message : "Music warning";
         case MUSIC_Error:
+            if (MUSIC_ErrorCode == MUSIC_Ok)
+                return "Music ok.";
             return music_error_message[0] ? music_error_message : "Music error";
         case MUSIC_Ok:
             return "OK; no error.";

@@ -14,6 +14,8 @@ Build + Artifacts
 - `make` (= `make games`) builds the three games; `make st` (`ROTT_ST.TOS`),
   `make sdl` (`ROTT_SDL.TOS`), `make sdl-030` (`ROTT_030.TOS`). From the host
   they go through stcmd (`JOBS=4` by default); inside stcmd they build directly.
+- The SDL builds need the STDL submodule and its own Xpad:
+  `git submodule update --init --recursive lib/stdl` (see "SDL builds").
 - `make sidecart` builds the firmware, on the host only (Pico toolchain)
 - `make shareware`: `dist/HUNTBGIN.zip`, the ROTT 1.3 shareware release as
   its installer lays it out (`SHAREWARE_DIR`, default `tmp/ROTT_DOS`: a clean
@@ -277,10 +279,14 @@ Change Discipline
 
 SDL builds (`ROTT_SDL.TOS`, `ROTT_030.TOS`)
 
-- ROTT's own renderer through SDL 1.2 and MiNTLib (both in the stcmd image),
-  as close to the original game as the hardware allows. SDL-only files:
-  `rott/modexlib_sdl.c`, `atari_sdl.c`, `audio_stubs.c`; sources are listed in
-  `SDL_SOURCES`, settings are `SDL_*` in the Makefile.
+- ROTT's own renderer through SDL 1.2's API and MiNTLib, as close to the
+  original game as the hardware allows. The SDL is STDL's SDL1 add-on,
+  not SDL 1.2 itself (which they used up to atarist.9): `ROTT_SDL.TOS` is
+  68000 code for every machine (256 colours on a TT or a Falcon, 16 on an
+  ST), `ROTT_030.TOS` 68030 + 68882 code for a TT or a Falcon (its
+  `SDL_Init` refuses an ST). SDL-only files: `rott/modexlib_sdl.c`,
+  `atari_sdl.c`, `audio_stubs.c`; sources are listed in `SDL_SOURCES`,
+  settings are `SDL_*` in the Makefile.
 - Both kinds of build are MiNT, so `__MINT__` means "any Atari build". In
   shared code, the native builds' hardware and speed code goes under
   `ATARI_NATIVE` (defined by the native build only) and SDL-only code under
@@ -289,3 +295,59 @@ SDL builds (`ROTT_SDL.TOS`, `ROTT_030.TOS`)
   clean before and after and `cmp` (only `STUB_FUNCTION` line numbers may move).
 - SDL builds keep settings in `sdlconf.rot`/`sdlsound.rot` (`rott/sdlconf.rot`,
   `rott/sdlsound.rot`), so they can share a folder with `ROTT_ST.TOS`.
+- STDL is the submodule `lib/stdl`, pinned to a release (v1.31.0); it
+  carries its own `lib/xpad`, so `git submodule update --init --recursive
+  lib/stdl`. The Makefile builds its archives with STDL's own Makefile
+  (`libstdl-sdl1.a`, `libstdl-sdl2-st.a` for the 68000 build,
+  `libstdl-sdl2.a` for the 68030 one, `libstdl.a`; stamp `obj/.stdl_libs`),
+  from the repository's root: built from inside the submodule, the
+  container can't see the repository STDL's start-up line takes its
+  version from. Its docs: `lib/stdl/docs/sdl1.md`, and `sdl2.md` for the
+  screen underneath.
+- What STDL asks of the game:
+  - `atari_sdl.c`: one `SDL_SetVideoMode(320, 200, 8)`, always full
+    screen: no driver to pick and no GEM window (`FullScreen 0` and
+    `WINDOW` do nothing). `SDL_QuitSubSystem` stops nothing, so closing
+    video is `SDL_CloseAudio` then `SDL_Quit`, which is what puts the
+    desktop's screen back for the text `Error()` and `QuitGame()` print.
+  - STDL keeps the program in supervisor mode from `SDL_Init` to
+    `SDL_Quit`: `Super(0L)` there is the way out of it, so `i_timer.c`
+    asks `Super(1L)` first. Any new `Super()` pair needs the same.
+  - `modexlib_sdl.c` draws straight into the screen surface (no buffer of
+    its own, no copy a frame), and polls events before and after
+    `SDL_Flip`: STDL refills the sound's ring from the event pump alone
+    (no interrupt), at least every 150ms, so a frame longer than that
+    breaks the sound up.
+  - `audio_stubs.c` (effects and the MIDI songs as square waves, one
+    mixer) asks for signed 8 bits at 12517Hz, the DMA sound's own format,
+    which STDL plays with no conversion pass; one channel or two by
+    `NumChannels`. STDL calls it for 2048 frames at a time, so it mixes a
+    voice at a time over a block, volumes worked out once a block: keep
+    divisions and per-voice tests out of the loops a sample. With sound on,
+    Hatari's TT (2MB + 4MB, `SDL_BENCH`): 6.31 fps against 6.80 with it
+    off; the mixer before (16 bits, stereo, 11025Hz, a sample at a time)
+    4.17, and SDL 1.2 0.12 with noise on one channel (its 8-bit device
+    was written 16-bit samples). On by default in `sdlsound.rot`; the
+    music is quiet beside the effects (`MusicVolume`).
+  - `SDL_WasInit` answers with the flags the game asked for and nothing
+    more: `SDL_Init` of anything starts all of STDL, and
+    `SDL_InitSubSystem`/`SDL_QuitSubSystem` start and stop nothing. Don't
+    add stubs or `#define`s of the add-on's names: a macro of ours hides
+    the add-on's without a word.
+- `SDL_BENCH=N`: straight into E1A1, turning on the spot by the clock for
+  N seconds, then the frames drawn are added to `BENCH.TXT` and the game
+  quits (`ATARI_SDL_BenchFrame`, `atari_sdl.c`). With `SDL_TARGET_FPS=0`,
+  or the 12 a second cap is what gets measured. Give each build its own
+  `BUILDDIR` and object folders.
+- Why STDL (2026-11-16, Hatari's TT, TOS 3.06, 4MB + 16MB of TT-RAM,
+  `SDL_BENCH=30 SDL_TARGET_FPS=0`, frames a second on STDL against on SDL
+  1.2): the 68030 build 6.77 against 5.84, the 68000 build 4.99 against
+  4.48. With no TT-RAM 5.52 against 4.59 for the 68030 build, and the
+  68000 one ran out of zone on SDL 1.2 (`Z_Malloc`) where it runs on STDL
+  (4.01). 2MB + 4MB of TT-RAM: 6.76 and 5.03 on STDL. A Falcon on VGA:
+  2.18 against 1.91, and 1.52 against 1.38. No real machine had run them
+  when the builds were switched, and STDL's own notes have a real TT at
+  2.3 times Hatari's times, three to four over ST-RAM copies. The SDL
+  builds are for a TT first: on an ST the add-on's 16-colour screen is
+  for testing (a fade step is 135ms there, a new palette about a second).
+  Nobody had listened to the sound on STDL either.

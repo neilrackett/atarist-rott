@@ -271,9 +271,16 @@ static unsigned long basetime = 0;
 
 static unsigned long mint_hz200(void)
 {
-    long old = Super(0L);
     volatile unsigned long *hz200 = (volatile unsigned long *)TOS_HZ_200_ADDR;
-    unsigned long ticks = *hz200;
+    unsigned long ticks;
+    long old;
+
+    /* STDL keeps the program in supervisor mode from SDL_Init to SDL_Quit,
+     * where Super(0L) would be the way out of it. */
+    if (Super(1L))
+        return *hz200;
+    old = Super(0L);
+    ticks = *hz200;
 
     if (old)
         Super(old);
