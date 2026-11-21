@@ -41,6 +41,10 @@ void ScaleShape (visobj_t * vis);
 void ScaleWeapon (int xcent, int yoffset, int shapenum);
 void DrawScreenSprite (int x, int y, int shapenum);
 void SetLightLevel (int height);
+#if defined(ATARI_NATIVE)
+void ScaleMaskedPost2 (byte * src, byte * buf);
+void ScaleTransparentPost2 (byte * src, byte * buf, int level);
+#endif
 void ScaleMaskedPost (byte * src, byte * buf);
 void DrawScreenSizedSprite (int lump);
 void ScaleTransparentPost (byte * src, byte * buf, int level);

@@ -51,6 +51,9 @@ static void atari_dbg(const char *msg) { Cconws(msg); }
 #include <stdlib.h>
 // MED
 #include "memcheck.h"
+#if defined(ATARI_NATIVE)
+#include "atari_c2p.h"
+#endif
 
 /*
 =============================================================================
@@ -669,6 +672,7 @@ void DrawMessages(
          }
          px = PrintX;
          py = PrintY;
+         atari_unpair_rect(0, iGLOBAL_SCREENWIDTH - 1, PrintY, PrintY + CurrentFont->height);
          VW_DrawPropString(Messages[msg].text);
       }
    }

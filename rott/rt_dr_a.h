@@ -31,6 +31,30 @@ void RefreshClear(void);
 void DrawPost (int height, char * column, char * buf);
 void  DrawHeightPost (int height, byte * src, byte * buf); // IN rt_dr_a.asm
 void R_DrawWallColumn (byte * buf);
+#if defined(ATARI_NATIVE)
+/* The native build's wall loop: R_DrawWallColumn only notes its columns
+ * between these, and End draws them all (rt_scale.c). */
+void ATARI_WallColumnsBegin (void);
+void ATARI_WallColumnsEnd (void);
+void ATARI_WallColumnsFlush (void);
+
+/* A wall column noted for atari_col_walls (atari_col.S reads it: keep the
+ * layout). shade NULL: the texture is shaded beforehand. */
+typedef struct
+{
+	byte *dest;
+	const byte *src;
+	const byte *shade;
+	long frac;
+	long step;
+	short count;
+	short twice; /* 1: each pixel written twice, side by side (shade NULL) */
+} atari_wallcol_t;
+
+#define ATARI_WALLCOLS 660 /* two a column of the widest view, and spare */
+extern atari_wallcol_t atari_wallcols[ATARI_WALLCOLS];
+extern atari_wallcol_t *atari_wallcol_next;
+#endif
 void  DrawMenuPost (int height, byte * src, byte * buf); // IN rt_dr_a.asm
 void  DrawMapPost (int height, byte * src, byte * buf); // IN rt_dr_a.asm
 

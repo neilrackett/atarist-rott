@@ -62,6 +62,55 @@ static __inline fixed atari_fixed_mul16(fixed a, fixed b)
 }
 
 /*
+ * a * b for a 32-bit a and a b that fits 16 bits signed (a screen row, a
+ * post's offset or length, a count), as the low 32 bits of the product:
+ * what `a * b` gives in C, where gcc calls __mulsi3 (350 to 3000 cycles on
+ * a 68000). Two mulu.w: a's low word times b in full, its high word times b
+ * for the upper half, and for a negative b the 65536 a too many taken off.
+ */
+static __inline long atari_mul32x16(long a, int b)
+{
+	unsigned long lo = (unsigned short)a;
+	unsigned long hi = (unsigned long)a >> 16;
+	const unsigned short ub = (unsigned short)b;
+
+	__asm__("mulu.w %1,%0" : "+d"(lo) : "d"(ub));
+	if (hi)
+	{
+		__asm__("mulu.w %1,%0" : "+d"(hi) : "d"(ub));
+		lo += hi << 16;
+	}
+	if (b < 0)
+		lo -= (unsigned long)a << 16;
+	return (long)lo;
+}
+
+/* a * b for two unsigned 16-bit numbers, in full: one mulu.w. */
+static __inline unsigned long atari_mulu16(unsigned short a, unsigned short b)
+{
+	unsigned long r = a;
+
+	__asm__("mulu.w %1,%0" : "+d"(r) : "d"(b));
+	return r;
+}
+
+/*
+ * n / d for a 32-bit n and a 16-bit d that is not 0, both unsigned: two
+ * divu.w, the high word first and its remainder carried into the low
+ * word's, where `n / d` in C is a call of __udivsi3.
+ */
+static __inline unsigned long atari_udiv32x16(unsigned long n, unsigned short d)
+{
+	unsigned long hi = n >> 16;
+	unsigned long lo;
+
+	__asm__("divu.w %1,%0" : "+d"(hi) : "d"(d));
+	lo = (hi & 0xFFFF0000UL) | (n & 0xFFFFUL);
+	__asm__("divu.w %1,%0" : "+d"(lo) : "d"(d));
+	return ((hi & 0xFFFFUL) << 16) | (lo & 0xFFFFUL);
+}
+
+/*
  * FixedMul stays an out-of-line function (its body is just the inlined
  * atari_fixed_mul16 above, so it gets the hardware-mulu.w win without the
  * nested __mulsi3 calls). It is intentionally NOT declared inline here: this

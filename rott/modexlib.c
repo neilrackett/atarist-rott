@@ -87,6 +87,7 @@ extern word Joy_x;
 extern word Joy_y;
 
 #include "atari_sfx.h"
+#include "atari_eight.h"
 
 static int sfx_debug_overlay = 0;
 volatile int atari_bars_redraw;
@@ -275,6 +276,7 @@ static void atari_fill_rect(int x, int y, int w, int h, unsigned char color)
    int row;
    if (w <= 0 || h <= 0)
       return;
+   atari_unpair_rect(x, x + w - 1, y, y + h - 1);
    if (x < 0)
    {
       w += x;
@@ -408,6 +410,10 @@ void GraphicsMode(void)
    atari_dbg("ATARI: GraphicsMode Getrez\r\n");
    atari_prev_rez = Getrez();
    atari_dbg("ATARI: GraphicsMode Setscreen\r\n");
+#if ATARI_EIGHT
+   // A TT or a Falcon: its own 256 colours (atari_eight.c), else ST Low.
+   if (!atari_eight_enter())
+#endif
    if (atari_prev_rez != 0)
       Setscreen((void *)-1, (void *)-1, 0);
    TurnOffTextCursor();
@@ -432,6 +438,11 @@ void SetTextMode(void)
    I_HookTimer(0);
    atari_input_shutdown();
    atari_c2p_shutdown();
+#if ATARI_EIGHT
+   if (atari_eight)
+      atari_eight_leave();
+   else
+#endif
    if (atari_prev_rez >= 0 && atari_prev_rez != 0)
       Setscreen((void *)-1, (void *)-1, atari_prev_rez);
    graphicsmode = false;

@@ -33,11 +33,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #endif
 
 #include "modexlib.h"
+#if defined(ATARI_NATIVE)
+#include "atari_c2p.h"
+#endif
 #include "rt_util.h"
 #include "rt_draw.h"
 #include "rt_scale.h"
 #include "_rt_scal.h"
 #include "rt_sc_a.h"
+#include "rt_dr_a.h"
 #include "engine.h"
 #include "w_wad.h"
 #include "z_zone.h"
@@ -49,6 +53,25 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rt_playr.h"
 //MED
 #include "memcheck.h"
+
+/* A post's offset or length (a byte) times the scale: on the native build
+ * without a library call (watcom.h). */
+#if defined(ATARI_NATIVE)
+#define SCALE_MUL(scale, n) atari_mul32x16((scale), (n))
+/* atari_col.S */
+void atari_col_wall(byte *dest, const byte *src, const byte *shade, long frac, long step, long count);
+void atari_col_walls(const void *first, const void *end);
+void atari_col_tex(byte *dest, const byte *src, const byte *shade, long frac, long step, long count);
+void atari_col_trans(byte *dest, const byte *shade, long count);
+void atari_col_solid(byte *dest, long colour, long count);
+void atari_post_masked(const byte *post, byte *buf);
+void atari_post_trans(const byte *post, byte *buf, const byte *seelevel);
+void atari_post_masked2(const byte *post, byte *buf);
+extern short atari_post_maxrow;
+void atari_post_trans2(const byte *post, byte *buf, const byte *seelevel);
+#else
+#define SCALE_MUL(scale, n) ((scale) * (n))
+#endif
 
 /*
 =============================================================================
@@ -214,13 +237,20 @@ void ScaleTransparentPost (byte * src, byte * buf, int level)
 #endif
 
    seelevel=colormap+(((level+64)>>2)<<8);
+#if defined(ATARI_NATIVE)
+   /* the whole of it, the columns included, in atari_col.S, which says
+    * the lowest row it drew */
+   atari_post_trans(src, buf, seelevel);
+   atari_unpair_col(buf, sprtopoffset>>SFRACBITS, atari_post_maxrow);
+   return;
+#endif
    oldlevel=shadingtable;
    offset=*(src++);
    for (;offset!=255;)
       {
       length=*(src++);
-      topscreen = sprtopoffset + (dc_invscale*offset);
-      bottomscreen = topscreen + (dc_invscale*length);
+      topscreen = sprtopoffset + SCALE_MUL(dc_invscale,offset);
+      bottomscreen = topscreen + SCALE_MUL(dc_invscale,length);
       dc_yl = (topscreen+SFRACUNIT)>>SFRACBITS;
       dc_yh = ((bottomscreen-1)>>SFRACBITS);
       if (dc_yh >= viewheight)
@@ -252,6 +282,20 @@ void ScaleTransparentPost (byte * src, byte * buf, int level)
 }
 
 
+#if defined(ATARI_NATIVE)
+/* ScaleMaskedPost and ScaleTransparentPost into two columns side by side
+ * (low detail's masked walls, rt_draw.c): atari_col.S's. */
+void ScaleMaskedPost2 (byte * src, byte * buf)
+{
+   atari_post_masked2(src, buf);
+}
+
+void ScaleTransparentPost2 (byte * src, byte * buf, int level)
+{
+   atari_post_trans2(src, buf, colormap+(((level+64)>>2)<<8));
+}
+#endif
+
 void ScaleMaskedPost (byte * src, byte * buf)
 {
    int  offset;
@@ -259,13 +303,20 @@ void ScaleMaskedPost (byte * src, byte * buf)
    int  topscreen;
    int  bottomscreen;
 
+#if defined(ATARI_NATIVE)
+   /* the whole of it, R_DrawColumn included, in atari_col.S, which says
+    * the lowest row it drew */
+   atari_post_masked(src, buf);
+   atari_unpair_col(buf, sprtopoffset>>SFRACBITS, atari_post_maxrow);
+   return;
+#endif
    whereami=26;
    offset=*(src++);
    for (;offset!=255;)
       {
       length=*(src++);
-      topscreen = sprtopoffset + (dc_invscale*offset);
-      bottomscreen = topscreen + (dc_invscale*length);
+      topscreen = sprtopoffset + SCALE_MUL(dc_invscale,offset);
+      bottomscreen = topscreen + SCALE_MUL(dc_invscale,length);
       dc_yl = (topscreen+SFRACUNIT)>>SFRACBITS;
       dc_yh = ((bottomscreen-1)>>SFRACBITS);
       if (dc_yh >= viewheight)
@@ -298,8 +349,8 @@ void ScaleClippedPost (byte * src, byte * buf)
    for (;offset!=255;)
       {
       length=*(src++);
-      topscreen = sprtopoffset + (dc_invscale*offset);
-      bottomscreen = topscreen + (dc_invscale*length);
+      topscreen = sprtopoffset + SCALE_MUL(dc_invscale,offset);
+      bottomscreen = topscreen + SCALE_MUL(dc_invscale,length);
       dc_yl = (topscreen+SFRACUNIT-1)>>SFRACBITS;
       dc_yh = ((bottomscreen-1)>>SFRACBITS);
       if (dc_yh >= viewheight)
@@ -328,8 +379,8 @@ void ScaleSolidMaskedPost (int color, byte * src, byte * buf)
    for (;offset!=255;)
       {
       length=*(src++);
-      topscreen = sprtopoffset + (dc_invscale*offset);
-      bottomscreen = topscreen + (dc_invscale*length);
+      topscreen = sprtopoffset + SCALE_MUL(dc_invscale,offset);
+      bottomscreen = topscreen + SCALE_MUL(dc_invscale,length);
       dc_yl = (topscreen+SFRACUNIT)>>SFRACBITS;
       dc_yh = ((bottomscreen-1)>>SFRACBITS);
       if (dc_yh >= viewheight)
@@ -365,8 +416,8 @@ void ScaleTransparentClippedPost (byte * src, byte * buf, int level)
    for (;offset!=255;)
       {
       length=*(src++);
-      topscreen = sprtopoffset + (dc_invscale*offset);
-      bottomscreen = topscreen + (dc_invscale*length);
+      topscreen = sprtopoffset + SCALE_MUL(dc_invscale,offset);
+      bottomscreen = topscreen + SCALE_MUL(dc_invscale,length);
       dc_yl = (topscreen+SFRACUNIT)>>SFRACBITS;
       dc_yh = ((bottomscreen-1)>>SFRACBITS);
       if (dc_yh >= viewheight)
@@ -596,6 +647,12 @@ void ScaleShape (visobj_t * sprite)
                   continue;
                if (x1==viewwidth-1)
                   ScaleMaskedWidePost(((p->collumnofs[frac>>SFRACBITS])+shape),(byte *)bufferofs,x1,1);
+#if defined(ATARI_NATIVE)
+               /* from an even column: one pass storing each pixel twice,
+                * the same pixels, and a pair (atari_c2p.h) */
+               else if (!(x1&1))
+                  ScaleMaskedPost2(((p->collumnofs[frac>>SFRACBITS])+shape),(byte *)bufferofs+x1);
+#endif
                else
                   ScaleMaskedWidePost(((p->collumnofs[frac>>SFRACBITS])+shape),(byte *)bufferofs,x1,2);
                }
@@ -1115,6 +1172,9 @@ extern int G_gmasklump;
 void DrawScreenSizedSprite (int lump)
 {
    ATARI_HUD_TOUCH();
+#if defined(ATARI_NATIVE)
+   atari_unpair_view();
+#endif
 	//draws gasmask among other things zxcv
    byte *shape,*src;
    int      frac;
@@ -1178,8 +1238,8 @@ void DrawScreenSizedSprite (int lump)
 			src = ((p->collumnofs[frac>>SFRACBITS])+shape);
 			offset=*(src++);
 			length=*(src++);
-			topscreen = sprtopoffset + (dc_invscale*offset);
-			bottomscreen = topscreen + (dc_invscale*length);
+			topscreen = sprtopoffset + SCALE_MUL(dc_invscale,offset);
+			bottomscreen = topscreen + SCALE_MUL(dc_invscale,length);
 			dc_yl = (topscreen+SFRACUNIT-1)>>SFRACBITS;//=41  viewheight=584
 			dc_yh = ((bottomscreen-1)>>SFRACBITS);//=540      viewwidth =800
 			//paint upper black patch in gasmask
@@ -1357,7 +1417,126 @@ void DrawNormalSprite (int x, int y, int shapenum)
       }
 }
 
-#ifndef DOS
+#if defined(ATARI_NATIVE)
+
+/*
+ * The native build's columns: the loops are atari_col.S's, and the first
+ * pixel's texture position is worked out without a library multiply. The
+ * same pixels as the C below.
+ */
+void R_DrawColumn (byte * buf)
+{
+	const int count = dc_yh - dc_yl + 1;
+
+	if (count <= 0) return;
+	atari_unpair_col(buf, dc_yl, dc_yh);
+	atari_col_tex(buf + ylookup[dc_yl], dc_source, shadingtable,
+	              dc_texturemid + atari_mul32x16(dc_iscale, dc_yl - centery),
+	              dc_iscale, count);
+}
+
+void R_TransColumn (byte * buf)
+{
+	const int count = dc_yh - dc_yl + 1;
+
+	if (count <= 0) return;
+	atari_unpair_col(buf, dc_yl, dc_yh);
+	atari_col_trans(buf + ylookup[dc_yl], shadingtable, count);
+}
+
+/*
+ * A wall column to draw: while the wall loop runs (rt_draw.c's DrawWalls,
+ * between ATARI_WallColumnsBegin and End) its columns are only noted
+ * here, and drawn together at the end by atari_col_walls. Walls drawn at
+ * other times (doors and masked walls, in order with the sprites) are
+ * drawn at once.
+ */
+atari_wallcol_t atari_wallcols[ATARI_WALLCOLS]; /* rt_dr_a.h */
+atari_wallcol_t *atari_wallcol_next;
+
+void ATARI_WallColumnsEnd (void)
+{
+	if (atari_wallcol_next > atari_wallcols)
+		atari_col_walls(atari_wallcols, atari_wallcol_next);
+	atari_wallcol_next = NULL;
+}
+
+void ATARI_WallColumnsBegin (void)
+{
+	atari_wallcol_next = atari_wallcols;
+}
+
+/* What is noted so far drawn now, if the wall loop is running. */
+void ATARI_WallColumnsFlush (void)
+{
+	if (atari_wallcol_next)
+	{
+		ATARI_WallColumnsEnd();
+		ATARI_WallColumnsBegin();
+	}
+}
+
+/* Set by rt_draw.c's DrawWallPost while dc_source is a wall shaded
+ * beforehand: the columns take no shading table (a NULL in the note). */
+int atari_wall_noshade;
+
+void R_DrawWallColumn (byte * buf)
+{
+	const int count = dc_yh - dc_yl;
+	long frac;
+
+	if (count <= 0) return;
+	/* the wall loop's own come in pairs in low detail (DrawWallsFast) */
+	if (!atari_wallcol_next)
+		atari_unpair_col(buf, dc_yl, dc_yh);
+	frac = dc_texturemid + atari_mul32x16(dc_iscale, dc_yl - centery);
+	if (atari_wallcol_next || atari_wall_noshade)
+	{
+		atari_wallcol_t one, *c = atari_wallcol_next ? atari_wallcol_next : &one;
+
+		c->dest = buf + ylookup[dc_yl];
+		c->src = dc_source;
+		c->shade = atari_wall_noshade ? NULL : shadingtable;
+		c->frac = frac;
+		c->step = dc_iscale;
+		c->count = (short)count;
+		c->twice = 0;
+		if (c == &one)
+		{
+			atari_col_walls(&one, &one + 1);
+			return;
+		}
+		if (++atari_wallcol_next == atari_wallcols + ATARI_WALLCOLS)
+		{
+			ATARI_WallColumnsEnd();
+			ATARI_WallColumnsBegin();
+		}
+		return;
+	}
+	atari_col_wall(buf + ylookup[dc_yl], dc_source, shadingtable, frac, dc_iscale, count);
+}
+
+void R_DrawClippedColumn (byte * buf)
+{
+	const int count = dc_yh - dc_yl + 1;
+
+	if (count <= 0) return;
+	atari_unpair_col(buf, dc_yl, dc_yh);
+	atari_col_tex(buf + ylookup[dc_yl], dc_source, shadingtable,
+	              dc_texturemid + atari_mul32x16(dc_iscale, dc_yl - centeryclipped),
+	              dc_iscale, count);
+}
+
+void R_DrawSolidColumn (int color, byte * buf)
+{
+	const int count = dc_yh - dc_yl + 1;
+
+	if (count <= 0) return;
+	atari_unpair_col(buf, dc_yl, dc_yh);
+	atari_col_solid(buf + ylookup[dc_yl], color, count);
+}
+
+#elif !defined(DOS)
 
 void R_DrawColumn (byte * buf)
 {

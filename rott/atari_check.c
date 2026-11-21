@@ -32,6 +32,8 @@
 #include "rt_actor.h"
 #include "rt_door.h"
 #include "rt_main.h"
+#include "modexlib.h"
+#include "atari_eight.h"
 #include "rt_net.h"
 #include "rt_playr.h"
 #include "rt_rand.h"
@@ -61,6 +63,7 @@ int atari_check_clock;
 
 static int check_start;
 static long check_file = -1;
+static long render_file = -1;
 static unsigned long check_hash;
 
 void ATARI_CheckStart(void) {
@@ -70,6 +73,7 @@ void ATARI_CheckStart(void) {
   check_start = atari_check_clock;
   godmode = 1;
   check_file = Fcreate("LOGIC.TXT", 0);
+  render_file = Fcreate("RENDER.TXT", 0);
   /* The controls may have started already, stamped with real time; PlayLoop
    * starts them again next, on the virtual clock. */
   ShutdownClientControls();
@@ -106,6 +110,65 @@ void ATARI_CheckKeys(void) {
 }
 
 static void mix(unsigned long v) { check_hash = (check_hash ^ v) * 16777619UL; }
+
+/* h * 33 + each long of rows y0 to y1 - 1 of the chunky screen. */
+static unsigned long screen_hash(unsigned long h, int y0, int y1) {
+  const unsigned long *p = (const unsigned long *)(bufferofs + y0 * 320);
+  long n = (long)(y1 - y0) * 80;
+  while (n-- > 0) h = (h << 5) + h + *p++;
+  return h;
+}
+
+/* The same of what the machine shows: ST Low's 32,000 bytes, or the 200
+ * rows of a TT's or a Falcon's 256 colours (a row's first line). */
+static unsigned long shown_hash(void) {
+  unsigned long h = 5381UL;
+  int y;
+#if ATARI_EIGHT
+  if (atari_eight) {
+    for (y = 0; y < 200; y++) {
+      const unsigned long *p = (const unsigned long *)atari_eight_row(y);
+      int n = 80;
+      while (n-- > 0) h = (h << 5) + h + *p++;
+    }
+    return h;
+  }
+#endif
+  {
+    const unsigned long *p = (const unsigned long *)Physbase();
+    long n = 8000;
+    (void)y;
+    while (n-- > 0) h = (h << 5) + h + *p++;
+  }
+  return h;
+}
+
+void ATARI_CheckRender(void) {
+  static int frame;
+  char line[64];
+  int tic;
+
+  if (!ATARI_LOGIC_CHECK_HASH || !atari_check_clock_on || render_file < 0) return;
+  tic = atari_check_clock - check_start;
+  if (tic > ATARI_LOGIC_CHECK_TICS) {
+    Fclose((short)render_file);
+    render_file = -1;
+    return;
+  }
+  sprintf(line, "%d %08lx %08lx %08lx\r\n", tic, screen_hash(5381UL, 16, 184),
+          screen_hash(5381UL, 0, 200), shown_hash());
+  Fwrite((short)render_file, strlen(line), line);
+  if (frame % 25 == 0) {
+    long fh;
+    sprintf(line, "REND%03d.RAW", frame);
+    fh = Fcreate(line, 0);
+    if (fh >= 0) {
+      Fwrite((short)fh, 64000L, bufferofs);
+      Fclose((short)fh);
+    }
+  }
+  frame++;
+}
 
 static void mix_state(const statetype *s) {
   if (!s) {

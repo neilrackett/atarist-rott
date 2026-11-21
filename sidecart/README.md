@@ -87,7 +87,8 @@ two test programs narrow it down (`make -C sidecart tests`, in
 
 On a Mega STE the cache is switched off around every cartridge access
 (the CPU stays at 16 MHz), as in STDOOM, and only then: building each
-frame and converting the HUD run with it on.
+frame and converting the HUD run with it on. A TT's or a Falcon's 68030
+has its data cache off for the same stretches.
 
 When reporting a problem, the most useful things to send are
 `PINGTEST.TXT`, `UPTEST.TXT` and a debug firmware's serial log:
@@ -102,6 +103,12 @@ opens the console.
   side of each wall shaded. The ST renderer flattens this to save time.
   Dark areas therefore look much darker than on the ST renderer, and on
   16 colours the darkest shades come out close to black.
+- **TT and Falcon.** With firmware v1.4.0-beta.8 or later and a colour
+  monitor, `ROTT_ST.TOS` runs in the machine's own 256 colours (TT Low, a
+  Falcon's 8-bit mode) and the Multi-device sends the view as it rendered
+  it, with no reduction to 16 colours and no dither. Older firmware, or
+  `Colours 16` in `CONFIG.ROT`, keeps ST Low as on an ST. So far this has
+  only been run in EmuMD's Hatari, not on a real TT or Falcon.
 - **Largest view.** The Multi-device's frame buffers stop at 320 x 168,
   the full width between the two status bars; bigger view sizes are
   capped to that while it is in use.
@@ -201,6 +208,14 @@ a new `ROTT_ST.TOS`. Firmware that takes them says `MD_CAP_PENS`; an older
 one gets the plain palette and works out the colours by the median cut
 (`md_video.c`, `atari_c2p.c`'s ported line for line), as the ST then does
 too, and so does this firmware for an older ST build that sends none.
+
+**256 colours.** A TT or a Falcon says so in HELLO (`MD_HELLO_EIGHT`, to
+firmware with `MD_CAP_EIGHT`), and a frame is then eight interleaved
+planes, the pixels as rendered: up to 53,760 bytes, which is both frame
+buffers together. With one buffer the ST waits for the frame it sent and
+copies it before it sends the next, so the Multi-device draws while the
+ST runs the game and never while a frame is being copied. PALETTE still
+comes, and nothing is made of it.
 
 **Frames.** Two frame buffers live in the ROM4 window. With pipelining,
 the Multi-device draws frame N while the ST copies frame N-1 and runs the

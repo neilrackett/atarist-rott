@@ -430,8 +430,65 @@ static unsigned long ymmusic_read_var(unsigned char **pp, unsigned char *end)
     return value;
 }
 
+/*
+ * The tracks as a binary min-heap by their next event's time, the lower
+ * track first on a tie (as the scan it replaced chose): the earliest is at
+ * the root, and the time after it is the earlier of the root's children.
+ * Ended tracks (all ones) stay in it, at the bottom. Only the due track's
+ * time changes while the song plays, so it is sifted down after its
+ * events; anything that sets the tracks again (a reset, a new song) makes
+ * it be built again at the next step (ymmusic_heap_n -1).
+ */
+static ymmusic_midi_track_t *ymmusic_heap[YMMUSIC_MAX_MIDI_TRACKS];
+static int ymmusic_heap_n = -1;
+
+/* a before b: earlier, or as early and the lower track (lower address) */
+#define YMMUSIC_BEFORE(a, b) ((a)->next < (b)->next || ((a)->next == (b)->next && (a) < (b)))
+
+static void ymmusic_heap_down(void)
+{
+    ymmusic_midi_track_t **h = ymmusic_heap;
+    ymmusic_midi_track_t *t = h[0];
+    const int n = ymmusic_heap_n;
+    int i = 0;
+
+    for (;;)
+    {
+        int c = 2 * i + 1;
+        ymmusic_midi_track_t *m;
+
+        if (c >= n)
+            break;
+        m = h[c];
+        if (c + 1 < n && YMMUSIC_BEFORE(h[c + 1], m))
+            m = h[++c];
+        if (!YMMUSIC_BEFORE(m, t))
+            break;
+        h[i] = m;
+        i = c;
+    }
+    h[i] = t;
+}
+
+static void ymmusic_heap_build(void)
+{
+    int i, j;
+
+    /* in track order: a sorted array is a heap */
+    ymmusic_heap_n = ymmusic_midi_num_tracks;
+    for (i = 0; i < ymmusic_heap_n; ++i)
+    {
+        ymmusic_midi_track_t *t = &ymmusic_midi_tracks[i];
+
+        for (j = i; j > 0 && YMMUSIC_BEFORE(t, ymmusic_heap[j - 1]); --j)
+            ymmusic_heap[j] = ymmusic_heap[j - 1];
+        ymmusic_heap[j] = t;
+    }
+}
+
 static void ymmusic_midi_reset_tracks(void)
 {
+    ymmusic_heap_n = -1;
     int i;
 
     ymmusic_midi_active = 0;    for (i = 0; i < ymmusic_midi_num_tracks; ++i)
@@ -686,43 +743,52 @@ static void ymmusic_midi_update(void)
         }
     }
 
-    ymmusic_midi_us_accum += 20000; /* 50 Hz service cadence */
-    while (ymmusic_midi_us_accum >= ymmusic_midi_us_per_tick)
+    // 20ms a step (50 Hz): the song ticks it holds. Worked out once a tick
+    // length as whole ticks and a remainder, so a step adds the remainder
+    // and carries at most one more, where it took the length away up to a
+    // dozen times; the same count and remainder.
     {
-        ymmusic_midi_us_accum -= ymmusic_midi_us_per_tick;
-        ++ymmusic_midi_now;
+        static unsigned long per = 0, q = 0, r = 0;
+
+        if (per != ymmusic_midi_us_per_tick)
+        {
+            per = ymmusic_midi_us_per_tick;
+            q = 20000UL / per;
+            r = 20000UL - q * per;
+        }
+        ymmusic_midi_us_accum += r;
+        ymmusic_midi_now += q;
+        while (ymmusic_midi_us_accum >= per)
+        {
+            ymmusic_midi_us_accum -= per;
+            ++ymmusic_midi_now;
+        }
     }
 
     // Nothing due yet: the usual step, and no scan of the tracks at all.
     // Otherwise play the earliest track's event, find the earliest again,
     // and so on until the earliest is in the future.
+    if (ymmusic_heap_n < 0)
+        ymmusic_heap_build();
     while (ymmusic_midi_active && ymmusic_midi_next <= ymmusic_midi_now)
     {
-        ymmusic_midi_track_t *t = ymmusic_midi_tracks;
-        ymmusic_midi_track_t *end = t + ymmusic_midi_num_tracks;
-        ymmusic_midi_track_t *due = NULL;
-        unsigned long earliest = YMMUSIC_MIDI_ENDED;
+        ymmusic_midi_track_t *due;
+        unsigned long earliest;
         unsigned long second = YMMUSIC_MIDI_ENDED;
 
-        // The earliest track (the first, on a tie) and the time after it.
-        // One long a track: an ended track's is all ones, never earliest.
-        for (; t < end; ++t)
-        {
-            unsigned long next = t->next;
-
-            if (next < earliest)
-            {
-                second = earliest;
-                earliest = next;
-                due = t;
-            }
-            else if (next < second)
-            {
-                second = next;
-            }
-        }
-        if (due == NULL)
+        // The earliest track (the first, on a tie: the heap's root) and the
+        // time after it (its children's). An ended track's is all ones,
+        // never earliest.
+        if (ymmusic_heap_n == 0)
             break;
+        due = ymmusic_heap[0];
+        earliest = due->next;
+        if (earliest == YMMUSIC_MIDI_ENDED)
+            break;
+        if (ymmusic_heap_n > 1)
+            second = ymmusic_heap[1]->next;
+        if (ymmusic_heap_n > 2 && ymmusic_heap[2]->next < second)
+            second = ymmusic_heap[2]->next;
         ymmusic_midi_next = earliest;
         if (earliest > ymmusic_midi_now || !YMMUSIC_TRACK_READY(due))
             break;
@@ -736,6 +802,7 @@ static void ymmusic_midi_update(void)
         // The earliest now, with no scan (`second` is the earliest of the
         // others): one scan less a step, as the last one only found this.
         ymmusic_midi_next = (due->next < second) ? due->next : second;
+        ymmusic_heap_down();
     }
 }
 
@@ -781,7 +848,7 @@ static void ymmusic_reset()
         ymmusic_midi_tracks[i].next = YMMUSIC_MIDI_ENDED;
         ymmusic_midi_tracks[i].running_status = 0;
         ymmusic_midi_tracks[i].active = 0;
-    }
+    }    ymmusic_heap_n = -1;
 }
 
 void ymmusic_init()
@@ -1029,7 +1096,22 @@ static unsigned char ymmusic_voice_volume(ymmusic_voice_t *voice)
     }
     if (volume < 0) volume = 0;
     if (volume > 127) volume = 127;
-    return ymmusic_levels[ym_mulu(volume, ymmusic_master) >> 8];
+    // ymmusic_levels[volume * ymmusic_master >> 8], from a table made again
+    // when the music volume changes
+    {
+        static unsigned char scaled[128];
+        static int scaled_for = -1;
+
+        if (scaled_for != ymmusic_master)
+        {
+            int v;
+
+            scaled_for = ymmusic_master;
+            for (v = 0; v < 128; v++)
+                scaled[v] = ymmusic_levels[ym_mulu((unsigned short)v, (unsigned short)scaled_for) >> 8];
+        }
+        return scaled[volume];
+    }
 }
 
 // Calculates the note of a voice at the current tick, in 128th of a note

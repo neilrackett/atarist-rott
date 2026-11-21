@@ -380,6 +380,50 @@ static void __not_in_flash_func(c2p_core1)(void *arg) {
   c2p_rows((const c2p_job_t *)arg);
 }
 
+/* 256 colours (MD_HELLO_EIGHT): the pixels as they are into eight plane
+ * words a block, the four-plane transpose run for all eight bits
+ * (md-doom's fb_c2p8_rows). */
+static void __not_in_flash_func(c2p8_rows)(const c2p_job_t *j) {
+  const unsigned blocks = j->width >> 4;
+  for (unsigned r = j->row0; r < j->row1; r++) {
+    const uint8_t *src = j->chunky + r * j->pitch;
+    uint32_t *dst = (uint32_t *)(j->planar + r * j->width);
+    for (unsigned b = 0; b < blocks; b++, dst += 4) {
+      uint32_t p01 = 0, p23 = 0, p45 = 0, p67 = 0;
+      for (unsigned g = 0; g < 4u; g++, src += 4) {
+        const uint32_t q = (uint32_t)src[0] | ((uint32_t)src[1] << 8) |
+                           ((uint32_t)src[2] << 16) | ((uint32_t)src[3] << 24);
+        const unsigned sh = 12u - 4u * g;
+#define C2P8_NIB(bit) ((((q >> (bit)) & 0x01010101u) * 0x80402010u) >> 28)
+        p01 |= (C2P8_NIB(0) << sh) | (C2P8_NIB(1) << (sh + 16u));
+        p23 |= (C2P8_NIB(2) << sh) | (C2P8_NIB(3) << (sh + 16u));
+        p45 |= (C2P8_NIB(4) << sh) | (C2P8_NIB(5) << (sh + 16u));
+        p67 |= (C2P8_NIB(6) << sh) | (C2P8_NIB(7) << (sh + 16u));
+#undef C2P8_NIB
+      }
+      dst[0] = p01;
+      dst[1] = p23;
+      dst[2] = p45;
+      dst[3] = p67;
+    }
+  }
+}
+
+static void __not_in_flash_func(c2p8_core1)(void *arg) {
+  c2p8_rows((const c2p_job_t *)arg);
+}
+
+void __not_in_flash_func(md_video_c2p8)(const uint8_t *chunky, unsigned pitch,
+                                        uint8_t *planar, unsigned width,
+                                        unsigned height) {
+  const unsigned mid = height >> 1;
+  c2p_job_t bottom = {chunky, pitch, planar, width, 0, mid, height};
+  c2p_job_t top = {chunky, pitch, planar, width, 0, 0, mid};
+  md_core1_dispatch(c2p8_core1, &bottom);
+  c2p8_rows(&top);
+  md_core1_wait();
+}
+
 void __not_in_flash_func(md_video_c2p)(const uint8_t *chunky, unsigned pitch,
                                        uint8_t *planar, unsigned width,
                                        unsigned height, unsigned screen_y) {

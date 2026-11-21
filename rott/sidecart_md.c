@@ -11,7 +11,9 @@
  * interrupt mask are stdoom's, hardware-proven there. What changed: the
  * command ids and ROM4 layout come from rott_md_protocol.h, commands retry,
  * and the cache guard brackets whole stretches of traffic (reads of ROM4
- * included) rather than single commands.
+ * included) rather than single commands. A TT's or a Falcon's 68030 has a
+ * data cache in the same way (and a 68040 or 68060): the same brackets
+ * turn it off, through CACR.
  */
 
 #if defined(__MINT__)
@@ -43,16 +45,34 @@ unsigned short md_command_retries;
 #define MEGASTE_CTRL_ADDR ((volatile unsigned char *)0xFFFF8E21UL)
 #define MEGASTE_CTRL_CACHE_BIT 0x01u
 
+#ifndef C__CPU
+#define C__CPU 0x5f435055L /* '_CPU' */
+#endif
+
+/* 0 (68000), 10, 20, 30, 40, 60. */
+static int md_cpu(void) {
+  static int cpu = -1;
+  long v = 0;
+  if (cpu < 0) cpu = Getcookie(C__CPU, &v) == C_FOUND ? (int)v : 0;
+  return cpu;
+}
+
 /* ── Supervisor ──────────────────────────────────────────────────────── */
 /* Super(0L)/Super(ssp) is only right when called from user mode; ROTT is
  * in user mode but some callers may not be (ATARI_MD_FinishUpdate runs
- * most of a frame in supervisor mode: sidecart_md_super_begin). Only the
- * Mega STE needs supervisor here, and it is a 68000, where MOVE from SR is
- * allowed in user mode: so no SUP_INQUIRE trap to find out. */
+ * most of a frame in supervisor mode: sidecart_md_super_begin). Only a
+ * machine with a cache to guard needs supervisor here. A Mega STE is a
+ * 68000, where MOVE from SR is allowed in user mode: so no SUP_INQUIRE
+ * trap to find out. From the 68010 on it is privileged (and TOS's stand-in
+ * for it there reads the condition codes alone), so those ask GEMDOS. */
 #define MD_ALREADY_SUPER (-1L)
 
-static long md_super_enter_mste(void) {
+static long md_super_enter(void) {
   unsigned short sr;
+  if (md_cpu() >= 10) {
+    if (Super(1L)) return MD_ALREADY_SUPER;
+    return (long)Super(0L);
+  }
   __asm__ volatile("move.w %%sr,%0" : "=d"(sr));
   if (sr & 0x2000) return MD_ALREADY_SUPER;
   return (long)Super(0L);
@@ -62,7 +82,15 @@ static void md_super_exit(long token) {
   if (token != MD_ALREADY_SUPER) Super((void *)token);
 }
 
-/* ── Mega STE cache guard ────────────────────────────────────────────── */
+/* ── Cache guard ─────────────────────────────────────────────────────── */
+/* A read the cache answers never reaches the cartridge: a stale frame, or
+ * a command's token that never seems to come. A Mega STE's cache goes off
+ * at $FFFF8E21. A 68030's data cache goes off and empty through CACR (ED
+ * clear, CD set), its instruction cache left alone, as md-xt and md-doom
+ * do it; TOS 3.06's PMMU tables make the cartridge cache-inhibited on a
+ * TT, but nothing promises that of a Falcon or another TOS. A 68040's or
+ * 68060's has its dirty lines written out first (CPUSHA). All in
+ * supervisor mode. */
 
 static int md_is_megaste(void) {
   static int cached = -1;
@@ -73,20 +101,110 @@ static int md_is_megaste(void) {
   return cached;
 }
 
+#define MD_GUARD_NONE 0
+#define MD_GUARD_MSTE 1
+#define MD_GUARD_030 2
+#define MD_GUARD_040 3
+
+static int md_guard(void) {
+  static int kind = -1;
+  if (kind < 0) {
+    const int cpu = md_cpu();
+    kind = md_is_megaste() ? MD_GUARD_MSTE
+           : cpu >= 40     ? MD_GUARD_040
+           : cpu == 30     ? MD_GUARD_030
+                           : MD_GUARD_NONE;
+  }
+  return kind;
+}
+
+#define CACR_030_ED 0x00000100UL  /* data cache on */
+#define CACR_030_CD 0x00000800UL  /* empty it (reads back 0) */
+#define CACR_040_EDC 0x80000000UL /* data cache on */
+
+/* CACR = (CACR & keep) | set, the old one back; and CACR = value. With
+ * dirty, a 68040's data cache is written out and emptied first. Opcodes by
+ * hand: the game is assembled for the 68000. */
+unsigned long md_cacr_swap(unsigned long keep, unsigned long set);
+void md_cacr_put(unsigned long value);
+unsigned long md_cacr_swap040(unsigned long keep);
+__asm__(
+    "    .text\n"
+    "    .even\n"
+    "    .globl _md_cacr_swap\n"
+    "_md_cacr_swap:\n"
+    "    .word   0x4e7a,0x0002\n" /* movec cacr,d0 */
+    "    move.l  d0,d1\n"
+    "    and.l   4(sp),d1\n"
+    "    or.l    8(sp),d1\n"
+    "    .word   0x4e7b,0x1002\n" /* movec d1,cacr */
+    "    rts\n"
+    "    .globl _md_cacr_put\n"
+    "_md_cacr_put:\n"
+    "    move.l  4(sp),d0\n"
+    "    .word   0x4e7b,0x0002\n" /* movec d0,cacr */
+    "    rts\n"
+    "    .globl _md_cacr_swap040\n"
+    "_md_cacr_swap040:\n"
+    "    .word   0xf478\n" /* cpusha dc */
+    "    .word   0x4e7a,0x0002\n"
+    "    move.l  d0,d1\n"
+    "    and.l   4(sp),d1\n"
+    "    .word   0x4e7b,0x1002\n"
+    "    rts\n");
+
 static int md_bus_depth;
 static int md_bus_cache_off;
 static unsigned char md_bus_saved_ctrl;
+static unsigned long md_bus_saved_cacr;
+
+/* Supervisor: the cache off if it is on, 1 if it was (its old state in
+ * *saved, for md_cache_back). The vertical blank reads the cartridge too
+ * (ATARI_MD_MusicVbl) and uses these as they are. */
+int md_cache_off(unsigned long *saved) {
+  switch (md_guard()) {
+    case MD_GUARD_MSTE: {
+      const unsigned char ctl = *MEGASTE_CTRL_ADDR;
+      *saved = ctl;
+      if (!(ctl & MEGASTE_CTRL_CACHE_BIT)) return 0;
+      *MEGASTE_CTRL_ADDR = (unsigned char)(ctl & ~MEGASTE_CTRL_CACHE_BIT);
+      return 1;
+    }
+    case MD_GUARD_030:
+      *saved = md_cacr_swap(~CACR_030_ED, CACR_030_CD);
+      return 1;
+    case MD_GUARD_040:
+      *saved = md_cacr_swap040(~CACR_040_EDC);
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+void md_cache_back(unsigned long saved) {
+  switch (md_guard()) {
+    case MD_GUARD_MSTE:
+      *MEGASTE_CTRL_ADDR = (unsigned char)saved;
+      break;
+    case MD_GUARD_030:
+      md_cacr_put(saved | CACR_030_CD);
+      break;
+    case MD_GUARD_040:
+      md_cacr_put(saved); /* nothing went into it meanwhile */
+      break;
+    default:
+      break;
+  }
+}
 
 void sidecart_md_bus_begin(void) {
+  unsigned long saved = 0;
   long ssp;
-  if (md_bus_depth++ || !md_is_megaste()) return;
-  ssp = md_super_enter_mste();
-  md_bus_saved_ctrl = *MEGASTE_CTRL_ADDR;
-  md_bus_cache_off = (md_bus_saved_ctrl & MEGASTE_CTRL_CACHE_BIT) != 0;
-  if (md_bus_cache_off) {
-    *MEGASTE_CTRL_ADDR =
-        (unsigned char)(md_bus_saved_ctrl & ~MEGASTE_CTRL_CACHE_BIT);
-  }
+  if (md_bus_depth++ || !md_guard()) return;
+  ssp = md_super_enter();
+  md_bus_cache_off = md_cache_off(&saved);
+  md_bus_saved_ctrl = (unsigned char)saved;
+  md_bus_saved_cacr = saved;
   md_super_exit(ssp);
 }
 
@@ -94,8 +212,9 @@ void sidecart_md_bus_end(void) {
   long ssp;
   if (md_bus_depth <= 0 || --md_bus_depth) return;
   if (!md_bus_cache_off) return;
-  ssp = md_super_enter_mste();
-  *MEGASTE_CTRL_ADDR = md_bus_saved_ctrl;
+  ssp = md_super_enter();
+  md_cache_back(md_guard() == MD_GUARD_MSTE ? md_bus_saved_ctrl
+                                            : md_bus_saved_cacr);
   md_super_exit(ssp);
   md_bus_cache_off = 0;
 }
@@ -118,11 +237,11 @@ __asm__(
     "    jmp     (a0)\n");
 
 long sidecart_md_super_begin(void) {
-  if (!md_is_megaste()) return MD_ALREADY_SUPER;
-  return md_super_enter_mste();
+  if (!md_guard()) return MD_ALREADY_SUPER;
+  return md_super_enter();
 }
 
-long sidecart_md_super_force(void) { return md_super_enter_mste(); }
+long sidecart_md_super_force(void) { return md_super_enter(); }
 
 void sidecart_md_super_end(long token) {
   if (token != MD_ALREADY_SUPER) md_user_mode(token);

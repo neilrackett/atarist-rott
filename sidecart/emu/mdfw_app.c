@@ -11,6 +11,7 @@
  *                --md-option chunky=<dir>      write cNNNNN_WxH.raw views
  */
 #include <stdio.h>
+#include <string.h>
 
 #include "md_core1.h"
 #include "md_main.h"
@@ -37,8 +38,12 @@ void md_core1_unpark(void) {}
 
 /* ---- Frame dumps --------------------------------------------------- */
 
-/* The published planar frame, decoded through the 16 ST colours: exactly
- * what the ST copies to its screen. */
+/* The palette of the last view (mdfw_app_view), for an 8-plane dump. */
+static uint8_t s_rgb[768];
+
+/* The published planar frame, decoded through the 16 ST colours, or as
+ * 256 (MD_HELLO_EIGHT) through the game's: exactly what the ST copies to
+ * its screen. */
 static void dump_ready_frame(void) {
   static uint16_t last;
   const int every = mdfw_option_int("dump-every", 1);
@@ -59,6 +64,20 @@ static void dump_ready_frame(void) {
   FILE *f = fopen(name, "wb");
   if (!f) return;
   fprintf(f, "P6\n%u %u\n255\n", w, h);
+  if (md_main_eight()) {
+    fb = rom4 + MD_FRAME_OFFSET_A / 2;
+    for (unsigned y = 0; y < h; y++) {
+      for (unsigned x = 0; x < w; x++) {
+        const uint16_t *g = fb + y * (w / 2) + (x / 16) * 8;
+        const unsigned bit = 15 - (x & 15);
+        unsigned c = 0;
+        for (unsigned p = 0; p < 8; p++) c |= ((g[p] >> bit) & 1u) << p;
+        fwrite(s_rgb + c * 3, 1, 3, f);
+      }
+    }
+    fclose(f);
+    return;
+  }
   for (unsigned y = 0; y < h; y++) {
     for (unsigned x = 0; x < w; x++) {
       const uint16_t *g = fb + y * (w / 4) + (x / 16) * 4;
@@ -80,6 +99,7 @@ static void dump_ready_frame(void) {
 void mdfw_app_view(const uint8_t *rgb768, const uint8_t *chunky, int pitch,
                    int w, int h) {
   static unsigned n;
+  memcpy(s_rgb, rgb768, sizeof(s_rgb));
   const char *dir = mdfw_option("chunky");
   if (!dir) return;
   char name[1024];

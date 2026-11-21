@@ -122,6 +122,35 @@ void DrawSky( void )
       ofs=-(1799-(centerskypost+viewheight));
       }
 //ofs=centerskypost;
+#if defined(ATARI_NATIVE) && ATARI_LOWDETAIL_FLATS
+   if (doublestep>0)
+      {
+      /* Low detail, as DOS ROTT draws the sky (the DOS branch below): a
+       * column for each pair, the taller of their clips, the left one's
+       * angle, both pixels from one fetch (atari_col.S). */
+      extern void atari_col_sky2(byte *dest, const byte *src, const byte *shade, long count);
+      for (dest=0;dest<viewwidth;dest+=2)
+         {
+         int height2;
+         height=posts[dest].ceilingclip;
+         height2=posts[dest+1].ceilingclip;
+         if (height<height2)
+            height=height2;
+         if (height<=0)
+            continue;
+         ang=(angle+pixelangle[dest])&(FINEANGLES-1);
+         src=skysegs[ang]-ofs;
+         if (iGLOBAL_SCREENWIDTH == 320)
+            atari_col_sky2((byte *)bufferofs + dest,src,shadingtable,height);
+         else
+            {
+            DrawSkyPost((byte *)bufferofs + dest,src,height);
+            DrawSkyPost((byte *)bufferofs + dest + 1,src,height);
+            }
+         }
+      }
+   else
+#endif
 #ifdef DOS
    if (doublestep>0)
       {
@@ -620,6 +649,24 @@ void DrawHLine (int xleft, int xright, int yp)
    dest=(byte *)bufferofs+ylookup[yp];
 
 /* TODO: horizontal isn't as easy as vertical in packed */
+#if defined(ATARI_NATIVE) && ATARI_LOWDETAIL_FLATS
+   if (doublestep>0 && iGLOBAL_SCREENWIDTH == 320)
+      {
+      /* Low detail, as DOS ROTT draws floors and ceilings (the DOS branch
+       * below): a texel for each pair of pixels, from the pair's left
+       * one, written to both (atari_col.S). */
+      extern void atari_row2(long pairs, byte *dest, const byte *flat,
+                             const byte *shade, unsigned long frac,
+                             unsigned long step);
+      if (xleft&1)
+         xleft--;
+      if (xright >= xleft)
+         atari_row2(((xright-xleft)>>1)+1, dest+xleft, buf, shadingtable,
+                    (startyfrac<<16) + (startxfrac&0xffff),
+                    ((mr_ystep>>1)<<16) + ((mr_xstep>>1)&0xffff));
+      return;
+      }
+#endif
 #ifdef DOS
    if (doublestep>0)
       {
@@ -766,6 +813,20 @@ void DrawRow(int count, byte * dest, byte * src)
 {
 	unsigned frac, fracstep;
 	int coord;
+
+#if defined(ATARI_NATIVE)
+	{
+		/* atari_col.S: the same pixels, two and a half times as fast */
+		extern void atari_row(long count, byte *dest, const byte *flat,
+		                      const byte *shade, unsigned long frac,
+		                      unsigned long step);
+		if (count > 0)
+			atari_row(count, dest, src, shadingtable,
+			          (mr_yfrac<<16) + (mr_xfrac&0xffff),
+			          (mr_ystep<<16) + (mr_xstep&0xffff));
+		return;
+	}
+#endif
 
 	frac = (mr_yfrac<<16) + (mr_xfrac&0xffff);
 	fracstep = (mr_ystep<<16) + (mr_xstep&0xffff);

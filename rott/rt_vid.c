@@ -1514,6 +1514,9 @@ void SetBorderColor(int color)
       return;
    }
 #endif
+#if defined(ATARI_NATIVE)
+   atari_unpair_view();
+#endif
    // bna section start
 
    byte *cnt, *Ycnt, *b;

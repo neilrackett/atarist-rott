@@ -31,6 +31,7 @@
 #include <string.h>
 
 #include "atari_c2p.h"
+#include "atari_eight.h"
 #include "atari_megaste.h"
 #include "atari_perf.h"
 #include "i_timer.h"
@@ -90,7 +91,6 @@ extern int CalcRotate(objtype *ob);
 
 int atari_md_active;
 static unsigned short md_caps; /* MD_ST_CAPS, read at HELLO */
-static int md_mste;            /* a Mega STE: its cache in the way */
 int atari_md_masked_dirty = 1;
 
 #define MD_PKT_WORDS (MD_CMD_MAX_BYTES / 2)
@@ -510,9 +510,10 @@ void ATARI_MD_Init(void) {
   /* The name as ST-order bytes, as md_get_bytes() expects. */
   strncpy((char *)(hello + MD_HELLO_NAME), wadname, MD_HELLO_NAME_WORDS * 2 - 1);
   if (ATARI_NOIR) flags |= MD_HELLO_NOIR;
+  /* A TT or a Falcon about to show 256 colours: the view as 8 planes. */
+  if (atari_eight_wanted()) flags |= MD_HELLO_EIGHT;
 
   rc = say_hello(hello, flags, result, sizeof(result));
-  md_mste = is_megaste();
 
   if (rc < 0) {
     printf("ROTT Accelerator not answering\nUsing the ST renderer\n");
@@ -535,6 +536,11 @@ void ATARI_MD_Init(void) {
     printf("Using the ST renderer\n");
     return;
   }
+#if ATARI_EIGHT
+  /* Firmware from before MD_CAP_EIGHT sends ST Low's four planes: the
+   * game stays in ST Low for it, as it was. */
+  if (atari_eight_wanted() && !(md_caps & MD_CAP_EIGHT)) atari_eight_cancel();
+#endif
   md_blit_init();
   printf("%s%s\n", result, md_blit_ok ? " (blitter)" : "");
   atari_md_active = 1;
@@ -610,8 +616,9 @@ static void send_palette(void) {
   if (!md_have_palette) return;
   if (ATARI_NOIR) flags |= MD_PAL_NOIR;
   if (ATARI_NOIR_DITHERING) flags |= MD_PAL_NOIR_DITHER;
-  if (!(md_caps & MD_CAP_PENS)) {
-    /* An older firmware works the colours out as the ST does then. */
+  if (atari_eight_wanted() || !(md_caps & MD_CAP_PENS)) {
+    /* 256 colours need no reduction; and an older firmware works the 16
+     * out as the ST does then. */
     sidecart_md_write(MD_CMD_PALETTE, md_palette, MD_PAL_RGB_BYTES,
                       (long)++md_palette_serial, flags, 0L);
     return;
@@ -1542,6 +1549,8 @@ static void md_blit_init(void) {
 
 static void copy_ready(unsigned char *screen) {
   extern void atari_md_copy(const void *src, void *dst, int rows, int bpr);
+  extern void atari_md_copy8(const void *src, void *dst, int rows, int bpr,
+                             long step, long second);
   const unsigned short seq = MD_STATUS[MD_ST_READY_SEQ];
   int x, y, w, h, buf;
 
@@ -1554,6 +1563,15 @@ static void copy_ready(unsigned char *screen) {
   if (w <= 0 || h <= 0 || w > MD_VIEW_MAX_W || h > MD_VIEW_MAX_H || (x & 15) ||
       x + w > 320 || y + h > 200)
     return;
+#if ATARI_EIGHT
+  if (atari_eight) {
+    /* Eight planes: a byte a pixel across, one frame in both buffers. */
+    if (buf != 0) return;
+    atari_md_copy8((const void *)(MD_ROM4_BASE + MD_FRAME_OFFSET_A),
+                   atari_eight_row(y) + x, h, w,
+                   atari_eight_row(1) - atari_eight_row(0), atari_eight_second);
+  } else
+#endif
   if (md_blit_ok)
     md_blit_start((const void *)(MD_ROM4_BASE +
                                  (buf ? MD_FRAME_OFFSET_B : MD_FRAME_OFFSET_A)),
@@ -1580,7 +1598,6 @@ void ATARI_MD_ViewToChunky(unsigned char *chunky) {
 /* Music on the MD (MD_CAP_MUSIC)                                       */
 /* ------------------------------------------------------------------ */
 
-#define MSTE_CTL (*(volatile unsigned char *)0xFFFF8E21UL)
 #define YM_SELECT (*(volatile unsigned char *)0xFFFF8800UL)
 #define YM_DATA (*(volatile unsigned char *)0xFFFF8802UL)
 
@@ -1662,18 +1679,15 @@ static int md_ym_step(unsigned short step, int all) {
  * or two while behind so it doesn't stay at the edge of the ring. Just
  * started, too far behind or a step missed: on from the newest, every
  * register compared, as only a step that follows the one played can go by
- * its changes. The cartridge is read with a Mega STE's cache off, as
- * everywhere, put back as it was (the game may have it off just now). R7's
- * port bits stay as the chip has them. */
+ * its changes. The cartridge is read with a Mega STE's cache off (or a
+ * 68030's data cache), as everywhere, put back as it was (the game may
+ * have it off just now). R7's port bits stay as the chip has them. */
 void ATARI_MD_MusicVbl(void) {
   unsigned short newest;
-  unsigned char ctl = 0;
+  unsigned long cache = 0;
   int k;
+  const int cache_off = md_cache_off(&cache);
 
-  if (md_mste) {
-    ctl = MSTE_CTL;
-    if (ctl & 1) MSTE_CTL = (unsigned char)(ctl & ~1);
-  }
   newest = *(volatile const unsigned short *)(MD_ROM4_BASE + MD_YM_NEWEST_OFFSET);
   for (k = 0; k < 2 && newest != md_ym_last && (newest & 0x8000); k++) {
     unsigned short step = (unsigned short)MD_YM_STEP(md_ym_last + 1);
@@ -1689,7 +1703,7 @@ void ATARI_MD_MusicVbl(void) {
     }
     md_ym_last = step;
   }
-  if (md_mste && (ctl & 1)) MSTE_CTL = ctl;
+  if (cache_off) md_cache_back(cache);
 }
 
 static int md_hud_redraw;
@@ -1761,6 +1775,26 @@ void ATARI_MD_AutotestShot(int frame) {
 
   if (frame <= 0 || frame > 64 || (frame & 7)) return;
   ATARI_MD_BlitWait();
+#if ATARI_EIGHT
+  if (atari_eight) {
+    /* 256 colours: SHOTnnn.P8, the 768 bytes of the colours and the
+     * screen read back out of its planes, 320x200, a byte a pixel. */
+    static unsigned char back[320 * 200];
+    atari_eight_to_chunky(back, 0, 0, 320, 200);
+    sprintf(name, "SHOT%03d.P8", frame);
+    fh = Fcreate(name, 0);
+    if (fh < 0) return;
+    Fwrite((short)fh, 768L, atari_eight_colors());
+    Fwrite((short)fh, 64000L, back);
+    Fclose((short)fh);
+    sprintf(name, "CHUNK%03d.RAW", frame);
+    fh = Fcreate(name, 0);
+    if (fh < 0) return;
+    Fwrite((short)fh, 64000L, bufferofs);
+    Fclose((short)fh);
+    return;
+  }
+#endif
   ssp = Super(0L);
   head[0] = 0;
   for (i = 0; i < 16; i++) head[1 + i] = ((volatile unsigned short *)0xFF8240L)[i];
@@ -1825,10 +1859,22 @@ int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
     sidecart_md_bus_begin();
   }
 
-  /* Pipelined: keep at most one frame in flight before sending another. */
-  if (ATARI_MD_PIPELINE) wait_ready(1);
-  md_stat_read();
-  read_spotvis();
+  if (atari_eight) {
+    /* 256 colours: a frame fills both frame buffers, so the MD draws the
+     * next into what the ST copies this one from. So the last frame sent
+     * is waited for and copied before the next goes, and the MD draws
+     * that while the ST runs the game, never during a copy. */
+    wait_ready(0);
+    md_stat_read();
+    read_spotvis();
+    atari_c2p_hud(screen, pixels, md_view_x, md_view_y, md_view_w, md_view_h);
+    copy_ready(screen);
+  } else {
+    /* Pipelined: keep at most one frame in flight before sending another. */
+    if (ATARI_MD_PIPELINE) wait_ready(1);
+    md_stat_read();
+    read_spotvis();
+  }
   sidecart_md_bus_end();
 
   build_frame();
@@ -1849,12 +1895,14 @@ int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
     }
   }
 
-  /* The HUD the ST drew, around the view; then the view. */
-  atari_c2p_hud(screen, pixels, md_view_x, md_view_y, md_view_w, md_view_h);
-  sidecart_md_bus_begin();
-  if (!ATARI_MD_PIPELINE) wait_ready(0);
-  copy_ready(screen);
-  sidecart_md_bus_end();
+  if (!atari_eight) {
+    /* The HUD the ST drew, around the view; then the view. */
+    atari_c2p_hud(screen, pixels, md_view_x, md_view_y, md_view_w, md_view_h);
+    sidecart_md_bus_begin();
+    if (!ATARI_MD_PIPELINE) wait_ready(0);
+    copy_ready(screen);
+    sidecart_md_bus_end();
+  }
   sidecart_md_super_end(ssp);
   if (resume) I_ResumeTime();
 #if defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)

@@ -106,3 +106,74 @@ copy_span:
 .Lspan_done:
     move.l  (sp)+,d1
     rts
+
+/*
+ * void atari_md_copy8(const void *src, void *dst, int rows, int bpr,
+ *                     long step, long second);
+ *
+ * 256 colours on a TT or a Falcon (atari_eight.c): `rows` rows of `bpr`
+ * bytes of eight interleaved planes (bpr = the view's width, a multiple of
+ * 16) to rows `step` bytes apart at dst. With `second` each row is written
+ * again that many bytes on, a TT's doubled line, from the registers, not
+ * from a second read of the cartridge (as md-doom's copy_row8). 32 bytes a
+ * MOVEM (d0-d5/a3-a4), an odd group of 16 first; either loop is a few
+ * instructions, inside a 68030's instruction cache.
+ */
+    .globl _atari_md_copy8
+_atari_md_copy8:
+    movem.l d2-d7/a2-a6,-(sp)
+    move.l  48(sp),a0               | src (ROM4)
+    move.l  52(sp),a1               | dst (screen)
+    move.l  56(sp),d7               | rows
+    ble.s   .L8done
+    move.l  64(sp),a5               | step
+    sub.l   60(sp),a5               | less the row itself
+    move.l  68(sp),a6               | second line, or 0
+.L8row:
+    move.l  60(sp),d6               | bytes in the row
+    lsr.l   #4,d6                   | groups of 16
+    move.l  a6,d0
+    beq.s   .L8one
+
+    lea     (a1,a6.l),a2
+    lsr.l   #1,d6                   | pairs of groups; carry: an odd one
+    bcc.s   .L8two32
+    movem.l (a0)+,d0-d3
+    movem.l d0-d3,(a1)
+    movem.l d0-d3,(a2)
+    lea     16(a1),a1
+    lea     16(a2),a2
+.L8two32:
+    subq.w  #1,d6
+    bmi.s   .L8next
+.L8two_loop:
+    movem.l (a0)+,d0-d5/a3-a4
+    movem.l d0-d5/a3-a4,(a1)
+    movem.l d0-d5/a3-a4,(a2)
+    lea     32(a1),a1
+    lea     32(a2),a2
+    dbf     d6,.L8two_loop
+    bra.s   .L8next
+
+.L8one:
+    lsr.l   #1,d6
+    bcc.s   .L8one32
+    movem.l (a0)+,d0-d3
+    movem.l d0-d3,(a1)
+    lea     16(a1),a1
+.L8one32:
+    subq.w  #1,d6
+    bmi.s   .L8next
+.L8one_loop:
+    movem.l (a0)+,d0-d5/a3-a4
+    movem.l d0-d5/a3-a4,(a1)
+    lea     32(a1),a1
+    dbf     d6,.L8one_loop
+
+.L8next:
+    add.l   a5,a1
+    subq.l  #1,d7
+    bne.s   .L8row
+.L8done:
+    movem.l (sp)+,d2-d7/a2-a6
+    rts

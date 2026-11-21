@@ -51,6 +51,7 @@ ATARI_MD_MUSIC ?= 1 # The MD plays the music, if its firmware can
 ATARI_MD_AUTOTEST ?= 0 # Test runs: start a game, turn N angles a tic
 ATARI_MD_AUTOTEST_DIE ?= 0 # Test runs: the player is killed at frame N
 ATARI_LOGIC_CHECK ?= 0 # Test runs: N tics a frame, scripted, state hashes
+ATARI_PAIR_VERIFY ?= 0 # Test runs: check low detail's pairs, faults to PAIRS.TXT
 
 # Rendering and performance settings
 
@@ -64,6 +65,7 @@ ifneq ($(strip $(ATARI_LOGIC_CHECK)),0)
 ATARI_LOD ?= 0
 endif
 ATARI_LOD ?= 1 # Far walls and disks every few tics
+ATARI_EIGHT ?= 1 # 256 colours on a TT or a Falcon (rott/atari_eight.c; needs lib/stdl)
 ATARI_C2P_DIRTY_TILES ?= 1 # Update only dirty tiles
 ATARI_C2P_DIRTY_TILE_THRESHOLD ?= 200 # Dirty-tile cutoff
 ATARI_C2P_FAST_COPY ?= 1 # Use fast C2P copy
@@ -90,6 +92,13 @@ ATARI_SPRITE_BUDGET ?= 0 # Max sprite draws
 ATARI_SUPERROTT ?= 0 # Build Super ROTT data
 ATARI_USE_ASM_HOTSPOTS ?= 0 # Enable asm hotspots
 ATARI_VIEW_SCALE_DIV ?= 1 # Divide view resolution
+ATARI_VIEWSIZE ?= 7 # The view size a game starts with (0-10; 7 is 320x168)
+# Low detail's sky, floors and ceilings at half the width, as DOS ROTT
+# draws them in low detail (walls already are); 0: full width, as before.
+ATARI_LOWDETAIL_FLATS ?= 1
+# Low detail's masked walls (railings, gates) as pairs of columns, as its
+# walls and sprites are; 0: full width, as before.
+ATARI_LOWDETAIL_MASKED ?= 1
 ATARI_WALL_ANIM_DIVISOR ?= 2 # Wall animation divisor
 
 # Compiler and linker settings
@@ -134,7 +143,16 @@ ATARI_CFLAGS ?= -O3 -fomit-frame-pointer -s -std=gnu99 -m68000 \
 	-DATARI_MD_BLIT=$(ATARI_MD_BLIT) -DATARI_MD_MUSIC=$(ATARI_MD_MUSIC) \
 	-DATARI_MD_AUTOTEST=$(ATARI_MD_AUTOTEST) -DATARI_LOGIC_CHECK=$(ATARI_LOGIC_CHECK) \
 	-DATARI_LOD=$(ATARI_LOD) \
+	-DATARI_EIGHT=$(strip $(ATARI_EIGHT)) \
+	-DATARI_VIEWSIZE=$(strip $(ATARI_VIEWSIZE)) \
+	-DATARI_LOWDETAIL_FLATS=$(strip $(ATARI_LOWDETAIL_FLATS)) \
+	-DATARI_LOWDETAIL_MASKED=$(strip $(ATARI_LOWDETAIL_MASKED)) \
+	-DATARI_PAIR_VERIFY=$(strip $(ATARI_PAIR_VERIFY)) \
 	-DATARI_MD_AUTOTEST_DIE=$(ATARI_MD_AUTOTEST_DIE)
+# libgcc's 32- and 64-bit multiplies and divides go through atari_cpu.S,
+# which takes the 68020's own instructions when the machine has them.
+ATARI_WRAPS := -Wl,--wrap=__mulsi3 -Wl,--wrap=__udivsi3 -Wl,--wrap=__divsi3 \
+	-Wl,--wrap=__umodsi3 -Wl,--wrap=__modsi3 -Wl,--wrap=__muldi3 -Wl,--wrap=__divdi3
 ATARI_LDFLAGS ?= -s -nostdlib -L/freemint/libcmini/lib -m68000
 ATARI_LIBS ?= -lcmini -lgcc
 ATARI_INCLUDES ?= -I$(SRCDIR) -I$(SRCDIR)/audiolib -Isidecart/include -Ilib/xpad/src -I/freemint/libcmini/include
@@ -153,7 +171,18 @@ ATARI_AUDIOLIB_SOURCES := \
 	$(SRCDIR)/audiolib/usrhooks.c
 ATARI_SOURCES := $(filter-out $(SRCDIR)/amiga_%.c $(SRCDIR)/dosutil.c $(SRCDIR)/dukemusc.c $(SRCDIR)/fx_man.c $(SRCDIR)/lookups.c $(SRCDIR)/vocdecode.c $(SDL_ONLY_SOURCES),$(wildcard $(SRCDIR)/*.c)) $(ATARI_AUDIOLIB_SOURCES) \
 	lib/xpad/src/xpad.c
-ATARI_ASM_SOURCES := $(SRCDIR)/sidecart_stubs.S $(SRCDIR)/atari_md_s.S
+# 256 colours on a TT or a Falcon: the conversion into eight planes is
+# STDL's (its SDL2 add-on's c2p.c, 68000 instructions alone), built into the
+# game as it stands in the submodule, with no STDL beside it.
+ATARI_EIGHT_C2P := lib/stdl/addons/sdl2/src/c2p.c
+ifneq ($(strip $(ATARI_EIGHT)),0)
+ATARI_SOURCES += $(ATARI_EIGHT_C2P)
+$(ATARI_EIGHT_C2P):
+	@echo "*** lib/stdl is not checked out: git submodule update --init --recursive lib/stdl"
+	@echo "*** (or build without the TT's and Falcon's 256 colours: ATARI_EIGHT=0)"; exit 1
+endif
+ATARI_ASM_SOURCES := $(SRCDIR)/sidecart_stubs.S $(SRCDIR)/atari_md_s.S $(SRCDIR)/atari_col.S \
+	$(SRCDIR)/atari_cpu.S
 # libcmini's crt0, and a clear of the BSS first (see the file): linked first.
 ATARI_CRT0 := $(OBJDIR)/$(SRCDIR)/atari_crt0.o
 ATARI_OBJECTS := $(ATARI_CRT0) $(addprefix $(OBJDIR)/,$(ATARI_SOURCES:.c=.o) $(ATARI_ASM_SOURCES:.S=.o))
@@ -367,7 +396,7 @@ emu: st
 		--sd $(abspath $(EMU_SD)) $(EMU_ARGS)
 
 $(ATARI_OUTPUT): $(ATARI_OBJECTS) | $(BUILDDIR)
-	$(ATARI_CC) $(ATARI_LDFLAGS) $(ATARI_OBJECTS) $(ATARI_LIBS) -o $@
+	$(ATARI_CC) $(ATARI_LDFLAGS) $(ATARI_WRAPS) $(ATARI_OBJECTS) $(ATARI_LIBS) -o $@
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)

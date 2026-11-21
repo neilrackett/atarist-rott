@@ -10,7 +10,7 @@ This repository contains 3 versions of ROTT:
 
 | Build          | Description                                                                                            | Target                        |
 | -------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------- |
-| `ROTT_ST.TOS`  | Aggressively optimised native Atari ST port & optional ROTT Accelerator for SidecarTridge Multi-device | ST, STE, Mega STE             |
+| `ROTT_ST.TOS`  | Aggressively optimised native Atari ST port & optional ROTT Accelerator for SidecarTridge Multi-device | ST, STE, Mega STE, TT, Falcon |
 | `ROTT_SDL.TOS` | SDL based port aiming to be as close to original ROTT as possible on all ST-compatible hardware        | ST, STE, Mega STE, TT, Falcon |
 | `ROTT_030.TOS` | The SDL port, optimised for a 68030 CPU with 68882 FPU                                                 | TT, Falcon                    |
 
@@ -35,6 +35,7 @@ This port talks directly to the ST's hardware alongside C2P rendering and aggres
 To achieve this, optimisations include:
 
 - 16 colours with dithering, chosen for what the game actually draws
+- Low detail (the default) draws the sky, floors, ceilings and railings at half width, as it does the walls
 - Static intro screens
 - Optional 2x or 4x game area zoom for small view sizes (`ViewZoom 1` in `CONFIG.ROT`)
 - Event-driven menus
@@ -57,6 +58,8 @@ On its own it runs up to twice as fast as the SDL build, though the game slows d
 Native FPS was recorded at the smallest view size (80x48, zoomed 4x with `ViewZoom 1`) and low detail, and ROTT Accelerator FPS at the default view size (320x168) and high detail.
 
 Music plays ROTT's MIDI songs on the ST's own sound chip, so it works on any ST. Set `MusicMode` to `0` in `SOUND.ROT` to turn it off, or `MusicVolume` (0-255) to change its volume. With the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device) (firmware v1.4.0-beta.4 or later), the Multi-device plays the songs and your ST just copies the notes to its sound chip, which gives an 8MHz ST about 7% of its time back.
+
+On a TT or a Falcon with a colour monitor, `ROTT_ST.TOS` shows the game's own 256 colours (TT Low, or a Falcon's 8-bit mode on VGA, RGB or a TV) in place of the 16 and their dither; set `Colours` to `16` in `CONFIG.ROT` for ST Low. `ViewZoom` works there too, and on a TT or a Falcon `ROTT_ST.TOS` uses the 68030's own multiply and divide. This has only been run in an emulator so far.
 
 Sound effects use the STE's DMA sound, so they need an STE or Mega STE (an ST just plays without them). Set `FXMode` to `0` in `SOUND.ROT` to turn them off. `NumVoices` sets how many play at once, from 1 to 8; each one costs CPU time while it plays (about 5% of a Mega STE for one), and nothing when it's quiet. The default, `0`, plays one at a time, or two with the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device). On an 8MHz ST they're mixed at 6258Hz rather than 12517Hz, for half the CPU time: set `FXRate` to `12517` for the full rate.
 
@@ -87,6 +90,7 @@ As well as taking the load off the ST, it brings back some of what the ST versio
 - Full lighting, including darker areas and light diminishing
 - Full resolution at every view size, rather than a 2x or 4x zoom, up to the full width between the status bars
 - On-screen messages
+- On a TT or a Falcon, the view in the game's own 256 colours (firmware v1.4.0-beta.8 or later; older firmware keeps ST Low's 16)
 
 `ROTT_ST.TOS` looks for the ROTT Accelerator when it starts and falls back to the ST renderer if it isn't there, so there's still only one version to install. While the Accelerator is rendering, a small yellow lightning bolt shows on the bottom status bar.
 

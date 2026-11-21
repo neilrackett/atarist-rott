@@ -32,6 +32,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <unistd.h>
 #if defined(ATARI_NATIVE)
 #include <mint/osbind.h>
+#include "atari_eight.h"
+#include "atari_cpu.h"
 #endif
 #if ATARI_SDL
 #include <signal.h>
@@ -248,6 +250,7 @@ int main (int argc, char *argv[])
 #if defined(ATARI_NATIVE)
     __argc = argc;
     __argv = argv;
+    atari_cpu_init(); // a 68020's multiplies and divides (atari_cpu.S)
 #endif
 #if ATARI_SDL
     if (is_megaste())
@@ -405,6 +408,11 @@ int main (int argc, char *argv[])
 
    // Start up Memory manager with a certain amount of reserved memory
 
+#if defined(ATARI_NATIVE) && ATARI_EIGHT
+   // A TT's or a Falcon's 256-colour page, before the zone takes the
+   // memory (given back below if config.rot says Colours 16).
+   atari_eight_prepare();
+#endif
    Z_Init(50000,1000000);
 
    IN_Startup ();
@@ -416,11 +424,16 @@ int main (int argc, char *argv[])
       doublestep=0;
       SetupWads();
       BuildTables ();
+      // Before the Accelerator's HELLO, which says how many colours.
+      ReadAtariConfig();
+#if ATARI_EIGHT
+      if (atari_eight_colours < 256)
+         atari_eight_cancel();
+#endif
 #if ATARI_MD_RENDER
       ATARI_MD_Init();
 #endif
       ReadAtariSoundToggles();
-      ReadAtariConfig();
       GetMenuInfo ();
 #else
       ReadConfig ();
@@ -1043,6 +1056,10 @@ void CheckCommandLineParameters( void )
    turbo = true; // benchmark builds (ATARI_SDL_BenchFrame): the same
 #endif
 }
+
+#if defined(ATARI_NATIVE) && defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
+int atari_autotest_frame; // frames of play so far (PlayLoop)
+#endif
 
 void SetupWads( void )
 {
@@ -2578,7 +2595,9 @@ fromloadedgame:
 #if defined(ATARI_NATIVE) && defined(ATARI_MD_AUTOTEST) && (ATARI_MD_AUTOTEST > 0)
          // Unattended test runs: turn a fixed step per frame, so frame N
          // shows the same view with or without the MD (ATARI_MD_AutotestShot).
-         static int autotest_frame;
+         // (a name of its own, for a debugger's breakpoints: tools/bench)
+         extern int atari_autotest_frame;
+#define autotest_frame atari_autotest_frame
          if (player && controlupdatestarted == 1)
             player->angle = (short)((++autotest_frame * ATARI_MD_AUTOTEST * 4) & (FINEANGLES - 1));
 #if (ATARI_MD_AUTOTEST_DIE > 0)
@@ -2602,6 +2621,9 @@ fromloadedgame:
 
          if (render)
             ThreeDRefresh();
+#if defined(ATARI_NATIVE) && (ATARI_LOGIC_CHECK > 0)
+         ATARI_CheckRender();
+#endif
 #if defined(ATARI_NATIVE)
          // Never play on in the dark a death fade (Died) left behind.
          if (atari_c2p_fade_amount())

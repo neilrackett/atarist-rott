@@ -18,7 +18,8 @@
  * targets keep the 64-bit version.
  */
 #if defined(ATARI_NATIVE)
-fixed FixedMul(fixed a, fixed b)
+/* FixedMul is atari_cpu.S's, which comes here on a 68000 (and a 68060). */
+fixed FixedMul68000(fixed a, fixed b)
 {
 	return atari_fixed_mul16(a, b);
 }
@@ -33,8 +34,11 @@ fixed FixedMul(fixed a, fixed b)
 fixed FixedMulShift(fixed a, fixed b, fixed shift)
 {
 #if defined(ATARI_NATIVE)
+	extern fixed atari_mulshift64(fixed a, fixed b, int shift); /* atari_cpu.S */
 	if (shift == 16)
 		return atari_fixed_mul16(a, b);
+	if ((unsigned)shift < 64)
+		return atari_mulshift64(a, b, (int)shift);
 #endif
 	__int64 x = a;
 	__int64 y = b;
@@ -100,7 +104,13 @@ fixed FixedDiv2(fixed a, fixed b)
 	return (z) & 0xffffffff;
 }
 
+#if defined(ATARI_NATIVE)
+/* FixedScale is atari_cpu.S's, which comes here when the quotient needs
+ * more than 32 bits. */
+fixed FixedScaleC(fixed orig, fixed factor, fixed divisor)
+#else
 fixed FixedScale(fixed orig, fixed factor, fixed divisor)
+#endif
 {
 	__int64 x = orig;
 	__int64 y = factor;

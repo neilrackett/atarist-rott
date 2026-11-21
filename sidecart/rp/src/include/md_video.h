@@ -39,4 +39,10 @@ void __not_in_flash_func(md_video_c2p)(const uint8_t *chunky, unsigned pitch,
                                        uint8_t *planar, unsigned width,
                                        unsigned height, unsigned screen_y);
 
+/* The same rows as eight interleaved planes, width bytes a row, the
+ * pixels' own values (MD_HELLO_EIGHT: a TT or a Falcon in 256 colours). */
+void __not_in_flash_func(md_video_c2p8)(const uint8_t *chunky, unsigned pitch,
+                                        uint8_t *planar, unsigned width,
+                                        unsigned height);
+
 #endif /* MD_VIDEO_H */

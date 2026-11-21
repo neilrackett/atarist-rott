@@ -42,18 +42,24 @@ void sidecart_md_result(char *buf, int size);
 
 /* Bracket every stretch of cartridge-bus traffic. On a Mega STE with its
  * cache on, the cache can hold stale ROM3/ROM4 reads, so it is switched
- * off (16 MHz kept) between begin and end. Nests. Cheap elsewhere. */
+ * off (16 MHz kept) between begin and end; a TT's or a Falcon's 68030 (or a
+ * 68040, a 68060) has its data cache off for the same stretch. Nests.
+ * Cheap elsewhere. */
 void sidecart_md_bus_begin(void);
 void sidecart_md_bus_end(void);
+/* The same from supervisor mode with no nesting, for the vertical blank:
+ * 1 if the cache went off, its state before in *saved for md_cache_back. */
+int md_cache_off(unsigned long *saved);
+void md_cache_back(unsigned long saved);
 
 /* A stretch with several bus brackets and CPU work between them (the
- * cache back on): on a Mega STE it runs in supervisor mode, so each bracket
- * toggles the cache with no GEMDOS traps. Nothing in between may call
- * Super(0L). Elsewhere these do nothing. */
+ * cache back on): on a machine with a cache to guard it runs in supervisor
+ * mode, so each bracket toggles the cache with no GEMDOS traps. Nothing in
+ * between may call Super(0L). Elsewhere these do nothing. */
 long sidecart_md_super_begin(void);
 void sidecart_md_super_end(long token);
-/* The same on any 68000 machine (the caller makes sure), for hardware
- * registers; ends with sidecart_md_super_end. */
+/* The same on any machine, for hardware registers; ends with
+ * sidecart_md_super_end. */
 long sidecart_md_super_force(void);
 
 /* Mask 68000 interrupts around each command (supervisor only; off by

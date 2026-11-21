@@ -38,6 +38,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #endif
 
 #include "watcom.h"
+#if defined(ATARI_NATIVE)
+/* FixedMul in line here: the ray cast's and masked walls' (atari_fixmul.h) */
+#include "atari_fixmul.h"
+#define FixedMul atari_FixedMul
+#endif
 #include "sprites.h"
 #include "rt_actor.h"
 #include "rt_stat.h"
@@ -76,6 +81,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "atari_perf.h"
 #include "atari_hotspots.h"
 #include "atari_md.h"
+#include "atari_c2p.h"
 #include "atari_check.h"
 //MED
 #include "memcheck.h"
@@ -2065,6 +2071,310 @@ void SetWallLightLevel (wallcast_t * post)
 ====================
 */
 
+#if defined(ATARI_NATIVE)
+/*
+ * The native build's DrawWallPost: the same posts, without doing a
+ * column's arithmetic and texture lookup again when it is the column
+ * before's. A wall seen from in front is many columns of one height, and
+ * every column of one tile is one lump:
+ *  - the lump's address is kept while the next column asks for the same
+ *    one (W_CacheLumpNum was a call and a tag change a column);
+ *  - a height's scale, top, bottom and texture step are kept until the
+ *    height changes (a FixedMul, a multiply and a divide a column); the
+ *    divide is two divu.w, the multiplies mulu.w (watcom.h).
+ * ATARI_WallPostFrame empties both before a frame's walls: the player's
+ * height and the horizon are in what is kept, and lumps may have moved.
+ */
+static struct
+{
+   int valid;
+   int wallheight, ht;
+   int invscale, top, bottom;
+   int iscale_height, iscale;
+} wallpost;
+static int wallpost_lump;
+static byte *wallpost_src;
+
+/*
+ * Walls shaded beforehand. With ATARI_FLAT_WALL_LIGHT every wall pixel goes
+ * through one shading table (colormap's level 16, which never changes:
+ * LoadColorMap), so each 64x64 wall texture is shaded once into a copy of
+ * its own in the zone, and its columns are drawn with no table: a memory
+ * read a pixel fewer, the same pixels. The copy holds each texel twice, as
+ * a word (8K), so low detail's doubled columns write both pixels at once
+ * (atari_col_walls); a column is 128 bytes of it. The copies are PU_CACHE, so the zone
+ * purges them as it does the lumps, which clears their pointers here
+ * (shadedwall[lump], one a lump). Making one may purge something: whatever
+ * the wall loop has noted and not drawn goes first (it may point at
+ * either), and the other copy a post uses is held meanwhile.
+ */
+#if ATARI_FLAT_WALL_LIGHT > 0
+#define ATARI_SHADED_WALLS 1
+#else
+#define ATARI_SHADED_WALLS 0
+#endif
+
+#if ATARI_SHADED_WALLS
+static byte **shadedwall;      /* numlumps of them, from the first wall */
+static const byte *shadedwall_table;
+
+extern int atari_wall_noshade; /* rt_scale.c: R_DrawWallColumn's source is shaded */
+
+static byte *ShadedWall(int lump, byte *keep)
+{
+   byte *raw;
+   byte **slot;
+   int i;
+
+   if (!shadedwall)
+      {
+      shadedwall = (byte **)calloc(numlumps, sizeof(byte *));
+      if (!shadedwall)
+         return NULL;
+      }
+   if (shadingtable != shadedwall_table)
+      {
+      /* (never: the table is fixed) all made again for the new table */
+      ATARI_WallColumnsFlush();
+      for (i = 0; i < (int)numlumps; i++)
+         if (shadedwall[i] && shadedwall[i] != keep)
+            Z_Free(shadedwall[i]);
+      shadedwall_table = shadingtable;
+      }
+   slot = &shadedwall[lump];
+   if (*slot)
+      return *slot;
+   if (W_LumpLength(lump) < 4096)
+      return NULL;
+   ATARI_WallColumnsFlush();
+   if (keep)
+      Z_ChangeTag(keep, PU_STATIC);
+   /* each texel in both bytes of a word (atari_col_walls) */
+   Z_Malloc(8192, PU_STATIC, slot);
+   raw = W_CacheLumpNum(lump, PU_CACHE, CvtNull, 1);
+   {
+      unsigned short *w = (unsigned short *)*slot;
+      for (i = 0; i < 4096; i++)
+         w[i] = (unsigned short)(shadingtable[raw[i]] * 0x101);
+   }
+   Z_ChangeTag(*slot, PU_CACHE);
+   if (keep)
+      Z_ChangeTag(keep, PU_CACHE);
+   wallpost_lump = 0; /* the raw lumps may have moved */
+   return *slot;
+}
+#endif
+
+static void ATARI_WallPostFrame(void)
+{
+   wallpost.valid = 0;
+   wallpost.iscale_height = 0;
+   wallpost_lump = 0;
+}
+
+static __inline__ void WallPostGeometry(int wallheight, int ht)
+{
+   if (!wallpost.valid || wallheight != wallpost.wallheight || ht != wallpost.ht)
+      {
+      wallpost.valid = 1;
+      wallpost.wallheight = wallheight;
+      wallpost.ht = ht;
+      wallpost.invscale = wallheight<<(10-HEIGHTFRACTION);
+      if ((unsigned)wallheight < 65536u && (unsigned)pheight < 32768u && (unsigned)ht < 65536u)
+         {
+         /* Two mulu.w. The FixedMul below is ((pheight + 0.5) * scale +
+          * 0.5 ulp) >> 16 on whole numbers, which is pheight * scale +
+          * ((scale + 1) >> 1); and the scale is the height << 4, so each
+          * product is the height's, shifted. */
+         wallpost.top = centeryfrac -
+            (int)((atari_mulu16((unsigned short)wallheight, (unsigned short)pheight)
+                   << (10-HEIGHTFRACTION)) +
+                  (((unsigned)wallpost.invscale + 1u) >> 1));
+         wallpost.bottom = wallpost.top +
+            (int)(atari_mulu16((unsigned short)wallheight, (unsigned short)ht)
+                  << (10-HEIGHTFRACTION));
+         }
+      else
+         {
+         wallpost.top = centeryfrac -
+            atari_fixed_mul16((pheight<<SFRACBITS)+(SFRACUNIT>>1), wallpost.invscale);
+         wallpost.bottom = wallpost.top + wallpost.invscale*ht;
+         }
+      }
+   dc_invscale   = wallpost.invscale;
+   dc_texturemid = (pheight<<SFRACBITS)+(SFRACUNIT>>1);
+}
+
+static void DrawWallPost2 ( wallcast_t * post, byte * buf);
+
+void DrawWallPost ( wallcast_t * post, byte * buf)
+{
+   DrawWallPost2(post, buf);
+#if ATARI_SHADED_WALLS
+   atari_wall_noshade = 0;
+#endif
+}
+
+static void DrawWallPost2 ( wallcast_t * post, byte * buf)
+{
+   int ht;
+   int topscreen;
+   int bottomscreen;
+   int texture;
+   byte * src;
+   byte * src2;
+
+   texture = post->texture;
+#if ATARI_SHADED_WALLS
+   if (post->lump && post->alttile != -1)
+      {
+      byte *s1 = ShadedWall(post->lump, NULL);
+      byte *s2 = s1;
+
+      if (s1 && post->alttile != 0)
+         {
+         s2 = ShadedWall(post->alttile, s1);
+         if (s2 && !shadedwall[post->lump])
+            s1 = NULL; /* (cannot be: it was held) */
+         }
+      if (s1 && s2)
+         {
+         src = s1;
+         if (post->alttile != 0)
+            {
+            ht = nominalheight;
+            src2 = s2;
+            }
+         else
+            {
+            ht = maxheight+32;
+            src2 = src;
+            }
+         atari_wall_noshade = 1;
+         goto shaded;
+         }
+      }
+#endif
+   if (post->lump)
+      {
+      if (post->lump != wallpost_lump)
+         {
+         wallpost_src = W_CacheLumpNum(post->lump,PU_CACHE, CvtNull, 1);
+         wallpost_lump = post->lump;
+         }
+      src = wallpost_src;
+      }
+   if (post->alttile!=0)
+      {
+      if (post->alttile==-1)
+         {
+         WallPostGeometry(post->wallheight, maxheight+32);
+         dc_yh = ((wallpost.bottom-1)>>SFRACBITS)+1;
+         if (dc_yh < 0)
+            {
+            post->floorclip=-1;
+            post->ceilingclip=0;
+            }
+         else if (dc_yh >= viewheight)
+            {
+            post->floorclip=viewheight-1;
+            post->ceilingclip=viewheight;
+            }
+         else
+            {
+            post->floorclip=dc_yh-1;
+            post->ceilingclip=dc_yh;
+            }
+         return;
+         }
+      else
+         {
+         ht=nominalheight;
+         src2=W_CacheLumpNum(post->alttile,PU_CACHE, CvtNull, 1);
+         wallpost_lump = 0; /* asked for again: loading this may have moved it */
+         }
+      }
+   else
+      {
+      ht=maxheight+32;
+      src2=src;
+      }
+
+#if ATARI_SHADED_WALLS
+shaded:
+#endif
+   WallPostGeometry(post->wallheight, ht);
+   topscreen     = wallpost.top;
+   bottomscreen  = wallpost.bottom;
+   dc_yl = (topscreen+SFRACUNIT-1)>>SFRACBITS;
+   dc_yh = ((bottomscreen-1)>>SFRACBITS)+1;
+
+   if (dc_yl >= viewheight)
+      {
+      post->ceilingclip=viewheight;
+      post->floorclip=viewheight-1;
+      return;
+      }
+   else if (dc_yl < 0)
+      dc_yl = 0;
+
+   if (post->wallheight != wallpost.iscale_height)
+      {
+      wallpost.iscale_height = post->wallheight;
+      /* 2^28 over the height: one divu.w when the answer fits a word
+       * (a wall over 64 pixels high), two for a lower wall */
+      if (post->wallheight > (1<<(28-16)) && post->wallheight < 65536)
+         {
+         unsigned long q = 64UL<<(16+HEIGHTFRACTION);
+         __asm__("divu.w %1,%0" : "+d"(q) : "d"((unsigned short)post->wallheight));
+         wallpost.iscale = (int)(q & 0xFFFFUL);
+         }
+      else if (post->wallheight > 0 && post->wallheight < 65536)
+         wallpost.iscale = (int)atari_udiv32x16(64UL<<(16+HEIGHTFRACTION),
+                                                (unsigned short)post->wallheight);
+      else
+         wallpost.iscale = (64<<(16+HEIGHTFRACTION))/post->wallheight;
+      }
+   dc_iscale     = wallpost.iscale;
+
+   if (dc_yh < 0)
+      {
+      post->floorclip=-1;
+      post->ceilingclip=0;
+      goto bottomcheck;
+      }
+   else if (dc_yh > viewheight)
+      dc_yh = viewheight;
+
+   post->ceilingclip=dc_yl;
+   post->floorclip=dc_yh-1;
+   dc_source=src2+(((texture>>4)&0xfc0)<<atari_wall_noshade);
+   R_DrawWallColumn (buf);
+
+bottomcheck:
+
+   if (ht!=nominalheight)
+      return;
+
+   dc_texturemid-=(nominalheight<<SFRACBITS);
+   topscreen     = centeryfrac - atari_fixed_mul16(dc_texturemid,dc_invscale);
+   bottomscreen  = topscreen + (dc_invscale<<6);
+   dc_yl = (topscreen+SFRACUNIT-1)>>SFRACBITS;
+   dc_yh = ((bottomscreen-1)>>SFRACBITS);
+
+   if (dc_yl >= viewheight)
+      return;
+   else if (dc_yl < 0)
+      dc_yl = 0;
+   if (dc_yh < 0)
+      return;
+   else if (dc_yh > viewheight)
+      dc_yh = viewheight;
+   post->floorclip=dc_yh-1;
+   dc_source=src+(((texture>>4)&0xfc0)<<atari_wall_noshade);
+   R_DrawWallColumn (buf);
+}
+#else
 void DrawWallPost ( wallcast_t * post, byte * buf)
 {
    int ht;
@@ -2172,6 +2482,303 @@ bottomcheck:
    dc_source=src+((texture>>4)&0xfc0);
    R_DrawWallColumn (buf);
 }
+#endif
+
+#if defined(ATARI_NATIVE) && ATARI_SHADED_WALLS
+/*
+ * The wall loop's usual case, without a call or a global a column: a post
+ * whose textures are shaded already (ShadedWall) is set up here, as
+ * DrawWallPost2 would, and its columns go straight into the notes for
+ * atari_col_walls. Anything else (a post seen for the first time, the
+ * alttile -1 sort) goes through DrawWallPost as before. The same
+ * arithmetic in the same order, so the same pixels and clips.
+ */
+static void ATARI_DrawWallColumnBudgeted(wallcast_t *post, byte *buf);
+
+/* A wall column of a word copy (ShadedWall) into the notes for
+ * atari_col_walls; with step 2 the column beside it as well. */
+static __inline__ void NoteWall(byte *buf, int row, const byte *src, long frac,
+                                long iscale, int count, int step, int twice)
+{
+   atari_wallcol_t *c = atari_wallcol_next;
+
+   c->dest = buf + row;
+   c->src = src;
+   c->shade = NULL;
+   c->frac = frac;
+   c->step = iscale;
+   c->count = (short)count;
+   c->twice = (short)twice;
+   if (++atari_wallcol_next == atari_wallcols + ATARI_WALLCOLS)
+      ATARI_WallColumnsFlush();
+   if (step == 2 && !twice)
+      {
+      c = atari_wallcol_next;
+      c->dest = buf + 1 + row;
+      c->src = src;
+      c->shade = NULL;
+      c->frac = frac;
+      c->step = iscale;
+      c->count = (short)count;
+      c->twice = 0;
+      if (++atari_wallcol_next == atari_wallcols + ATARI_WALLCOLS)
+         ATARI_WallColumnsFlush();
+      }
+}
+
+/* atari_col.S's atari_walls_run: its context, in the order it reads it */
+typedef struct
+{
+   wallcast_t *post, *end;
+   byte *buf;
+   atari_wallcol_t *c, *climit;
+   byte **sw;
+   long step, twice, vh, cy, texmid, cyfrac, ph, tall, allowed;
+   long gh, ght, ginv, gtop, gbot, ih, iscale;
+} atari_wallrun_t;
+extern wallcast_t *atari_walls_run(atari_wallrun_t *ctx);
+
+static void DrawWallsFast (int step)
+{
+   atari_wallrun_t R;
+   const byte *flat = colormap + (1 << 12);
+   wallcast_t *post = &posts[0];
+   wallcast_t *const end = &posts[viewwidth];
+   byte *buf = (byte *)bufferofs;
+   const int vh = viewheight;
+   const int cy = centery;
+   const int nom = nominalheight;
+   const int tall = maxheight+32;
+   const int texmid = (pheight<<SFRACBITS)+(SFRACUNIT>>1);
+   const int mid2 = texmid - (nom<<SFRACBITS);
+   const int cyfrac = centeryfrac;
+   const unsigned ph = (unsigned)pheight;
+   /* the two-mulu.w geometry needs the eye and both heights in 16 bits:
+    * per frame, then only the wall's height a post */
+   const int small = ph < 32768u && (unsigned)nom < 65536u && (unsigned)tall < 65536u;
+   /* doubled columns as one note of words, when the pair is word aligned */
+   const int twice = step == 2 && !((long)buf & 1);
+   /* WallPostGeometry's and the texture step's values for the height last
+    * seen, in registers: the same arithmetic */
+#define gh R.gh
+#define ght R.ght
+#define ginv R.ginv
+#define gtop R.gtop
+#define gbot R.gbot
+#define ih R.ih
+#define iscale R.iscale
+   byte **sw;
+   atari_wallcol_t *c, *climit;
+
+   shadingtable = (byte *)flat;
+   /* the copies made for this table, or none yet: every post the slow way */
+   sw = (shadedwall && shadedwall_table == flat) ? shadedwall : NULL;
+   c = atari_wallcol_next;
+   climit = atari_wallcols + ATARI_WALLCOLS - 2;
+   R.end = end;
+   R.climit = climit;
+   R.step = step;
+   R.twice = twice;
+   R.vh = vh;
+   R.cy = cy;
+   R.texmid = texmid;
+   R.cyfrac = cyfrac;
+   R.ph = ph;
+   R.tall = tall;
+   gh = ght = -1;
+   ginv = gtop = gbot = 0;
+   ih = iscale = 0;
+
+   for (;;)
+      {
+      /* the usual posts in atari_col.S, until one it does not take */
+      R.post = post;
+      R.buf = buf;
+      R.c = c;
+      R.sw = sw;
+      R.allowed = sw && small && tall != nom;
+      post = atari_walls_run(&R);
+      buf = R.buf;
+      c = R.c;
+      if (post >= end)
+         break;
+      {
+      const int lump = post->lump;
+      const int alt = post->alttile;
+      const int wh = post->wallheight;
+      byte *s1, *s2;
+      int ht, yl, yh, col;
+
+      if (!sw || !lump || alt == -1 || !(s1 = sw[lump]) || !(s2 = alt ? sw[alt] : s1))
+         {
+         atari_wallcol_next = c;
+         ATARI_DrawWallColumnBudgeted(post, buf);
+         if (step == 2)
+            {
+            ATARI_DrawWallColumnBudgeted(post, buf + 1);
+            (post+1)->ceilingclip=post->ceilingclip;
+            (post+1)->floorclip=post->floorclip;
+            }
+         c = atari_wallcol_next;
+         /* a copy made meanwhile: from here they are in place */
+         sw = (shadedwall && shadedwall_table == flat) ? shadedwall : NULL;
+         goto advance;
+         }
+      ht = alt ? nom : tall;
+      if (wh != gh || ht != ght)
+         {
+         gh = wh;
+         ght = ht;
+         ginv = wh<<(10-HEIGHTFRACTION);
+         if (small && (unsigned)wh < 65536u)
+            {
+            gtop = cyfrac -
+               (int)((atari_mulu16((unsigned short)wh, (unsigned short)ph)
+                      << (10-HEIGHTFRACTION)) + (((unsigned)ginv + 1u) >> 1));
+            gbot = gtop + (int)(atari_mulu16((unsigned short)wh, (unsigned short)ht)
+                                << (10-HEIGHTFRACTION));
+            }
+         else
+            {
+            gtop = cyfrac - atari_fixed_mul16(texmid, ginv);
+            gbot = gtop + ginv*ht;
+            }
+         }
+      yl = (gtop+SFRACUNIT-1)>>SFRACBITS;
+      yh = ((gbot-1)>>SFRACBITS)+1;
+      if (yl >= vh)
+         {
+         post->ceilingclip=vh;
+         post->floorclip=vh-1;
+         goto next;
+         }
+      else if (yl < 0)
+         yl = 0;
+      if (wh != ih)
+         {
+         ih = wh;
+         if (wh > (1<<(28-16)) && wh < 65536)
+            {
+            unsigned long q = 64UL<<(16+HEIGHTFRACTION);
+            __asm__("divu.w %1,%0" : "+d"(q) : "d"((unsigned short)wh));
+            iscale = (int)(q & 0xFFFFUL);
+            }
+         else if (wh > 0 && wh < 65536)
+            iscale = (int)atari_udiv32x16(64UL<<(16+HEIGHTFRACTION), (unsigned short)wh);
+         else
+            iscale = (64<<(16+HEIGHTFRACTION))/wh;
+         }
+      col = ((post->texture>>4)&0xfc0)<<1; /* the word copy's column */
+      if (yh < 0)
+         {
+         post->floorclip=-1;
+         post->ceilingclip=0;
+         }
+      else
+         {
+         if (yh > vh)
+            yh = vh;
+         post->ceilingclip=yl;
+         post->floorclip=yh-1;
+         if (yh - yl > 0)
+            {
+            const long frac = texmid + atari_mul32x16(iscale, yl - cy);
+            byte *const d = buf + ylookup[yl];
+            c->dest = d;
+            c->src = s2 + col;
+            c->shade = NULL;
+            c->frac = frac;
+            c->step = iscale;
+            c->count = (short)(yh - yl);
+            c->twice = (short)twice;
+            c++;
+            if (step == 2 && !twice)
+               {
+               c->dest = d + 1;
+               c->src = s2 + col;
+               c->shade = NULL;
+               c->frac = frac;
+               c->step = iscale;
+               c->count = (short)(yh - yl);
+               c->twice = 0;
+               c++;
+               }
+            if (c >= climit)
+               {
+               atari_wallcol_next = c;
+               ATARI_WallColumnsFlush();
+               c = atari_wallcol_next;
+               }
+            }
+         }
+      if (ht == nom)
+         {
+         const int top2 = cyfrac - atari_fixed_mul16(mid2, ginv);
+         const int bottom2 = top2 + (ginv<<6);
+
+         yl = (top2+SFRACUNIT-1)>>SFRACBITS;
+         yh = ((bottom2-1)>>SFRACBITS);
+         if (yl >= vh)
+            goto next;
+         else if (yl < 0)
+            yl = 0;
+         if (yh < 0)
+            goto next;
+         else if (yh > vh)
+            yh = vh;
+         post->floorclip=yh-1;
+         if (yh - yl > 0)
+            {
+            const long frac = mid2 + atari_mul32x16(iscale, yl - cy);
+            byte *const d = buf + ylookup[yl];
+            c->dest = d;
+            c->src = s1 + col;
+            c->shade = NULL;
+            c->frac = frac;
+            c->step = iscale;
+            c->count = (short)(yh - yl);
+            c->twice = (short)twice;
+            c++;
+            if (step == 2 && !twice)
+               {
+               c->dest = d + 1;
+               c->src = s1 + col;
+               c->shade = NULL;
+               c->frac = frac;
+               c->step = iscale;
+               c->count = (short)(yh - yl);
+               c->twice = 0;
+               c++;
+               }
+            if (c >= climit)
+               {
+               atari_wallcol_next = c;
+               ATARI_WallColumnsFlush();
+               c = atari_wallcol_next;
+               }
+            }
+         }
+next:
+      if (step == 2)
+         {
+         (post+1)->ceilingclip=post->ceilingclip;
+         (post+1)->floorclip=post->floorclip;
+         }
+      }
+advance:
+      post += step;
+      buf += step;
+      }
+   atari_wallcol_next = c;
+#undef gh
+#undef ght
+#undef ginv
+#undef gtop
+#undef gbot
+#undef ih
+#undef iscale
+}
+#endif
 
 /*
 ====================
@@ -2203,9 +2810,18 @@ void   DrawWalls (void)
    wallcast_t * post;
 
    whereami=13;
+#if defined(ATARI_NATIVE)
+   ATARI_WallPostFrame();
+   ATARI_WallColumnsBegin(); // noted as the loop goes, drawn at the end
+#endif
    
    plane = 0;
    
+#if defined(ATARI_NATIVE) && ATARI_SHADED_WALLS
+   DrawWallsFast(doublestep>1 ? 2 : 1);
+   ATARI_WallColumnsEnd();
+   return;
+#endif
    if (doublestep>1)
       {
 #ifdef DOS
@@ -2247,6 +2863,9 @@ void   DrawWalls (void)
             }
          }
       }
+#if defined(ATARI_NATIVE)
+   ATARI_WallColumnsEnd();
+#endif
 }
 
 
@@ -2928,6 +3547,13 @@ void InterpolateDoor (visobj_t * plane)
 ========================
 */
 
+#if defined(ATARI_NATIVE) && ATARI_LOWDETAIL_MASKED
+/* ScaleMaskedPost2 and ScaleTransparentPost2's own (rt_scale.c), called
+ * straight: a call level less a post */
+void atari_post_masked2(const byte *post, byte *buf);
+void atari_post_trans2(const byte *post, byte *buf, const byte *seelevel);
+#endif
+
 void InterpolateMaskedWall (visobj_t * plane)
 {
    int d1,d2;
@@ -3029,6 +3655,37 @@ void InterpolateMaskedWall (visobj_t * plane)
 
             texture=((top/bot)+(plane->texturestart>>4))>>6;
             SetLightLevel(height>>DHEIGHTFRACTION);
+#if defined(ATARI_NATIVE) && ATARI_LOWDETAIL_MASKED
+            /* Low detail: this column drawn as a pair, as the walls and
+             * sprites are (ScaleShape), from an even column; the next one
+             * is then done. */
+            if (doublestep>1 && !(i&1) && i<plane->x2 && i+1<viewwidth)
+               {
+               if (drawbottom==true)
+                  atari_post_trans2 (p->collumnofs[texture]+shape,buf,
+                                     colormap+((((p->translevel+8)+64)>>2)<<8));
+               for (j=0;j<levelheight-2;j++)
+                  {
+                  sprtopoffset-=(dc_invscale<<6);
+                  dc_texturemid+=(1<<22);
+                  if (drawmiddle==true)
+                     atari_post_masked2 (p2->collumnofs[texture]+shape2,buf);
+                  }
+               if (levelheight>1)
+                  {
+                  sprtopoffset-=(dc_invscale<<6);
+                  dc_texturemid+=(1<<22);
+                  if (drawtop==true)
+                     atari_post_masked2 (p3->collumnofs[texture]+shape3,buf);
+                  }
+               i++;
+               buf++;
+               top+=topinc;
+               bot+=botinc;
+               height+=dh;
+               goto masked_next;
+               }
+#endif
             if (drawbottom==true)
                ScaleTransparentPost (p->collumnofs[texture]+shape,buf,(p->translevel+8));
 				for (j=0;j<levelheight-2;j++)
@@ -3046,6 +3703,9 @@ void InterpolateMaskedWall (visobj_t * plane)
                   ScaleMaskedPost (p3->collumnofs[texture]+shape3,buf);
                }
             }
+#if defined(ATARI_NATIVE) && ATARI_LOWDETAIL_MASKED
+masked_next:
+#endif
 #ifdef DOS
          top+=topinc<<2;
          bot+=botinc<<2;
@@ -3072,6 +3732,9 @@ void DrawPlayerLocation ( void )
 {
    int i;
    char buf[30];
+#if defined(ATARI_NATIVE)
+   atari_unpair_view();
+#endif
 
    CurrentFont=tinyfont;
 
@@ -3167,6 +3830,12 @@ void      ThreeDRefresh (void)
   bufferofs += screenofs;
   if (!ATARI_MD_Active())
      {
+     /* low detail: the view in pairs, where nothing says otherwise */
+     if (doublestep>1)
+        atari_c2p_pairs_begin((byte *)bufferofs, screenofs % iGLOBAL_SCREENWIDTH,
+                              screenofs / iGLOBAL_SCREENWIDTH, viewwidth, viewheight);
+     else
+        atari_pair_base = NULL;
      memset(spotvis, 0, sizeof(spotvis));
      if (atari_flat_world_runtime)
         ATARI_DrawFlatWorldBackdrop();
@@ -3189,15 +3858,26 @@ void      ThreeDRefresh (void)
 	WallRefresh ();
 #if defined(ATARI_NATIVE)
    ATARI_THREED_LOG("ROTT: 3D walls ok\r\n");
+   // The whole view is drawn afresh: the screen conversion need not look
+   // for what changed in it (atari_c2p.c).
+   if (!ATARI_MD_Active())
+      atari_c2p_view_drawn(screenofs % iGLOBAL_SCREENWIDTH, screenofs / iGLOBAL_SCREENWIDTH,
+                           viewwidth, viewheight);
 #endif
 
    UpdateClientControls ();
 
+#if defined(ATARI_NATIVE)
+   if (!fandc)
+      atari_unpair_view();
+#endif
 	if (fandc && !ATARI_MD_Active())
       {
 #if defined(ATARI_NATIVE)
       if (!atari_flat_world_runtime && ATARI_PerfTryUseEffectPass())
          DrawPlanes();
+      else
+         atari_unpair_view();
 #else
 		DrawPlanes();
 #endif
@@ -6548,6 +7228,14 @@ void DrawSkyPost (byte * buf, byte * src, int height)
 	// bna section end
 	}
 	else {
+#if defined(ATARI_NATIVE)
+		extern void atari_col_sky(byte *dest, const byte *src, const byte *shade, long count);
+		if (height > 0)
+			{
+			atari_unpair_col(buf, 0, height - 1);
+			atari_col_sky(buf, src, shadingtable, height);
+			}
+#else
 	// org code
 		while (height--) {
 			*buf = shadingtable[*src];
@@ -6556,6 +7244,7 @@ void DrawSkyPost (byte * buf, byte * src, int height)
 			src++;
 		}
 	//	
+#endif
 	}
   
 	/*

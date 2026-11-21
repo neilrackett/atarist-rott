@@ -11,7 +11,9 @@ Based on STDOOM's atari_c2p.c, adapted for dynamic palette weighting.
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include "atari_c2p.h"
+#include "atari_eight.h"
 #include "atari_palette.h"
 #include "rott_md_protocol.h"
 
@@ -34,6 +36,17 @@ typedef struct
 static unsigned long c2p_table[4][256][8];
 static unsigned long c2p_2x_table[4][256][4];
 static unsigned long c2p_4x_table[4][256][2];
+/*
+ * The same bits again, a colour every 256 bytes, so a byte of the chunky
+ * screen masked in place (and.l #$FF00FF00) is already its index: no
+ * shift. Indexed around the middle, as d8(An,Xn.w) sign-extends the
+ * index: colour c at C2P_WIDE + (short)(c << 8). Each colour's 256 bytes:
+ * the 1x table's four phases (32 bytes each), then the 2x table's (16).
+ */
+static unsigned long c2p_wide_mem[16384];
+#define C2P_WIDE ((unsigned char *)c2p_wide_mem + 32768)
+#define C2P_WIDE_PAIRS(phase) (C2P_WIDE + 128 + ((phase) << 4))
+#define C2P_WIDE_1X(phase) (C2P_WIDE + ((phase) << 5))
 static unsigned short saved_palette[16];
 static int palette_saved = 0;
 static unsigned int last_palette_hash = 0;
@@ -82,12 +95,147 @@ static void build_noir_palette16(Color *out16, unsigned short *stpalette)
     }
 }
 
-static void c2p_1x_lorez(register unsigned char *out, const unsigned char *in, unsigned short pixels, unsigned long table[][8]);
+static void c2p_1x_lorez(register unsigned char *out, const unsigned char *in, unsigned short pixels, const unsigned char *table);
+static void c2p_pair_lorez(register unsigned char *out, const unsigned char *in, unsigned short pixels, const unsigned char *table);
+
+/*
+ * The rectangle the renderer says it drew afresh this frame
+ * (atari_c2p_view_drawn), as whole 16-pixel groups and 8-row tiles inside
+ * it; empty when lx1 <= lx0. Its tiles are converted without a compare and
+ * prev_chunky keeps no copy of them, so the rectangle is "stale" there
+ * (sx0...) until a frame that is not told the same one converts it once
+ * with a copy.
+ */
+static short lx0, ly0, lx1, ly1;
+static short sx0, sy0, sx1, sy1;
+
+void atari_c2p_view_drawn(int x, int y, int w, int h)
+{
+    lx0 = (short)((x + 15) >> 4);
+    lx1 = (short)((x + w) >> 4);
+    ly0 = (short)((y + 7) >> 3);
+    ly1 = (short)((y + h) >> 3);
+    if (ly1 <= ly0)
+        lx1 = lx0;
+}
+
+/*
+ * Low detail's pairs (atari_c2p.h): walls, floors, ceilings and the sky
+ * draw every pixel twice, from an even column, so a row of the view is
+ * pairs of the same colour but where something drew a single column. Those
+ * draws say where (atari_unpair_col, atari_unpair_rect): for each group of
+ * 16 columns the screen rows from the first to the last such draw. The
+ * view's tiles outside them are converted a pair at a time
+ * (c2p_pair_lorez, the 2x table: the same bits as c2p_1x_lorez gives a
+ * pair). ST Low only: on a TT or a Falcon STDL's pair conversion measured
+ * no faster than its own.
+ */
+unsigned char *atari_pair_base;
+short atari_pair_vx, atari_pair_vy, atari_pair_vw, atari_pair_vbot;
+short atari_unpair_top[20], atari_unpair_bot[20];
+
+void atari_c2p_pairs_begin(unsigned char *view, int x, int y, int w, int h)
+{
+    int g;
+
+    atari_pair_base = NULL;
+    if ((x | w) & 1 || x < 0 || w <= 0 || h <= 0 || x + w > 320 || y < 0 || y + h > 200)
+        return;
+    for (g = 0; g < 20; ++g)
+    {
+        atari_unpair_top[g] = 32767;
+        atari_unpair_bot[g] = -1;
+    }
+    atari_pair_vx = (short)x;
+    atari_pair_vy = (short)y;
+    atari_pair_vw = (short)w;
+    atari_pair_vbot = (short)(y + h - 1);
+    atari_pair_base = view;
+}
+
+void atari_unpair_rect(int x0, int x1, int y0, int y1)
+{
+    int g;
+
+    if (!atari_pair_base)
+        return;
+    if (x0 < 0)
+        x0 = 0;
+    if (x1 > 319)
+        x1 = 319;
+    if (y0 < 0)
+        y0 = 0;
+    for (g = x0 >> 4; g <= (x1 >> 4); ++g)
+    {
+        if (atari_unpair_top[g] > y0)
+            atari_unpair_top[g] = (short)y0;
+        if (atari_unpair_bot[g] < y1)
+            atari_unpair_bot[g] = (short)y1;
+    }
+}
+
+void atari_unpair_view(void)
+{
+    if (atari_pair_base)
+        atari_unpair_rect(atari_pair_vx, atari_pair_vx + atari_pair_vw - 1,
+                          atari_pair_vy, atari_pair_vbot);
+}
+
+void atari_unpair_col_slow(const unsigned char *buf, int y0, int y1)
+{
+    const long x = buf - atari_pair_base;
+
+    if (x < 0 || x >= atari_pair_vw)
+    {
+        atari_unpair_view(); /* not a column of the view's top row */
+        return;
+    }
+    {
+        const int g = (int)(x + atari_pair_vx) >> 4;
+        const int ys = (y0 > 0 ? y0 : 0) + atari_pair_vy;
+        int ye = y1 + atari_pair_vy;
+
+        if (ye > atari_pair_vbot)
+            ye = atari_pair_vbot;
+        if (ye < ys)
+            return; /* nothing drawn */
+        if (atari_unpair_top[g] > ys)
+            atari_unpair_top[g] = (short)ys;
+        if (atari_unpair_bot[g] < ye)
+            atari_unpair_bot[g] = (short)ye;
+    }
+}
+
+/* ViewZoom on an ST: prev_chunky holds the rows outside the zoomed rows
+ * zl_y0 to zl_y1 as they are on screen. */
+static int zoom_ok, zl_y0, zl_y1;
 
 #if ATARI_C2P_DIRTY_TILES
 static void c2p_invalidate_dirty_cache(void)
 {
     prev_chunky_valid = 0;
+    sx1 = sx0 = 0; /* all of it is converted and copied next */
+    zoom_ok = 0;
+}
+
+/* A zoomed frame's row outside the zoom: converted only when it changed
+ * (keep: prev_chunky has the row on screen), and kept. */
+static void zoom_other_row(unsigned char *out_line, const unsigned char *in_line, int line, int keep)
+{
+    const unsigned long *a = (const unsigned long *)in_line;
+    unsigned long *b = (unsigned long *)(prev_chunky + 320 * line);
+    int n;
+
+    if (keep)
+    {
+        for (n = 0; n < 80; n++)
+            if (a[n] != b[n])
+                break;
+        if (n == 80)
+            return;
+    }
+    c2p_1x_lorez(out_line, in_line, 320, C2P_WIDE_1X(line & 3));
+    memcpy(b, a, 320);
 }
 #else
 #define c2p_invalidate_dirty_cache() ((void)0)
@@ -116,10 +264,10 @@ static void c2p_restore_game_hud_bars(unsigned char *out, const unsigned char *i
     int line;
 
     for (line = 0; line < 16; ++line)
-        c2p_1x_lorez(out + 160 * line, in + 320 * line, 320, c2p_table[line & 3]);
+        c2p_1x_lorez(out + 160 * line, in + 320 * line, 320, C2P_WIDE_1X(line & 3));
 
     for (line = 184; line < 200; ++line)
-        c2p_1x_lorez(out + 160 * line, in + 320 * line, 320, c2p_table[line & 3]);
+        c2p_1x_lorez(out + 160 * line, in + 320 * line, 320, C2P_WIDE_1X(line & 3));
 }
 
 #if ATARI_C2P_DIRTY_TILES
@@ -135,6 +283,39 @@ static __inline__ int c2p_row16_differs(const unsigned char *a, const unsigned c
     return p[0] != q[0] || p[1] != q[1] || p[2] != q[2] || p[3] != q[3];
 }
 
+#ifndef ATARI_PAIR_VERIFY
+#define ATARI_PAIR_VERIFY 0
+#endif
+#if ATARI_PAIR_VERIFY
+/* A test build's check of the marks: a tile taken as pairs that is not is
+ * converted as it is and noted in PAIRS.TXT. */
+static int c2p_tile_paired(const unsigned char *p)
+{
+    int r, i;
+
+    for (r = 0; r < 8; ++r, p += 320)
+        for (i = 0; i < 16; i += 2)
+            if (p[i] != p[i + 1])
+                return 0;
+    return 1;
+}
+
+static void c2p_pair_fault(int g, int y)
+{
+    static int faults;
+    FILE *f;
+
+    if (++faults > 200)
+        return;
+    f = fopen("PAIRS.TXT", "a");
+    if (f)
+    {
+        fprintf(f, "group %d row %d\n", g, y);
+        fclose(f);
+    }
+}
+#endif
+
 static int c2p_try_fullscreen_dirty_1x(unsigned char *out, const unsigned char *in)
 {
     enum
@@ -144,18 +325,19 @@ static int c2p_try_fullscreen_dirty_1x(unsigned char *out, const unsigned char *
         TILES_X = 320 / TILE_W,
         TILES_Y = 200 / TILE_H
     };
+    /* 1: changed, convert and keep a copy; 2: drawn afresh, convert */
     unsigned char dirty[TILES_Y][TILES_X];
     int dirty_tiles = 0;
     int total_tiles = TILES_X * TILES_Y;
     int dirty_threshold = ATARI_C2P_DIRTY_TILE_THRESHOLD;
     int ty;
+    const int live = lx1 > lx0;
+    const int restale = sx1 > sx0 && (sx0 != lx0 || sx1 != lx1 || sy0 != ly0 || sy1 != ly1);
+    const int pairs_on = live && atari_pair_base != NULL;
 
+    atari_pair_base = NULL;
     if (!prev_chunky_valid)
-    {
-        memcpy(prev_chunky, in, 320 * 200);
-        prev_chunky_valid = 1;
-        return 0;
-    }
+        return 0; /* the caller converts it all, and keeps the copy */
 
     memset(dirty, 0, sizeof(dirty));
 
@@ -163,11 +345,47 @@ static int c2p_try_fullscreen_dirty_1x(unsigned char *out, const unsigned char *
     {
         int tx;
         int y = ty * TILE_H;
+        /* the row's tiles drawn afresh, as one run (no compare), and those
+         * with no copy kept while they were */
+        const int vx0 = (live && ty >= ly0 && ty < ly1) ? lx0 : TILES_X;
+        const int st0 = (restale && ty >= sy0 && ty < sy1) ? sx0 : TILES_X;
+        const int st1 = (restale && ty >= sy0 && ty < sy1) ? sx1 : TILES_X;
         for (tx = 0; tx < TILES_X; ++tx)
         {
             int x = tx * TILE_W;
             int row;
             int changed = 0;
+
+            if (tx == vx0)
+            {
+                memset(&dirty[ty][lx0], 2, (size_t)(lx1 - lx0));
+                if (pairs_on)
+                {
+                    /* low detail: the groups no single column was drawn
+                     * into over these rows (atari_unpair_*) */
+                    int g;
+                    for (g = lx0; g < lx1; ++g)
+                        if (atari_unpair_top[g] > y + TILE_H - 1 || atari_unpair_bot[g] < y)
+                        {
+                            dirty[ty][g] = 3;
+#if ATARI_PAIR_VERIFY
+                            if (!c2p_tile_paired(in + 320 * y + 16 * g))
+                            {
+                                dirty[ty][g] = 2;
+                                c2p_pair_fault(g, y);
+                            }
+#endif
+                        }
+                }
+                tx = lx1 - 1;
+                continue;
+            }
+            if (tx >= st0 && tx < st1)
+            {
+                dirty[ty][tx] = 1;
+                dirty_tiles++;
+                continue;
+            }
 
             for (row = 0; row < TILE_H; ++row)
             {
@@ -188,16 +406,17 @@ static int c2p_try_fullscreen_dirty_1x(unsigned char *out, const unsigned char *
         }
     }
 
-    if (dirty_tiles == 0)
+    sx0 = lx0;
+    sx1 = lx1;
+    sy0 = ly0;
+    sy1 = ly1;
+    if (dirty_tiles == 0 && !live)
         return 1;
 
     if (dirty_threshold <= 0 || dirty_threshold > total_tiles)
         dirty_threshold = total_tiles;
     if (dirty_tiles > dirty_threshold)
-    {
-        memcpy(prev_chunky, in, 320 * 200);
-        return 0;
-    }
+        return 0; /* the caller converts it all, and keeps the copy */
 
     for (ty = 0; ty < TILES_Y; ++ty)
     {
@@ -216,7 +435,12 @@ static int c2p_try_fullscreen_dirty_1x(unsigned char *out, const unsigned char *
                 int row;
                 int x;
                 int width;
-                while (tx < TILES_X && dirty[ty][tx])
+                const int kind = dirty[ty][tx];
+                const int fresh = kind >= 2;
+                const int pair = kind == 3;
+                /* a run of one kind: changed tiles, ones drawn afresh, or
+                 * ones drawn afresh in pairs */
+                while (tx < TILES_X && dirty[ty][tx] == kind)
                     tx++;
 
                 x = run_start * TILE_W;
@@ -227,8 +451,12 @@ static int c2p_try_fullscreen_dirty_1x(unsigned char *out, const unsigned char *
                     int line = y + row;
                     unsigned char *out_line = out + (160 * line) + (x >> 1);
                     const unsigned char *in_line = in + (320 * line) + x;
-                    c2p_1x_lorez(out_line, in_line, (unsigned short)width, c2p_table[line & 3]);
-                    memcpy(prev_chunky + (320 * line) + x, in_line, (size_t)width);
+                    if (pair)
+                        c2p_pair_lorez(out_line, in_line, (unsigned short)width, C2P_WIDE_PAIRS(line & 3));
+                    else
+                        c2p_1x_lorez(out_line, in_line, (unsigned short)width, C2P_WIDE_1X(line & 3));
+                    if (!fresh)
+                        memcpy(prev_chunky + (320 * line) + x, in_line, (size_t)width);
                 }
             }
         }
@@ -598,6 +826,14 @@ void atari_c2p_fade(int r, int g, int b, int amount, int vbls)
     unsigned short from[16], to[16];
     int n, k;
 
+#if ATARI_EIGHT
+    if (atari_eight)
+    {
+        atari_eight_fade(r, g, b, amount, vbls);
+        return;
+    }
+#endif
+
     if (amount < 0)
         amount = 0;
     if (amount > 16)
@@ -626,6 +862,10 @@ void atari_c2p_fade(int r, int g, int b, int amount, int vbls)
 
 int atari_c2p_fade_amount(void)
 {
+#if ATARI_EIGHT
+    if (atari_eight)
+        return atari_eight_fade_amount();
+#endif
     return fade_amount;
 }
 
@@ -697,65 +937,74 @@ static void c2p_color_tables(const unsigned char *weights, int i)
                                          c2p_table[phase][i][(px << 2) + 2] |
                                          c2p_table[phase][i][(px << 2) + 3];
     }
+    {
+        unsigned long *w = (unsigned long *)(C2P_WIDE + (short)(i << 8));
+
+        for (phase = 0; phase < 4; ++phase)
+        {
+            int px;
+
+            for (px = 0; px < 8; ++px)
+                w[(phase << 3) + px] = c2p_table[phase][i][px];
+            for (px = 0; px < 4; ++px)
+                w[32 + (phase << 2) + px] = c2p_2x_table[phase][i][px];
+        }
+    }
 }
 
-static void c2p_1x_lorez(register unsigned char *out, const unsigned char *in, unsigned short pixels, unsigned long table[][8])
+static void c2p_1x_lorez(register unsigned char *out, const unsigned char *in, unsigned short pixels, const unsigned char *table)
 {
     if (pixels < 16)
         return;
     unsigned short groups = pixels / 16 - 1;
     unsigned long pdata = 0;
-    unsigned long mask = 0x00ff00ff << 5;
+    unsigned long mask = 0xff00ff00; /* the wide table's index, in place */
     asm volatile(
         "0:                                         \n\t"
         "movem.l    (%[in])+, %%d0-%%d1             \n\t"
         "move.l     %%d0,%%d2                       \n\t"
-        "lsl.l      #5,%%d2                         \n\t"
+        "lsl.l      #8,%%d2                         \n\t"
         "and.l      %[mask],%%d2                    \n\t"
         "move.l     12(%[table],%%d2.w), %[pdata]   \n\t"
         "swap       %%d2                            \n\t"
         "or.l       4(%[table],%%d2.w), %[pdata]    \n\t"
-        "lsr.l      #3,%%d0                         \n\t"
         "and.l      %[mask],%%d0                    \n\t"
         "or.l       8(%[table],%%d0.w), %[pdata]    \n\t"
         "swap       %%d0                            \n\t"
         "or.l       (%[table],%%d0.w), %[pdata]     \n\t"
         "move.l     %%d1,%%d2                       \n\t"
-        "lsl.l      #5,%%d2                         \n\t"
+        "lsl.l      #8,%%d2                         \n\t"
         "and.l      %[mask],%%d2                    \n\t"
         "or.l       28(%[table],%%d2.w), %[pdata]   \n\t"
         "swap       %%d2                            \n\t"
         "or.l       20(%[table],%%d2.w), %[pdata]   \n\t"
-        "lsr.l      #3,%%d1                         \n\t"
         "and.l      %[mask],%%d1                    \n\t"
         "or.l       24(%[table],%%d1.w), %[pdata]   \n\t"
         "swap       %%d1                            \n\t"
         "or.l       16(%[table],%%d1.w), %[pdata]   \n\t"
-        "movep.l    %[pdata], 0(%[out])             \n\t"
+        "movep.l    %[pdata], 0(%[out])           \n\t"
         "movem.l    (%[in])+, %%d0-%%d1             \n\t"
         "move.l     %%d0,%%d2                       \n\t"
-        "lsl.l      #5,%%d2                         \n\t"
+        "lsl.l      #8,%%d2                         \n\t"
         "and.l      %[mask],%%d2                    \n\t"
         "move.l     12(%[table],%%d2.w), %[pdata]   \n\t"
         "swap       %%d2                            \n\t"
         "or.l       4(%[table],%%d2.w), %[pdata]    \n\t"
-        "lsr.l      #3,%%d0                         \n\t"
         "and.l      %[mask],%%d0                    \n\t"
         "or.l       8(%[table],%%d0.w), %[pdata]    \n\t"
         "swap       %%d0                            \n\t"
         "or.l       (%[table],%%d0.w), %[pdata]     \n\t"
         "move.l     %%d1,%%d2                       \n\t"
-        "lsl.l      #5,%%d2                         \n\t"
+        "lsl.l      #8,%%d2                         \n\t"
         "and.l      %[mask],%%d2                    \n\t"
         "or.l       28(%[table],%%d2.w), %[pdata]   \n\t"
         "swap       %%d2                            \n\t"
         "or.l       20(%[table],%%d2.w), %[pdata]   \n\t"
-        "lsr.l      #3,%%d1                         \n\t"
         "and.l      %[mask],%%d1                    \n\t"
         "or.l       24(%[table],%%d1.w), %[pdata]   \n\t"
         "swap       %%d1                            \n\t"
         "or.l       16(%[table],%%d1.w), %[pdata]   \n\t"
-        "movep.l    %[pdata], 1(%[out])             \n\t"
+        "movep.l    %[pdata], 1(%[out])           \n\t"
         "lea        8(%[out]), %[out]               \n\t"
         "dbra.w     %[groups],0b                    \n\t"
         : [out] "+a"(out), [in] "+a"(in), [pdata] "+d"(pdata), [groups] "+d"(groups)
@@ -807,6 +1056,47 @@ static void c2p_2x_lorez(register unsigned char *out, const unsigned char *in, u
         : "memory", "cc");
 }
 
+/* Pairs of the same pixel (low detail's view, atari_unpair_*): the first of
+ * each pair through the wide table's 2x part, with no shift. */
+static void c2p_pair_lorez(register unsigned char *out, const unsigned char *in, unsigned short pixels, const unsigned char *table)
+{
+    if (pixels < 16)
+        return;
+    unsigned short groups = pixels / 16 - 1;
+    unsigned long pdata;
+    unsigned long p0;
+    unsigned long mask = 0xff00ff00;
+    asm volatile(
+        "0:                                         \n\t"
+        "move.l     (%[in])+,%[p0]                  \n\t"
+        "and.l      %[mask],%[p0]                   \n\t"
+        "move.l     4(%[table],%[p0].w), %[pdata]   \n\t"
+        "swap       %[p0]                           \n\t"
+        "or.l       (%[table],%[p0].w), %[pdata]    \n\t"
+        "move.l     (%[in])+,%[p0]                  \n\t"
+        "and.l      %[mask],%[p0]                   \n\t"
+        "or.l       12(%[table],%[p0].w), %[pdata]  \n\t"
+        "swap       %[p0]                           \n\t"
+        "or.l       8(%[table],%[p0].w), %[pdata]   \n\t"
+        "movep.l    %[pdata], 0(%[out])             \n\t"
+        "move.l     (%[in])+,%[p0]                  \n\t"
+        "and.l      %[mask],%[p0]                   \n\t"
+        "move.l     4(%[table],%[p0].w), %[pdata]   \n\t"
+        "swap       %[p0]                           \n\t"
+        "or.l       (%[table],%[p0].w), %[pdata]    \n\t"
+        "move.l     (%[in])+,%[p0]                  \n\t"
+        "and.l      %[mask],%[p0]                   \n\t"
+        "or.l       12(%[table],%[p0].w), %[pdata]  \n\t"
+        "swap       %[p0]                           \n\t"
+        "or.l       8(%[table],%[p0].w), %[pdata]   \n\t"
+        "movep.l    %[pdata], 1(%[out])             \n\t"
+        "lea        8(%[out]), %[out]               \n\t"
+        "dbra.w     %[groups],0b                    \n\t"
+        : [out] "+&a"(out), [in] "+&a"(in), [pdata] "=&d"(pdata), [groups] "+&d"(groups), [p0] "=&d"(p0)
+        : [table] "a"(table), [mask] "d"(mask)
+        : "memory", "cc");
+}
+
 static void c2p_4x_lorez(register unsigned char *out, const unsigned char *in, unsigned short pixels, unsigned long table[][2])
 {
     if (pixels < 4)
@@ -840,7 +1130,10 @@ static void c2p_4x_lorez(register unsigned char *out, const unsigned char *in, u
 void atari_c2p_init(void)
 {
     c2p_invalidate_dirty_cache();
-    if (!palette_saved)
+    /* The 256-colour screen keeps TOS's colours itself (atari_eight.c). */
+    if (atari_eight)
+        palette_hash_valid = 0; /* a new screen starts black */
+    if (!palette_saved && !atari_eight)
     {
         save_st_palette(saved_palette);
         palette_saved = 1;
@@ -851,7 +1144,7 @@ void atari_c2p_shutdown(void)
 {
     c2p_invalidate_dirty_cache();
     fade_amount = 0;
-    if (palette_saved)
+    if (palette_saved && !atari_eight)
     {
         install_st_palette(saved_palette);
     }
@@ -871,6 +1164,14 @@ void atari_c2p_screen_to_chunky(const unsigned char *screen, unsigned char *chun
     unsigned char pen_colour[16];
     int pen, i, row, col;
 
+#if ATARI_EIGHT
+    if (atari_eight)
+    {
+        atari_eight_to_chunky(chunky, x, y, w, h);
+        c2p_invalidate_dirty_cache();
+        return;
+    }
+#endif
     /* Each of the 16 shown colours as the nearest of the 256. */
     for (pen = 0; pen < 16; ++pen)
     {
@@ -939,6 +1240,17 @@ void atari_c2p_set_palette(const unsigned char *colors)
     {
         return;
     }
+#if ATARI_EIGHT
+    if (atari_eight)
+    {
+        /* The game's own 256: nothing to choose, and the screen's pixels
+         * stay as they are. */
+        last_palette_hash = hash;
+        palette_hash_valid = 1;
+        atari_eight_set_palette(colors);
+        return;
+    }
+#endif
     c2p_invalidate_dirty_cache();
     last_palette_hash = hash;
     palette_hash_valid = 1;
@@ -1044,11 +1356,16 @@ static void c2p_hud_span(unsigned char *out, const unsigned char *in, int y,
             const int x0 = run_start * 16;
             const int width = (tx - run_start) * 16;
             int row;
+#if ATARI_EIGHT
+            if (atari_eight)
+                atari_eight_convert(in, x0, y, width, 8);
+#endif
             for (row = 0; row < 8; ++row)
             {
                 const int line = y + row;
-                c2p_1x_lorez(out + 160 * line + (x0 >> 1), in + 320 * line + x0,
-                             (unsigned short)width, c2p_table[line & 3]);
+                if (!atari_eight)
+                    c2p_1x_lorez(out + 160 * line + (x0 >> 1), in + 320 * line + x0,
+                                 (unsigned short)width, C2P_WIDE_1X(line & 3));
                 memcpy(prev_chunky + 320 * line + x0, in + 320 * line + x0, (size_t)width);
             }
         }
@@ -1121,16 +1438,418 @@ void atari_c2p_hud(unsigned char *out, const unsigned char *in,
 }
 #endif
 
+#if ATARI_EIGHT
+/*
+ * 256 colours: the whole chunky screen onto the TT's or the Falcon's, the
+ * groups of 16 pixels that changed. A row's are taken as one span, its
+ * first changed group to its last, and rows with the same span as one box,
+ * one call of the conversion: a view drawn afresh every frame is one box,
+ * and status bars nobody drew on cost a compare.
+ */
+/*
+ * Low detail's view in 256 colours: the rows of groups g0 to g1 no single
+ * column was drawn into (atari_unpair_*) a pair at a time, STDL's pair
+ * conversion (atari_c2pp.c), and the rest as usual; a run of groups whose
+ * marks are the same over rows y to y + h at a time.
+ */
+static int eight_pairs_on;
+
+static void eight_pairs(const unsigned char *in, int g0, int g1, int y, int h)
+{
+    /* Bands of rows between the marks' ends, each a run of groups at a
+     * time: a run of 4 groups or more with no mark as pairs, the rest as
+     * usual (a narrow box costs STDL's loop more than pairs save). */
+    const int y1 = y + h;
+    int cut[42], n = 0, i, g;
+
+    cut[n++] = y;
+    cut[n++] = y1;
+    for (g = g0; g < g1; ++g)
+    {
+        const int t = atari_unpair_top[g], b = atari_unpair_bot[g] + 1;
+
+        if (t > y && t < y1)
+            cut[n++] = t;
+        if (b > y && b < y1)
+            cut[n++] = b;
+    }
+    for (i = 1; i < n; ++i) /* sort the cuts, a few dozen at most */
+    {
+        const int c = cut[i];
+        int k = i;
+
+        for (; k > 0 && cut[k - 1] > c; --k)
+            cut[k] = cut[k - 1];
+        cut[k] = c;
+    }
+    for (i = 0; i + 1 < n; ++i)
+    {
+        const int r0 = cut[i], r1 = cut[i + 1];
+
+        if (r1 <= r0)
+            continue;
+        g = g0;
+        while (g < g1)
+        {
+            /* the next run of unmarked groups 4 wide or more, from g */
+            int a = g, e;
+
+            for (;;)
+            {
+                while (a < g1 && atari_unpair_top[a] < r1 && atari_unpair_bot[a] >= r0)
+                    ++a;
+                e = a;
+                while (e < g1 && !(atari_unpair_top[e] < r1 && atari_unpair_bot[e] >= r0))
+                    ++e;
+                if (e - a >= 4 || e >= g1)
+                    break;
+                a = e;
+            }
+            if (e - a < 4)
+                a = e = g1; /* none: the rest as usual */
+            if (a > g)
+                atari_eight_convert(in, g << 4, r0, (a - g) << 4, r1 - r0);
+            if (e > a)
+            {
+#if ATARI_PAIR_VERIFY
+                int vy, vx, bad = 0;
+
+                for (vy = r0; vy < r1 && !bad; ++vy)
+                    for (vx = a << 4; vx < e << 4; vx += 2)
+                        if (in[320 * vy + vx] != in[320 * vy + vx + 1])
+                        {
+                            c2p_pair_fault(vx >> 4, vy);
+                            bad = 1;
+                            break;
+                        }
+                if (bad)
+                    atari_eight_convert(in, a << 4, r0, (e - a) << 4, r1 - r0);
+                else
+#endif
+                atari_eight_convert_pairs_box(in, a << 4, (e - a) << 4, r0, r1 - r0);
+            }
+            g = e;
+        }
+    }
+}
+
+static void eight_box(const unsigned char *in, int g0, int g1, int y, int h, int fresh)
+{
+#if ATARI_C2P_DIRTY_TILES
+    const int x = g0 << 4, w = (g1 - g0) << 4;
+    const unsigned char *src = in + 320 * y + x;
+    unsigned char *old = prev_chunky + 320 * y + x;
+
+    if (fresh && eight_pairs_on)
+    {
+        eight_pairs(in, g0, g1, y, h);
+        return;
+    }
+    atari_eight_convert(in, x, y, w, h);
+    if (fresh)
+        return; /* drawn afresh every frame: no copy to compare with */
+    if (w == 320)
+    {
+        memcpy(old, src, (size_t)320 * h);
+    }
+    else
+    {
+        for (; h > 0; --h, src += 320, old += 320)
+            memcpy(old, src, (size_t)w);
+    }
+#endif
+}
+
+/* ViewZoom's rows (eight_zoom): skipped here, and last frame's, whose
+ * rows prev_chunky has no copy of. */
+static int eight_skip0, eight_skip1;
+static int eight_last_skip0, eight_last_skip1;
+
+static void eight_screen(const unsigned char *in)
+{
+#if ATARI_C2P_DIRTY_TILES
+    /* The rows drawn afresh (atari_c2p_view_drawn), in rows here; once
+     * that rectangle changes or goes, everything is converted and copied
+     * the once. So too when ViewZoom's rows change. */
+    const int restale = (sx1 > sx0 && (sx0 != lx0 || sx1 != lx1 || sy0 != ly0 || sy1 != ly1)) ||
+                        eight_skip0 != eight_last_skip0 || eight_skip1 != eight_last_skip1;
+    const int all = !prev_chunky_valid || restale;
+    const int live = lx1 > lx0 && !all;
+    const int vy0 = ly0 << 3, vy1 = ly1 << 3;
+
+    eight_pairs_on = live && atari_pair_base != NULL;
+    atari_pair_base = NULL;
+    const unsigned long *a = (const unsigned long *)in;
+    const unsigned long *b = (const unsigned long *)prev_chunky;
+    int y, bg0 = 0, bg1 = 0, by = 0, bh = 0, bfresh = 0; /* the box so far */
+
+    eight_last_skip0 = eight_skip0;
+    eight_last_skip1 = eight_skip1;
+    for (y = 0; y < 200; ++y, a += 80, b += 80)
+    {
+        int g0 = 20, g1 = 0, g, fresh = 0;
+
+        if (y >= eight_skip0 && y < eight_skip1)
+        {
+            /* ViewZoom's: eight_zoom converts them */
+            if (bh)
+            {
+                eight_box(in, bg0, bg1, by, bh, bfresh);
+                bh = 0;
+            }
+            continue;
+        }
+        if (all)
+        {
+            g0 = 0;
+            g1 = 20;
+        }
+        else
+        {
+            const int in_view = live && y >= vy0 && y < vy1;
+
+            for (g = 0; g < 20; ++g)
+            {
+                const unsigned long *p = a + (g << 2), *q = b + (g << 2);
+
+                if (in_view && g == lx0)
+                {
+                    g = lx1 - 1; /* the view's groups: not compared */
+                    continue;
+                }
+                if (p[0] != q[0] || p[1] != q[1] || p[2] != q[2] || p[3] != q[3])
+                {
+                    if (g < g0)
+                        g0 = g;
+                    g1 = g + 1;
+                }
+            }
+            if (in_view)
+            {
+                /* nothing changed beside the view: the view alone, with
+                 * no copy kept */
+                fresh = g1 <= g0;
+                if (lx0 < g0)
+                    g0 = lx0;
+                if (lx1 > g1)
+                    g1 = lx1;
+            }
+        }
+        if (bh && (g1 <= g0 || g0 != bg0 || g1 != bg1 || fresh != bfresh))
+        {
+            eight_box(in, bg0, bg1, by, bh, bfresh);
+            bh = 0;
+        }
+        if (g1 > g0)
+        {
+            if (!bh)
+            {
+                bg0 = g0;
+                bg1 = g1;
+                by = y;
+                bfresh = fresh;
+            }
+            bh++;
+        }
+    }
+    if (bh)
+        eight_box(in, bg0, bg1, by, bh, bfresh);
+    prev_chunky_valid = 1;
+    sx0 = lx0;
+    sx1 = lx1;
+    sy0 = ly0;
+    sy1 = ly1;
+#else
+    atari_eight_convert(in, 0, 0, 320, 200);
+#endif
+}
+#endif
+
+static void c2p_screen(unsigned char *out, const unsigned char *in, int zoom, int center_x, int center_y,
+                       int view_x, int view_y, int view_w, int view_h,
+                       int protect_top, int protect_bottom);
+
+#if ATARI_EIGHT
+/*
+ * ViewZoom in 256 colours: the small view shown 2 or 4 times its size, in
+ * the place and with the clipping the ST's own zoom gives it (c2p_screen,
+ * "Viewport-only zoom"), the rest of the screen at 1x as eight_screen
+ * converts it. Each zoomed row is built at 320 pixels, the view's pixels
+ * repeated over the zoomed span and the screen's own beside it, and
+ * converted; a row whose span is the whole width is the same for its
+ * repeats, which are copied. 0 where the ST's zoom would not zoom either.
+ */
+static int eight_zoom(const unsigned char *in, int zoom, int center_x, int center_y,
+                      int x0, int y0, int x1, int y1, int protect_top, int protect_bottom)
+{
+    static unsigned char row[320];
+    static unsigned short dup[256];
+    const int sh = zoom == 2 ? 1 : 2;
+    int view_w, view_h, src_y0, src_w, src_h, dst_x0, dst_y0, dst_x1, dst_y1;
+    int safe_top = 0, safe_bottom = 200, line;
+
+    if (x0 < 0)
+        x0 = 0;
+    if (y0 < 0)
+        y0 = 0;
+    if (x1 > 320)
+        x1 = 320;
+    if (y1 > 200)
+        y1 = 200;
+    if ((x0 & 15) != 0)
+        x0 = (x0 + 15) & ~15;
+    if ((x1 & 15) != 0)
+        x1 &= ~15;
+    view_w = x1 - x0;
+    view_h = y1 - y0;
+    if (view_w <= 0 || view_h <= 0 || zoom < 2)
+        return 0;
+    if (x0 == 0 && y0 == 0 && view_w == 320 && view_h == 200)
+        return 0; /* the full-screen zoom of the cinematics: not in play */
+    if (zoom == 2 ? (view_w < 8 || view_w > 160 || (view_w & 7) != 0)
+                  : (view_w < 4 || view_w > 80 || (view_w & 3) != 0))
+        return 0;
+    src_w = view_w;
+    src_h = view_h;
+    src_y0 = y0;
+#if ATARI_C2P_STRICT_NO_OVERLAP
+    if (protect_top > 0)
+        safe_top = protect_top;
+    if (protect_bottom > 0)
+        safe_bottom = 200 - protect_bottom;
+    if (safe_bottom <= safe_top)
+        return 0;
+    if ((src_h << sh) > (safe_bottom - safe_top))
+    {
+        src_h = (safe_bottom - safe_top) >> sh;
+        if (src_h < 1)
+            return 0;
+    }
+    src_y0 = y0 + ((view_h - src_h) >> 1);
+#endif
+    dst_x0 = center_x - ((src_w << sh) >> 1);
+    dst_y0 = center_y - ((src_h << sh) >> 1);
+    dst_x1 = dst_x0 + (src_w << sh);
+    dst_y1 = dst_y0 + (src_h << sh);
+#if ATARI_C2P_STRICT_NO_OVERLAP
+    if (dst_y0 < safe_top)
+    {
+        dst_y0 = safe_top;
+        dst_y1 = dst_y0 + (src_h << sh);
+    }
+    if (dst_y1 > safe_bottom)
+    {
+        dst_y1 = safe_bottom;
+        dst_y0 = dst_y1 - (src_h << sh);
+    }
+#endif
+    if (dst_x0 < 0 || dst_y0 < 0 || dst_x1 > 320 || dst_y1 > 200 || (dst_x0 & 1) != 0)
+        return 0;
+
+    if (!dup[1])
+    {
+        for (line = 0; line < 256; ++line)
+            dup[line] = (unsigned short)((line << 8) | line);
+    }
+
+    /* the rest at 1x, and the view's rect not taken as drawn afresh */
+    lx1 = lx0;
+    eight_skip0 = dst_y0;
+    eight_skip1 = dst_y1;
+    eight_screen(in);
+    eight_skip0 = eight_skip1 = 0;
+
+    for (line = dst_y0; line < dst_y1; line += zoom)
+    {
+        const unsigned char *src = in + 320 * (src_y0 + ((line - dst_y0) >> sh)) + x0;
+        unsigned char *d = row + dst_x0;
+        const int whole = dst_x0 == 0 && dst_x1 == 320;
+        int i, k;
+
+        /* each pixel 2 or 4 times, as words (dst_x0 is even), from a
+         * table of each byte doubled */
+        if (zoom == 2)
+        {
+            unsigned short *dw = (unsigned short *)d;
+            for (i = src_w; i > 0; --i)
+                *dw++ = dup[*src++];
+        }
+        else
+        {
+            unsigned short *dw = (unsigned short *)d;
+            for (i = src_w; i > 0; --i)
+            {
+                const unsigned short v = dup[*src++];
+                *dw++ = v;
+                *dw++ = v;
+            }
+        }
+        for (k = 0; k < zoom && line + k < dst_y1; ++k)
+        {
+            if (k > 0 && whole)
+            {
+                atari_eight_copy_row(line, line + k);
+                continue;
+            }
+            if (!whole)
+            {
+                const unsigned char *own = in + 320 * (line + k);
+                memcpy(row, own, (size_t)dst_x0);
+                memcpy(row + dst_x1, own + dst_x1, (size_t)(320 - dst_x1));
+            }
+            if (!(dst_x0 & 15) && !(dst_x1 & 15))
+            {
+                /* the zoomed span in pairs, the screen's own beside it */
+                atari_eight_convert_span(row, 0, dst_x0, line + k);
+                atari_eight_convert_pairs(row, dst_x0, dst_x1 - dst_x0, line + k);
+                atari_eight_convert_span(row, dst_x1, 320 - dst_x1, line + k);
+            }
+            else
+                atari_eight_convert_row(row, line + k);
+        }
+    }
+    return 1;
+}
+#endif
+
 void atari_c2p_screen(unsigned char *out, const unsigned char *in, int zoom, int center_x, int center_y,
                       int view_x, int view_y, int view_w, int view_h,
                       int protect_top, int protect_bottom)
+{
+#if ATARI_EIGHT
+    if (atari_eight && zoom > 1 &&
+        eight_zoom(in, zoom, center_x, center_y, view_x, view_y, view_x + view_w,
+                   view_y + view_h, protect_top, protect_bottom))
+    {
+        lx1 = lx0;
+        return;
+    }
+#endif
+    c2p_screen(out, in, zoom, center_x, center_y, view_x, view_y, view_w, view_h,
+               protect_top, protect_bottom);
+    lx1 = lx0; /* the renderer says so again for the next frame, or not */
+}
+
+static void c2p_screen(unsigned char *out, const unsigned char *in, int zoom, int center_x, int center_y,
+                       int view_x, int view_y, int view_w, int view_h,
+                       int protect_top, int protect_bottom)
 {
     int x0 = view_x;
     int y0 = view_y;
     int x1 = view_x + view_w;
     int y1 = view_y + view_h;
     int line;
+    int keep;
     unsigned char sampled[160];
+
+#if ATARI_EIGHT
+    /* 256 colours: ViewZoom is atari_c2p_screen's (eight_zoom); here, 1x. */
+    if (atari_eight)
+    {
+        eight_screen(in);
+        return;
+    }
+#endif
 
     if (x0 < 0)
         x0 = 0;
@@ -1151,7 +1870,14 @@ void atari_c2p_screen(unsigned char *out, const unsigned char *in, int zoom, int
 
 #if ATARI_C2P_DIRTY_TILES
     if (!(zoom <= 1 && x0 == 0 && y0 == 0 && view_w == 320 && view_h == 200))
-        c2p_invalidate_dirty_cache();
+    {
+        if (zoom > 1)
+            prev_chunky_valid = 0; /* the zoom keeps rows of its own: zoom_ok */
+        else
+            c2p_invalidate_dirty_cache();
+    }
+    else
+        zoom_ok = 0;
 #endif
 
     if (view_w <= 0 || view_h <= 0)
@@ -1248,10 +1974,11 @@ void atari_c2p_screen(unsigned char *out, const unsigned char *in, int zoom, int
         }
 #endif
         for (line = 0; line < 200; ++line)
-            c2p_1x_lorez(out + 160 * line, in + 320 * line, 320, c2p_table[line & 3]);
+            c2p_1x_lorez(out + 160 * line, in + 320 * line, 320, C2P_WIDE_1X(line & 3));
 #if ATARI_C2P_DIRTY_TILES
         memcpy(prev_chunky, in, 320 * 200);
         prev_chunky_valid = 1;
+        sx1 = sx0; /* a copy of everything */
 #endif
         return;
     }
@@ -1367,6 +2094,10 @@ void atari_c2p_screen(unsigned char *out, const unsigned char *in, int zoom, int
 
         if (dst_x0 < 0 || dst_y0 < 0 || dst_x1 > 320 || dst_y1 > 200 || (dst_x0 & 1) != 0)
             goto full_1x;
+        keep = zoom_ok && zl_y0 == dst_y0 && zl_y1 == dst_y1;
+        zoom_ok = 1;
+        zl_y0 = dst_y0;
+        zl_y1 = dst_y1;
 
         for (line = 0; line < 200; ++line)
         {
@@ -1375,23 +2106,25 @@ void atari_c2p_screen(unsigned char *out, const unsigned char *in, int zoom, int
 
             if (line < dst_y0 || line >= dst_y1)
             {
-                c2p_1x_lorez(out_line, in_line, 320, c2p_table[line & 3]);
+#if ATARI_C2P_DIRTY_TILES
+                zoom_other_row(out_line, in_line, line, keep);
+#else
+                c2p_1x_lorez(out_line, in_line, 320, C2P_WIDE_1X(line & 3));
+#endif
                 continue;
             }
 
             if (dst_x0 >= 16)
-                c2p_1x_lorez(out_line, in_line, (unsigned short)dst_x0, c2p_table[line & 3]);
+                c2p_1x_lorez(out_line, in_line, (unsigned short)dst_x0, C2P_WIDE_1X(line & 3));
 
-            {
-                int sample_y = src_y0 + ((line - dst_y0) >> 1);
-                const unsigned char *sample_row = in + 320 * sample_y;
-                for (i = 0; i < src_w; ++i)
-                    sampled[i] = sample_row[src_x0 + i];
-            }
-            c2p_2x_lorez(out_line + (dst_x0 >> 1), sampled, (unsigned short)src_w, c2p_2x_table[line & 3]);
+            /* straight from the view's row (long aligned: x0 is a
+             * multiple of 16), where it was copied out a byte at a time */
+            c2p_2x_lorez(out_line + (dst_x0 >> 1),
+                         in + 320 * (src_y0 + ((line - dst_y0) >> 1)) + src_x0,
+                         (unsigned short)src_w, c2p_2x_table[line & 3]);
 
             if (dst_x1 <= 304)
-                c2p_1x_lorez(out_line + (dst_x1 >> 1), in_line + dst_x1, (unsigned short)(320 - dst_x1), c2p_table[line & 3]);
+                c2p_1x_lorez(out_line + (dst_x1 >> 1), in_line + dst_x1, (unsigned short)(320 - dst_x1), C2P_WIDE_1X(line & 3));
         }
 #if !ATARI_C2P_STRICT_NO_OVERLAP
         c2p_restore_game_hud_bars(out, in);
@@ -1456,6 +2189,10 @@ void atari_c2p_screen(unsigned char *out, const unsigned char *in, int zoom, int
 
         if (dst_x0 < 0 || dst_y0 < 0 || dst_x1 > 320 || dst_y1 > 200 || (dst_x0 & 1) != 0)
             goto full_1x;
+        keep = zoom_ok && zl_y0 == dst_y0 && zl_y1 == dst_y1;
+        zoom_ok = 1;
+        zl_y0 = dst_y0;
+        zl_y1 = dst_y1;
 
         for (line = 0; line < 200; ++line)
         {
@@ -1464,23 +2201,25 @@ void atari_c2p_screen(unsigned char *out, const unsigned char *in, int zoom, int
 
             if (line < dst_y0 || line >= dst_y1)
             {
-                c2p_1x_lorez(out_line, in_line, 320, c2p_table[line & 3]);
+#if ATARI_C2P_DIRTY_TILES
+                zoom_other_row(out_line, in_line, line, keep);
+#else
+                c2p_1x_lorez(out_line, in_line, 320, C2P_WIDE_1X(line & 3));
+#endif
                 continue;
             }
 
             if (dst_x0 >= 16)
-                c2p_1x_lorez(out_line, in_line, (unsigned short)dst_x0, c2p_table[line & 3]);
+                c2p_1x_lorez(out_line, in_line, (unsigned short)dst_x0, C2P_WIDE_1X(line & 3));
 
-            {
-                int sample_y = src_y0 + ((line - dst_y0) >> 2);
-                const unsigned char *sample_row = in + 320 * sample_y;
-                for (i = 0; i < src_w; ++i)
-                    sampled[i] = sample_row[src_x0 + i];
-            }
-            c2p_4x_lorez(out_line + (dst_x0 >> 1), sampled, (unsigned short)src_w, c2p_4x_table[line & 3]);
+            /* straight from the view's row (long aligned: x0 is a
+             * multiple of 16), where it was copied out a byte at a time */
+            c2p_4x_lorez(out_line + (dst_x0 >> 1),
+                         in + 320 * (src_y0 + ((line - dst_y0) >> 2)) + src_x0,
+                         (unsigned short)src_w, c2p_4x_table[line & 3]);
 
             if (dst_x1 <= 304)
-                c2p_1x_lorez(out_line + (dst_x1 >> 1), in_line + dst_x1, (unsigned short)(320 - dst_x1), c2p_table[line & 3]);
+                c2p_1x_lorez(out_line + (dst_x1 >> 1), in_line + dst_x1, (unsigned short)(320 - dst_x1), C2P_WIDE_1X(line & 3));
         }
 #if !ATARI_C2P_STRICT_NO_OVERLAP
         c2p_restore_game_hud_bars(out, in);
@@ -1490,8 +2229,9 @@ void atari_c2p_screen(unsigned char *out, const unsigned char *in, int zoom, int
     return;
 
 full_1x:
+    zoom_ok = 0;
     for (line = 0; line < 200; ++line)
-        c2p_1x_lorez(out + 160 * line, in + 320 * line, 320, c2p_table[line & 3]);
+        c2p_1x_lorez(out + 160 * line, in + 320 * line, 320, C2P_WIDE_1X(line & 3));
 #if ATARI_C2P_DIRTY_TILES
     memcpy(prev_chunky, in, 320 * 200);
     prev_chunky_valid = 1;

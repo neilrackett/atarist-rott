@@ -101,6 +101,20 @@
 #define MD_FRAME_OFFSET_B (MD_FRAME_OFFSET_A + MD_FRAME_BYTES) /* $7D80 */
 #define MD_FRAME_END (MD_FRAME_OFFSET_B + MD_FRAME_BYTES)      /* $E680 */
 
+/* After a HELLO with MD_HELLO_EIGHT (a TT or a Falcon in 256 colours) a
+ * frame is eight interleaved planes, the game's own colours with no
+ * reduction: rows of w bytes, 16 bytes a group of 16 pixels (planes 0-7 a
+ * word each), up to MD_VIEW_MAX_W x MD_VIEW_MAX_H. That is exactly the two
+ * buffers together, so every frame starts at MD_FRAME_OFFSET_A
+ * (MD_ST_READY_BUF 0) and the MD writes the memory the ST copies from:
+ * the ST waits for the frame it sent and copies it before it sends the
+ * next, so the MD is never drawing one while another is copied. PALETTE
+ * still comes, and nothing is made of it. */
+#define MD_FRAME8_BYTES (MD_VIEW_MAX_W * MD_VIEW_MAX_H) /* 53,760 */
+#if (MD_FRAME8_BYTES > 2 * MD_FRAME_BYTES)
+#error "an 8-plane frame no longer fits the two frame buffers"
+#endif
+
 /* Protocol block. The first three addresses are fixed by
  * sidecart_stubs.S (and by stdoom/md-js, which share it). */
 #define MD_TOKEN_OFFSET 0xF000 /* RP writes the ST's token here         */
@@ -202,6 +216,7 @@
 #define MD_CAP_MUSIC 0x0001 /* MD_CMD_MUSIC: plays songs from the WAD */
 #define MD_CAP_PENS 0x0002  /* PALETTE takes MD_PAL_PENS */
 #define MD_CAP_WAD_COPY 0x0004 /* MD_CMD_WAD_WRITE: the ST copies its WAD */
+#define MD_CAP_EIGHT 0x0008 /* MD_HELLO_EIGHT: frames as eight planes */
 
 /* MD_ST_SPOTVIS_X: the columns (x) that hold any SPOTVIS bits for the
  * newest frame or the one before, so the ST need copy only those; set
@@ -247,6 +262,9 @@
 #define MD_HELLO_MSTE 0x0001        /* informational only */
 #define MD_HELLO_STE 0x0002
 #define MD_HELLO_NOIR 0x0004
+/* The ST is a TT or a Falcon showing 256 colours (to firmware that then
+ * says MD_CAP_EIGHT): frames as eight planes, below. */
+#define MD_HELLO_EIGHT 0x0008
 
 /* IDLE (sync). The ST left the 3D view (menus, cinematics). */
 #define MD_CMD_IDLE 0x0041

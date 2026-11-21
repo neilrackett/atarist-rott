@@ -22,4 +22,7 @@ void md_main_ready(void);
 /* Run the oldest queued command, if any. Returns true if it ran one. */
 bool md_main_poll(void);
 
+/* Whether the last HELLO asked for 256 colours (MD_HELLO_EIGHT). */
+bool md_main_eight(void);
+
 #endif /* MD_MAIN_H */

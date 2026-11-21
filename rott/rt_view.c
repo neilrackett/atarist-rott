@@ -97,7 +97,10 @@ int    fulllight = 1;
 #endif
 int    weaponscale;
 #if defined(ATARI_NATIVE)
-int    viewsize = 7; // 320x168, between the status bars (see ViewZoom)
+#ifndef ATARI_VIEWSIZE
+#define ATARI_VIEWSIZE 7
+#endif
+int    viewsize = ATARI_VIEWSIZE; // 7: 320x168, between the status bars (see ViewZoom)
 #elif ATARI_SDL
 int    viewsize;
 #else

@@ -222,7 +222,9 @@ void Z_Init (int size, int min)
       {
       lowmemory = 1;
 
-#if !ATARI_SDL
+      // Not on an Atari: low memory is how every build runs there (the
+      // native one forces it), so the warning and its key wait say nothing.
+#if !defined(__MINT__)
       printf("==============================================================================\n");
       printf("WARNING: You are running ROTT with very little memory.  ROTT runs best with\n");
       printf("8 Megabytes of memory and no TSR's loaded in memory.  If you can free up more\n");
@@ -828,10 +830,21 @@ int Z_AvailHeap ( void )
    return (int)avail;
 #elif defined(ATARI_NATIVE)
    {
+      // The largest block of ST RAM or TT RAM, whichever is bigger: the
+      // zone is malloc's, which the program's flags let take TT RAM, and
+      // nothing in it needs ST RAM (the screens and the sound's rings are
+      // asked for there themselves). Asked of ST RAM alone, a TT with 2MB
+      // of it and 4MB of TT RAM got a zone of 1.4MB, and a warning.
       long avail = Mxalloc(-1, 0);
       // TOS 1.0x has no Mxalloc (EINVFN): ask the old way, ST RAM anyway.
       if (avail < 0)
          avail = (long)Malloc(-1);
+      else
+         {
+         const long tt = Mxalloc(-1, 1);
+         if (tt > avail)
+            avail = tt;
+         }
       if (avail < 0)
          avail = 0;
       return (int)avail;

@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <mint/osbind.h>
 #include <mint/cookie.h>
+#include "atari_cpu.h"
 
 #if ATARI_SDL
 /*
@@ -79,3 +80,20 @@ void megaste_enable_16mhz_cache(void)
 {
   Supexec(megaste_enable_16mhz_cache_super);
 }
+
+#ifndef C__CPU
+#define C__CPU 0x5f435055L /* '_CPU' */
+#endif
+
+#if defined(ATARI_NATIVE)
+/* atari_cpu.h: the _CPU cookie is 0, 10, 20, 30, 40 or 60. */
+void atari_cpu_init(void)
+{
+  long cpu = 0;
+
+  if (Getcookie(C__CPU, &cpu) != C_FOUND)
+    cpu = 0;
+  atari_cpu_l32 = cpu >= 20;
+  atari_cpu_l64 = cpu >= 20 && cpu < 60;
+}
+#endif

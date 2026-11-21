@@ -23,6 +23,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 #include "rt_def.h"
 #include "watcom.h"
+#if defined(ATARI_NATIVE)
+/* FixedMul in line here: the ray cast's and masked walls' (atari_fixmul.h) */
+#include "atari_fixmul.h"
+#define FixedMul atari_FixedMul
+#endif
 #include "engine.h"
 #include "_engine.h"
 #include "rt_draw.h"
@@ -84,8 +89,24 @@ void Interpolate (int x1, int x2)
    int dx;
 
    dx=x2-x1;
-   dtexture=(((posts[x2].texture-posts[x1].texture)<<12)+0x800)/dx;
-   dheight=(((posts[x2].wallheight-posts[x1].wallheight)<<8)+0x80)/dx;
+#if defined(ATARI_NATIVE)
+   /* dx is 2 or 4 (InitialCast's only calls): C's division by it, which
+    * rounds toward zero, as a shift of the value moved up by dx - 1 when
+    * it is negative, where it was two library divides */
+   if (dx == 2 || dx == 4)
+      {
+      const int sh = dx >> 1; /* 1 or 2 */
+      int n = ((posts[x2].texture-posts[x1].texture)<<12)+0x800;
+      dtexture = (n + ((n >> 31) & (dx - 1))) >> sh;
+      n = ((posts[x2].wallheight-posts[x1].wallheight)<<8)+0x80;
+      dheight = (n + ((n >> 31) & (dx - 1))) >> sh;
+      }
+   else
+#endif
+      {
+      dtexture=(((posts[x2].texture-posts[x1].texture)<<12)+0x800)/dx;
+      dheight=(((posts[x2].wallheight-posts[x1].wallheight)<<8)+0x80)/dx;
+      }
    frac=dtexture+(posts[x1].texture<<12);
    hfrac=dheight+(posts[x1].wallheight<<8);
    for (i=x1+1;i<=x2-1;i++,frac+=dtexture,hfrac+=dheight)

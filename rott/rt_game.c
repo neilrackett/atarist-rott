@@ -2422,6 +2422,9 @@ void DrawStats
    int health_y;
    int ammo_y;
 
+#if defined(ATARI_NATIVE)
+   atari_unpair_view();
+#endif
    if ( ( !SHOW_PLAYER_STATS() ) || ( playstate == ex_died ) ||
       ( locplayerstate->health <= 0 ) )
       {
@@ -2515,6 +2518,9 @@ void DrawPauseXY (int x, int y)
 {
    pic_t *p;
    byte *buftmp;
+#if defined(ATARI_NATIVE)
+   atari_unpair_view();
+#endif
 
    buftmp = bufferofs;
 
@@ -2547,6 +2553,9 @@ void DrawPause (void)
 {
    pic_t *p;
    byte *bufftemp = bufferofs;
+#if defined(ATARI_NATIVE)
+   atari_unpair_view();
+#endif
 
    bufferofs -= screenofs;
 

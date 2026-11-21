@@ -57,6 +57,9 @@ static uint16_t s_errors;
 static uint32_t s_level_serial;
 static int s_level_state = MD_LEVEL_NONE;
 static int s_ready_buf = -1; /* buffer of the newest published frame */
+/* MD_HELLO_EIGHT: the ST shows 256 colours, and a frame is eight planes
+ * across both frame buffers. */
+static bool s_eight;
 static uint16_t s_frames;
 
 /* ------------------------------------------------------------------ */
@@ -115,7 +118,11 @@ static void publish_frame(int buf, uint16_t seq, unsigned x, unsigned y,
   s_ready_buf = buf;
 }
 
-static inline int render_target(void) { return s_ready_buf == 0 ? 1 : 0; }
+static inline int render_target(void) {
+  return s_eight ? 0 : s_ready_buf == 0 ? 1 : 0;
+}
+
+bool md_main_eight(void) { return s_eight; }
 
 /* SPOTVIS as published: each tile's bit ORed with its eight neighbours'.
  * A column's 128 tiles are 8 consecutive words, bit y & 15 of word y >> 4,
@@ -359,7 +366,10 @@ static void cmd_hello(const uint16_t *w, uint32_t n) {
   }
   /* Music comes from the WAD, so only with it (and RAM for it). */
   status_set(MD_ST_CAPS, (md_pack_wad_ok() && md_music_ok() ? MD_CAP_MUSIC : 0) |
-                             MD_CAP_PENS | (s_sd_ok ? MD_CAP_WAD_COPY : 0));
+                             MD_CAP_PENS | (s_sd_ok ? MD_CAP_WAD_COPY : 0) |
+                             MD_CAP_EIGHT);
+  s_eight = (md_get32(w + 4) & MD_HELLO_EIGHT) != 0;
+  s_ready_buf = -1;
   /* A new session: the old errors are history. */
   s_errors = 0;
   status_set(MD_ST_ERRORS, 0);
@@ -509,7 +519,9 @@ static void cmd_palette(const uint16_t *w, uint32_t n) {
 #ifdef MDFW_VERSION
   memcpy(s_view_rgb, rgb, 768);
 #endif
-  if (pens) {
+  if (s_eight) {
+    /* the ST shows the 256 as they are: no 16 to choose */
+  } else if (pens) {
     md_get_bytes(mix, w + 6 + MD_PAL_RGB_BYTES / 2 + 16, 512);
     md_video_set_pens(w + 6 + MD_PAL_RGB_BYTES / 2, mix, PALETTE_SCRATCH);
   } else {
@@ -545,8 +557,13 @@ static void cmd_frame(const uint16_t *w, uint32_t n) {
   const uint32_t t1 = time_us_32();
 
   const int buf = render_target();
-  md_video_c2p(s_chunky, R_PITCH, frame_buffer(buf), (unsigned)viewwidth,
-               (unsigned)viewheight, r_view_screen_y);
+  if (s_eight) {
+    md_video_c2p8(s_chunky, R_PITCH, frame_buffer(buf), (unsigned)viewwidth,
+                  (unsigned)viewheight);
+  } else {
+    md_video_c2p(s_chunky, R_PITCH, frame_buffer(buf), (unsigned)viewwidth,
+                 (unsigned)viewheight, r_view_screen_y);
+  }
   publish_spotvis(r_frame_bits,
                   (volatile uint16_t *)(s_rom_base + MD_SPOTVIS_OFFSET));
   const uint32_t t2 = time_us_32();
@@ -607,7 +624,11 @@ static void cmd_test(const uint16_t *w, uint32_t n) {
   }
   const uint32_t t1 = time_us_32();
   const int buf = render_target();
-  md_video_c2p(s_chunky, R_PITCH, frame_buffer(buf), width, height, sy);
+  if (s_eight) {
+    md_video_c2p8(s_chunky, R_PITCH, frame_buffer(buf), width, height);
+  } else {
+    md_video_c2p(s_chunky, R_PITCH, frame_buffer(buf), width, height, sy);
+  }
   const uint32_t t2 = time_us_32();
   publish_frame(buf, seq, sx, sy, width, height, t1 - t0, t2 - t1);
 }

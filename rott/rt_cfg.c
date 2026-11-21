@@ -1090,6 +1090,8 @@ void ReadConfig (void)
 #if defined(ATARI_NATIVE)
 // The number after key at the start of a sound.rot or config.rot line, if it
 // is that key.
+#include "atari_eight.h"
+
 static boolean AtariSoundValue (const char *line, const char *line_end,
                                 const char *key, long *value)
 {
@@ -1225,6 +1227,10 @@ void ReadAtariConfig (void)
 
             if (AtariSoundValue(line, line_end, "ViewZoom", &v))
                atari_view_zoom = (v != 0);
+#if ATARI_EIGHT
+            if (AtariSoundValue(line, line_end, "Colours", &v))
+               atari_eight_colours = (int)v;
+#endif
             }
          while (p < end && (*p == '\n' || *p == '\r'))
             p++;
