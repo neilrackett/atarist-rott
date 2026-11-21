@@ -124,9 +124,15 @@ TT and Falcon: 256 colours (`ATARI_EIGHT=1`, `rott/atari_eight.c`)
   monitor tests and the way back to the desktop follow STDL
   (`src/responsive.c`, `src/video.c`); none of STDL runs beside the game
   (it would want the keyboard, the VBL and supervisor mode for itself).
-  The conversion is STDL's, compiled from the submodule as it stands:
-  `lib/stdl/addons/sdl2/src/c2p.c`. So `make st` needs `lib/stdl` now
-  (`ATARI_EIGHT=0` builds without).
+  The conversion is STDL's, its SDL2 add-on's public box entries
+  (`STDL_SDL2_ConvertBox`, `STDL_SDL2_ConvertBoxPairs`, from
+  `<SDL2/SDL_stdl_c2p.h>` on `-Ilib/stdl/addons/sdl2/include`), linked
+  from `libstdl-sdl2-cmini.a` (`ATARI_STDL_LIBS`, built by the STDL stamp
+  below): the link takes `c2p.o` and `c2pp.o` alone, 2,856 bytes, no
+  renderer and no other library call (check the map, `-Wl,-Map`, after
+  an STDL update). Their loops are 68000 code; the C round them is built
+  for the 68020 and runs only in 256 colours. So `make st` needs
+  `lib/stdl` (`ATARI_EIGHT=0` builds without, the same binary as before).
 - One page, in ST RAM (`Mxalloc` mode 0, checked against `phystop`),
   allocated before `Z_Init` takes the memory (`atari_eight_prepare`) and
   given back if `Colours 16` or an Accelerator that cannot send 8 planes
@@ -139,8 +145,8 @@ TT and Falcon: 256 colours (`ATARI_EIGHT=1`, `rott/atari_eight.c`)
   HUD beside the Accelerator's view its changed tiles as before, a fade
   the 256 registers. `ViewZoom` zooms as on an ST (`eight_zoom`: the ST's
   geometry and clipping, each zoomed row built at 320 pixels and its span
-  converted with STDL's pixel-pair loop, built into the game as
-  `rott/atari_c2pp.c`; a full-width row's repeats copied). Checked pixel
+  converted with STDL's pair conversion, `STDL_SDL2_ConvertBoxPairs`; a
+  full-width row's repeats copied). Checked pixel
   for pixel against the chunky screen for view sizes 0-2
   (`tools/bench/zoomcheck.py`; autotest shots `SHOTnnn.P8` beside
   `CHUNKnnn.RAW`). View size 2 at 2x: TT 2+4MB 65ms a frame, against 100
@@ -273,7 +279,8 @@ Performance Notes
   - The 68020's own multiply and divide on a TT or a Falcon, chosen at run
     time (`rott/atari_cpu.S`, `atari_cpu_init`): libgcc's __mulsi3,
     __udivsi3, __divsi3, __umodsi3, __modsi3, __muldi3 and __divdi3 are
-    wrapped at the link (`ATARI_WRAPS`), as are FixedMul and FixedScale,
+    wrapped at the link (`ATARI_WRAPS`; STDL's `libstdl-arith020.o` was
+    tried in their place, below), as are FixedMul and FixedScale,
     each to the bit what the 68000 path gives (game logic must not depend
     on the machine). FixedScale on a 68000 is four mulu.w and a 64/32
     division of its own (the ray cast's every wall hit, 6,600 cycles each
@@ -412,6 +419,14 @@ Performance Notes
     word loop wraps) and saves nothing in low detail's word loop for
     walls; 64K-entry pair tables for the ST's conversion (512K, and two
     seconds at 8MHz to build at each palette change).
+  - Tried and dropped (2026-11-21): STDL v1.33.0's `libstdl-arith020.o`
+    and `STDL_ARITH020` in place of atari_cpu.S's libgcc wrappers (its
+    FixedMul, FixedScale and atari_mulshift64 kept). Exact (LOGIC.TXT and
+    RENDER.TXT the same on the TT and a Mega STE), but slower everywhere:
+    ST 986.4 -> 987.5ms, TT 101.4 -> 101.5, TT 2+4MB 77.7 -> 77.9. On a
+    68000 its wrapper is a test, a branch and a jmp to libgcc (41 cycles)
+    where ours branches straight there (26), as the flag is set in main;
+    about 630 calls an 8MHz ST frame, libgcc's inner ones included.
   - What is left: on an ST the 16-colour conversion (`c2p_1x_lorez` and
     the pairs, 22% of the frame), the post and wall pixels (the walls'
     loop 38 cycles for two pixels), the music player (5.2% of an 8MHz
@@ -569,10 +584,11 @@ SDL build (`ROTT_SDL.TOS`)
 - The SDL build keeps its settings in `sdlconf.rot`/`sdlsound.rot`
   (`rott/sdlconf.rot`, `rott/sdlsound.rot`), so it can share a folder with
   `ROTT.TOS`.
-- STDL is the submodule `lib/stdl`, pinned to a release (v1.31.0); it
+- STDL is the submodule `lib/stdl`, pinned to a release (v1.33.0); it
   carries its own `lib/xpad`, so `git submodule update --init --recursive
   lib/stdl`. The Makefile builds its archives with STDL's own Makefile
-  (`libstdl-sdl1.a`, `libstdl-sdl2.a`, `libstdl.a`; stamp `obj/.stdl_libs`),
+  (`libstdl-sdl1.a`, `libstdl-sdl2.a`, `libstdl.a`, and for `ROTT.TOS`'s
+  256 colours `libstdl-sdl2-cmini.a`; one stamp, `obj/.stdl_libs`),
   from the repository's root: built from inside the submodule, the
   container can't see the repository STDL's start-up line takes its
   version from. Its docs: `lib/stdl/docs/sdl1.md`, and `sdl2.md` for the
@@ -624,5 +640,6 @@ SDL build (`ROTT_SDL.TOS`)
   builds are for a TT first: on an ST the add-on's 16-colour screen is
   for testing (a fade step is 135ms there, a new palette about a second).
   Nobody had listened to the sound on STDL either. The 68030 figures here
-  are the 68882 build's: the soft-float `ROTT_SDL.TOS` that replaced it
-  has not been measured.
+  are the 68882 build's. The soft-float `ROTT_SDL.TOS` that replaced it
+  (2026-11-21, 2MB + 4MB, sound on as shipped): 6.12 fps on STDL v1.33.0,
+  6.09 on v1.31.0, against the 68882 build's 6.31.

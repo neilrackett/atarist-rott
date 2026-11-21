@@ -172,14 +172,16 @@ ATARI_AUDIOLIB_SOURCES := \
 ATARI_SOURCES := $(filter-out $(SRCDIR)/amiga_%.c $(SRCDIR)/dosutil.c $(SRCDIR)/dukemusc.c $(SRCDIR)/fx_man.c $(SRCDIR)/lookups.c $(SRCDIR)/vocdecode.c $(SDL_ONLY_SOURCES),$(wildcard $(SRCDIR)/*.c)) $(ATARI_AUDIOLIB_SOURCES) \
 	lib/xpad/src/xpad.c
 # 256 colours on a TT or a Falcon: the conversion into eight planes is
-# STDL's (its SDL2 add-on's c2p.c, 68000 instructions alone), built into the
-# game as it stands in the submodule, with no STDL beside it.
-ATARI_EIGHT_C2P := lib/stdl/addons/sdl2/src/c2p.c
+# STDL's, its SDL2 add-on's public box entries (SDL_stdl_c2p.h), linked from
+# the add-on's libcmini archive: the conversion's objects alone, no renderer
+# and nothing else of STDL. Without it (ATARI_EIGHT=0) no lib/stdl is needed.
+STDL_DIR ?= lib/stdl
+ATARI_STDL_LIBS :=
 ifneq ($(strip $(ATARI_EIGHT)),0)
-ATARI_SOURCES += $(ATARI_EIGHT_C2P)
-$(ATARI_EIGHT_C2P):
-	@echo "*** lib/stdl is not checked out: git submodule update --init --recursive lib/stdl"
-	@echo "*** (or build without the TT's and Falcon's 256 colours: ATARI_EIGHT=0)"; exit 1
+ATARI_INCLUDES += -I$(STDL_DIR)/addons/sdl2/include
+ATARI_STDL_LIBS := $(STDL_DIR)/libstdl-sdl2-cmini.a
+# its header from the submodule: made first, which also says if it is missing
+$(OBJDIR)/$(SRCDIR)/atari_eight.o: | $(ATARI_STDL_LIBS)
 endif
 ATARI_ASM_SOURCES := $(SRCDIR)/sidecart_stubs.S $(SRCDIR)/atari_md_s.S $(SRCDIR)/atari_col.S \
 	$(SRCDIR)/atari_cpu.S
@@ -328,10 +330,10 @@ SDL_TIC_WAIT_MS ?= 0 # Sleep while waiting for the next tic
 SDL_BENCH ?= 0 # Benchmark builds: E1A1, turning for N seconds, result in BENCH.TXT
 
 SDL_CC ?= m68k-atari-mint-gcc
-STDL_DIR ?= lib/stdl
 SDL_CFLAGS ?= -I$(STDL_DIR)/addons/sdl1/include/SDL1 -I$(STDL_DIR)/include -D_GNU_SOURCE=1
 SDL_LIBS := $(addprefix $(STDL_DIR)/,libstdl-sdl1.a libstdl-sdl2.a libstdl.a)
-STDL_ARCHIVES := $(SDL_LIBS)
+# Every archive either game links, made in one go (the stamp below).
+STDL_ARCHIVES := $(SDL_LIBS) $(STDL_DIR)/libstdl-sdl2-cmini.a
 SDL_CPU := -m68030 -msoft-float
 STDL_STAMP ?= obj/.stdl_libs
 # What the archives are built from, so a change in the submodule rebuilds them.
@@ -393,8 +395,8 @@ emu: st
 	cd sidecart && emu/emumd/tools/mdfw run --harddrive $(abspath $(BUILDDIR)) \
 		--sd $(abspath $(EMU_SD)) $(EMU_ARGS)
 
-$(ATARI_OUTPUT): $(ATARI_OBJECTS) | $(BUILDDIR)
-	$(ATARI_CC) $(ATARI_LDFLAGS) $(ATARI_WRAPS) $(ATARI_OBJECTS) $(ATARI_LIBS) -o $@
+$(ATARI_OUTPUT): $(ATARI_OBJECTS) $(ATARI_STDL_LIBS) | $(BUILDDIR)
+	$(ATARI_CC) $(ATARI_LDFLAGS) $(ATARI_WRAPS) $(ATARI_OBJECTS) $(ATARI_STDL_LIBS) $(ATARI_LIBS) -o $@
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
@@ -457,8 +459,8 @@ $(OBJDIR)/%.o: %.S $(ATARI_FLAGS_STAMP)
 sdl-stage-runtime-files: stage-runtime-files
 	$(call STAGE_CONFIG_FILES,$(SDL_RUNTIME_CONFIG_FILES))
 
-# STDL's archives, built by its own Makefile (for mintlib, as the game is)
-# and stamped, so they are made once however many jobs there are (and again
+# STDL's archives, built by its own Makefile (for mintlib, as ROTT_SDL.TOS
+# is, and the conversion's libcmini one for ROTT.TOS) and stamped, so they are made once however many jobs there are (and again
 # when one is missing). Built from here, not from inside the submodule, where
 # the container would not see the repository its start-up line's version
 # comes from.
@@ -466,7 +468,8 @@ $(STDL_ARCHIVES): $(STDL_STAMP) ;
 $(STDL_STAMP): $(STDL_LIB_SOURCES) \
 		$(if $(filter-out $(wildcard $(STDL_ARCHIVES)),$(STDL_ARCHIVES)),FORCE)
 	@test -f $(STDL_DIR)/Makefile -a -f $(STDL_DIR)/lib/xpad/src/xpad.c || { \
-		echo "*** $(STDL_DIR) is not checked out: git submodule update --init --recursive $(STDL_DIR)"; exit 1; }
+		echo "*** $(STDL_DIR) is not checked out: git submodule update --init --recursive $(STDL_DIR)"; \
+		echo "*** (ROTT.TOS builds without it, and without 256 colours, with ATARI_EIGHT=0)"; exit 1; }
 	@mkdir -p $(@D)
 	$(MAKE) -C $(STDL_DIR) OBJDIR=obj $(notdir $(STDL_ARCHIVES))
 	@touch $@

@@ -6,8 +6,11 @@
  * STDL - Atari ST DirectMedia Layer (src/responsive.c, src/video.c),
  * Copyright (C) 2026 Neil Rackett, LGPL-2.1-or-later, which has them from
  * real TTs and Hatari's Falcon: https://github.com/neilrackett/atarist-stdl
- * The conversion is STDL's own (lib/stdl/addons/sdl2/src/c2p.c), built
- * into the game as it is.
+ * The conversion is STDL's own, its SDL2 add-on's public box entries
+ * (SDL_stdl_c2p.h), linked from libstdl-sdl2-cmini.a with nothing else
+ * of STDL: its loops are 68000 instructions, the C round them is built
+ * for the 68020, and both run only here, with eight planes on a TT or a
+ * Falcon.
  */
 /*
  * atari_eight.c - 256 colours on a TT or a Falcon (atari_eight.h).
@@ -34,7 +37,7 @@
 #if ATARI_EIGHT
 
 #include "atari_vbl.h"
-#include "../lib/stdl/addons/sdl2/src/c2p.h"
+#include <SDL2/SDL_stdl_c2p.h>
 
 #ifndef ATARI_NOIR
 #define ATARI_NOIR 0
@@ -453,45 +456,32 @@ unsigned char *atari_eight_row(int y)
 
 void atari_eight_convert(const unsigned char *in, int x, int y, int w, int h)
 {
-   if (w < 16 || h <= 0)
-      return;
-   stdl_sdl2_c2p(in + ((long)y << 8) + ((long)y << 6) + x, 320, row_at[y] + x, LINE_BYTES,
-                 (long)(w >> 4), (long)h, atari_eight_second != 0, &stdl_sdl2_c2p_plain, 0, 0);
+   STDL_SDL2_ConvertBox(in + ((long)y << 8) + ((long)y << 6) + x, 320, row_at[y] + x, LINE_BYTES,
+                        (long)(w >> 4), (long)h, atari_eight_second != 0, 0);
 }
 
 void atari_eight_convert_row(const unsigned char *row, int y)
 {
-   stdl_sdl2_c2p(row, 320, row_at[y], LINE_BYTES, 20, 1, atari_eight_second != 0,
-                 &stdl_sdl2_c2p_plain, 0, 0);
+   STDL_SDL2_ConvertBox(row, 320, row_at[y], LINE_BYTES, 20, 1, atari_eight_second != 0, 0);
 }
 
 void atari_eight_convert_span(const unsigned char *row, int x, int w, int y)
 {
-   if (w < 16)
-      return;
-   stdl_sdl2_c2p(row + x, 320, row_at[y] + x, LINE_BYTES, (long)(w >> 4), 1,
-                 atari_eight_second != 0, &stdl_sdl2_c2p_plain, 0, 0);
+   STDL_SDL2_ConvertBox(row + x, 320, row_at[y] + x, LINE_BYTES, (long)(w >> 4), 1,
+                        atari_eight_second != 0, 0);
 }
 
 void atari_eight_convert_pairs(const unsigned char *row, int x, int w, int y)
 {
-   extern stdl_sdl2_c2p_fn atari_c2pp1, atari_c2pp2;
-
-   if (w < 16)
-      return;
-   (atari_eight_second ? atari_c2pp2 : atari_c2pp1)(row + x, 320, row_at[y] + x, LINE_BYTES,
-                                                    (long)(w >> 4), 1, 0, 0);
+   STDL_SDL2_ConvertBoxPairs(row + x, 320, row_at[y] + x, LINE_BYTES, (long)(w >> 4), 1,
+                             atari_eight_second != 0, 0);
 }
 
 /* rows y to y + h of pairs, groups x to x + w */
 void atari_eight_convert_pairs_box(const unsigned char *in, int x, int w, int y, int h)
 {
-   extern stdl_sdl2_c2p_fn atari_c2pp1, atari_c2pp2;
-
-   if (w < 16 || h <= 0)
-      return;
-   (atari_eight_second ? atari_c2pp2 : atari_c2pp1)(in + ((long)y << 8) + ((long)y << 6) + x, 320,
-                                                    row_at[y] + x, LINE_BYTES, (long)(w >> 4), (long)h, 0, 0);
+   STDL_SDL2_ConvertBoxPairs(in + ((long)y << 8) + ((long)y << 6) + x, 320, row_at[y] + x,
+                             LINE_BYTES, (long)(w >> 4), (long)h, atari_eight_second != 0, 0);
 }
 
 void atari_eight_copy_row(int from, int to)

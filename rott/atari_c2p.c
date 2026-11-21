@@ -1449,7 +1449,7 @@ void atari_c2p_hud(unsigned char *out, const unsigned char *in,
 /*
  * Low detail's view in 256 colours: the rows of groups g0 to g1 no single
  * column was drawn into (atari_unpair_*) a pair at a time, STDL's pair
- * conversion (atari_c2pp.c), and the rest as usual; a run of groups whose
+ * conversion (STDL_SDL2_ConvertBoxPairs), and the rest as usual; a run of groups whose
  * marks are the same over rows y to y + h at a time.
  */
 static int eight_pairs_on;

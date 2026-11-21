@@ -53,7 +53,7 @@ void atari_eight_convert_row(const unsigned char *row, int y);
 /* Groups x to x + w of it (x and w multiples of 16). */
 void atari_eight_convert_span(const unsigned char *row, int x, int w, int y);
 /* Groups x to x + w of such a row whose pixels 2i and 2i + 1 are the same
- * (x and w multiples of 16): STDL's pair conversion (atari_c2pp.c). */
+ * (x and w multiples of 16): STDL's pair conversion (STDL_SDL2_ConvertBoxPairs). */
 void atari_eight_convert_pairs(const unsigned char *row, int x, int w, int y);
 /* Rows y to y + h of such pairs, groups x to x + w, in one call. */
 void atari_eight_convert_pairs_box(const unsigned char *in, int x, int w, int y, int h);
