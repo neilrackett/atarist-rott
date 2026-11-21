@@ -8,7 +8,7 @@
  */
 /*
  * atari_sfx.c - ROTT's sound effects on DMA sound (STE, Mega STE) for the
- * native build (ROTT_ST.TOS): the FX_ calls rt_sound.c makes, in place of
+ * native build (ROTT.TOS): the FX_ calls rt_sound.c makes, in place of
  * the DOS sound library's fx_man.c, multivoc.c and its DMA driver.
  *
  * The DMA loops over a small mono ring at 12517Hz (6258Hz on a CPU that

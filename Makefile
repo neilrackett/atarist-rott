@@ -2,11 +2,11 @@
 # Copyright (C) 2026 Neil Rackett
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
-#   make             the three games below
-#   make st          ROTT_ST.TOS: the native ST renderers (C2P, ROTT Accelerator)
+#   make             the two games below
+#   make st          ROTT.TOS: the native renderers (C2P, ROTT Accelerator),
+#                    one 68000 program for the whole ST family
 #   make sdl         ROTT_SDL.TOS: ROTT's own renderer through SDL (STDL's SDL1
-#                    add-on, lib/stdl), any ST-compatible
-#   make sdl-030     ROTT_030.TOS: the same for 68030 + 68882 (TT, Falcon)
+#                    add-on, lib/stdl), 68030 code for a TT or a Falcon
 #   make sidecart    the ROTT Accelerator firmware (make -C sidecart build)
 #   make shareware   HUNTBGIN.zip: the ROTT 1.3 shareware release, from SHAREWARE_DIR
 #
@@ -186,7 +186,7 @@ ATARI_ASM_SOURCES := $(SRCDIR)/sidecart_stubs.S $(SRCDIR)/atari_md_s.S $(SRCDIR)
 # libcmini's crt0, and a clear of the BSS first (see the file): linked first.
 ATARI_CRT0 := $(OBJDIR)/$(SRCDIR)/atari_crt0.o
 ATARI_OBJECTS := $(ATARI_CRT0) $(addprefix $(OBJDIR)/,$(ATARI_SOURCES:.c=.o) $(ATARI_ASM_SOURCES:.S=.o))
-ATARI_OUTPUT ?= $(BUILDDIR)/ROTT_ST.TOS
+ATARI_OUTPUT ?= $(BUILDDIR)/ROTT.TOS
 # The shareware data the games use: the WAD, the levels (RTC: Comm-bat),
 # the remote ridicule sounds (the sound effects need its REMOSTRT), and the
 # demos the menu plays.
@@ -219,12 +219,12 @@ STCMD_MAKE = STCMD_NO_TTY=1 STCMD_QUIET=1 stcmd make -j$(JOBS) \
 	ROTT_VERSION=$(ROTT_VERSION)
 
 ifneq ($(TOOLCHAIN),)
-games: st sdl sdl-030
+games: st sdl
 st: rott-huntbgin
 else
 games:
-	$(STCMD_MAKE) st sdl sdl-030
-st sdl sdl-030:
+	$(STCMD_MAKE) st sdl
+st sdl:
 	$(STCMD_MAKE) $@
 endif
 
@@ -235,7 +235,7 @@ sidecart:
 # the release page: the data the games use and the DOS programs with it.
 # VENDOR.DOC lets it be passed on only whole and unmodified, so this is every
 # file of a clean install, by name, never whatever a played-in folder holds.
-# Beside them, ROTT_ST.TOS's SOUND.ROT (music and effects on), a file of our
+# Beside them, ROTT.TOS's SOUND.ROT (music and effects on), a file of our
 # own as SETUP.EXE would write one: ROTT.EXE (1.3) deletes it, as version 14.
 SHAREWARE_DIR ?= tmp/ROTT_DOS
 SHAREWARE_ZIP := $(BUILDDIR)/HUNTBGIN.zip
@@ -257,7 +257,7 @@ $(SHAREWARE_SOUND): $(SRCDIR)/sound.rot
 	@mkdir -p $(dir $@)
 	cp $< $@
 
-.PHONY: games st sdl sdl-030 sidecart shareware
+.PHONY: games st sdl sidecart shareware
 .PHONY: FORCE rott-huntbgin rott-darkwar rott-rottcd rott-rottsite rott-dev rott-68882 stage-runtime-files atari-stage-runtime-files
 .SECONDARY: $(ATARI_OBJECTS)
 FORCE:
@@ -304,19 +304,20 @@ rott-rottsite: ATARI_SUPERROTT = 0
 rott-rottsite: ATARI_SITELICENSE = 1
 rott-rottsite: atari-stage-runtime-files $(ATARI_OUTPUT)
 
-# SDL builds: ROTT's own renderer through SDL 1.2's API and MiNTLib, as
+# The SDL build: ROTT's own renderer through SDL 1.2's API and MiNTLib, as
 # close to the original game as the hardware allows (from the sdl branch).
 # The SDL is STDL's SDL1 add-on (lib/stdl, a submodule pinned to a release;
 # its docs/sdl1.md), not SDL 1.2 itself: faster on a TT and a Falcon, and
-# smaller. ROTT_SDL.TOS is one 68000 program for every machine, as the
-# add-on is: 256 colours on a TT or a Falcon, 16 on an ST. ROTT_030.TOS is
-# 68030 + 68882 code on the add-on's TT and Falcon archive. Shared code
-# tells the two kinds of build apart with ATARI_NATIVE (the native renderers'
-# hardware code) and ATARI_SDL. They keep their settings in sdlconf.rot and
-# sdlsound.rot, so they can sit beside ROTT_ST.TOS without upsetting it.
+# smaller. ROTT_SDL.TOS is 68030 code on the add-on's TT and Falcon archive
+# (whose SDL_Init refuses an ST), soft float, so a Falcon needs no 68882:
+# compiled -m68030 -msoft-float and linked against the toolchain's 68000
+# libraries, as STDL's docs/sdl2.md does (its 68020-60 multilib is hard
+# float). Shared code tells it from the native build with ATARI_NATIVE (the
+# native renderers' hardware code) and ATARI_SDL. It keeps its settings in
+# sdlconf.rot and sdlsound.rot, so it can sit beside ROTT.TOS without
+# upsetting it.
 
 SDL_OBJDIR ?= obj/sdl
-SDL_030_OBJDIR ?= obj/sdl-030
 
 SDL_SHOW_FPS ?= 0 # Show FPS overlay
 SDL_SKIP_FADES ?= 0 # Skip fade effects
@@ -329,9 +330,9 @@ SDL_BENCH ?= 0 # Benchmark builds: E1A1, turning for N seconds, result in BENCH.
 SDL_CC ?= m68k-atari-mint-gcc
 STDL_DIR ?= lib/stdl
 SDL_CFLAGS ?= -I$(STDL_DIR)/addons/sdl1/include/SDL1 -I$(STDL_DIR)/include -D_GNU_SOURCE=1
-SDL_LIBS := $(addprefix $(STDL_DIR)/,libstdl-sdl1.a libstdl-sdl2-st.a libstdl.a)
-SDL_030_LIBS := $(addprefix $(STDL_DIR)/,libstdl-sdl1.a libstdl-sdl2.a libstdl.a)
-STDL_ARCHIVES := $(sort $(SDL_LIBS) $(SDL_030_LIBS))
+SDL_LIBS := $(addprefix $(STDL_DIR)/,libstdl-sdl1.a libstdl-sdl2.a libstdl.a)
+STDL_ARCHIVES := $(SDL_LIBS)
+SDL_CPU := -m68030 -msoft-float
 STDL_STAMP ?= obj/.stdl_libs
 # What the archives are built from, so a change in the submodule rebuilds them.
 STDL_LIB_SOURCES := $(wildcard $(STDL_DIR)/src/*.[chS] $(STDL_DIR)/include/stdl/*.h \
@@ -357,27 +358,24 @@ SDL_SOURCES := $(addprefix $(SRCDIR)/, \
 	rt_ted.c rt_util.c rt_vid.c rt_view.c scriplib.c w_wad.c watcom.c winrott.c \
 	z_zone.c)
 SDL_OBJECTS := $(addprefix $(SDL_OBJDIR)/,$(SDL_SOURCES:.c=.o))
-SDL_030_OBJECTS := $(addprefix $(SDL_030_OBJDIR)/,$(SDL_SOURCES:.c=.o))
 SDL_OUTPUT ?= $(BUILDDIR)/ROTT_SDL.TOS
-SDL_030_OUTPUT ?= $(BUILDDIR)/ROTT_030.TOS
 SDL_RUNTIME_CONFIG_FILES := \
 	$(SRCDIR)/sdlconf.rot \
 	$(SRCDIR)/sdlsound.rot
 
 .PHONY: sdl-stage-runtime-files
-.SECONDARY: $(SDL_OBJECTS) $(SDL_030_OBJECTS)
+.SECONDARY: $(SDL_OBJECTS)
 
 ifneq ($(TOOLCHAIN),)
 sdl: sdl-stage-runtime-files $(SDL_OUTPUT)
-sdl-030: sdl-stage-runtime-files $(SDL_030_OUTPUT)
 endif
 
 clean:
-	$(RM) -r $(ATARI_OUTPUT) $(SDL_OUTPUT) $(SDL_030_OUTPUT) $(SHAREWARE_ZIP) $(OBJDIR) $(SDL_OBJDIR) $(SDL_030_OBJDIR) $(STDL_STAMP)
+	$(RM) -r $(ATARI_OUTPUT) $(SDL_OUTPUT) $(SHAREWARE_ZIP) $(OBJDIR) $(SDL_OBJDIR) $(STDL_STAMP)
 
 # The game in EmuMD (sidecart/emu/emumd): Hatari with the ROTT Accelerator
 # emulated on the cartridge port. Run on the host, not in stcmd: builds
-# ROTT_ST.TOS (make st, passing on any ATARI_*, BUILDDIR or OBJDIR given
+# ROTT.TOS (make st, passing on any ATARI_*, BUILDDIR or OBJDIR given
 # here) and the firmware for the host, then starts Hatari. EMU_ARGS go to
 # mdfw run:
 #   make emu ATARI_SHOW_FPS=1
@@ -476,36 +474,26 @@ $(STDL_STAMP): $(STDL_LIB_SOURCES) \
 $(SDL_OUTPUT): $(SDL_OBJECTS) $(SDL_LIBS) | $(BUILDDIR)
 	$(SDL_CC) -s -m68000 $(SDL_OBJECTS) $(SDL_LIBS) -lm -o $@
 
-$(SDL_030_OUTPUT): $(SDL_030_OBJECTS) $(SDL_030_LIBS) | $(BUILDDIR)
-	$(SDL_CC) -s -m68030 -m68882 $(SDL_030_OBJECTS) $(SDL_030_LIBS) -lm -o $@
-
 # As ATARI_FLAGS_STAMP: objects rebuild when the flags change.
-$(SDL_OBJDIR)/.sdl_flags: SDL_STAMP = $(SDL_CC) -m68000 $(SDL_GAME_CFLAGS)
-$(SDL_030_OBJDIR)/.sdl_flags: SDL_STAMP = $(SDL_CC) -m68030 $(SDL_GAME_CFLAGS)
-$(SDL_OBJDIR)/.sdl_flags $(SDL_030_OBJDIR)/.sdl_flags: FORCE
+$(SDL_OBJDIR)/.sdl_flags: SDL_STAMP = $(SDL_CC) $(SDL_CPU) $(SDL_GAME_CFLAGS)
+$(SDL_OBJDIR)/.sdl_flags: FORCE
 	@mkdir -p $(@D)
 	@echo "$(SDL_STAMP)" > "$@.tmp"; \
 	if [ -f "$@" ] && cmp -s "$@.tmp" "$@"; then rm -f "$@.tmp"; else mv "$@.tmp" "$@"; fi
 
 $(SDL_OBJDIR)/%.o: %.c $(SDL_OBJDIR)/.sdl_flags
 	@mkdir -p $(dir $@)
-	$(SDL_CC) -m68000 $(SDL_GAME_CFLAGS) $(ROTT_VERSION_CFLAGS) -MMD -MP -c $< -o $@
-
-$(SDL_030_OBJDIR)/%.o: %.c $(SDL_030_OBJDIR)/.sdl_flags
-	@mkdir -p $(dir $@)
-	$(SDL_CC) -m68030 $(SDL_GAME_CFLAGS) $(ROTT_VERSION_CFLAGS) -MMD -MP -c $< -o $@
+	$(SDL_CC) $(SDL_CPU) $(SDL_GAME_CFLAGS) $(ROTT_VERSION_CFLAGS) -MMD -MP -c $< -o $@
 
 # Only rt_main.c is told the version (ROTT_VERSION_CFLAGS is empty for the
 # rest), and, as with the flags stamps, rebuilt when it changes.
-RT_MAIN_OBJECTS := $(OBJDIR)/rott/rt_main.o $(SDL_OBJDIR)/rott/rt_main.o \
-	$(SDL_030_OBJDIR)/rott/rt_main.o
+RT_MAIN_OBJECTS := $(OBJDIR)/rott/rt_main.o $(SDL_OBJDIR)/rott/rt_main.o
 $(RT_MAIN_OBJECTS): ROTT_VERSION_CFLAGS = -DROTT_PORT_VERSION='"$(ROTT_VERSION)"'
 $(OBJDIR)/rott/rt_main.o: $(OBJDIR)/.rott_version
 $(SDL_OBJDIR)/rott/rt_main.o: $(SDL_OBJDIR)/.rott_version
-$(SDL_030_OBJDIR)/rott/rt_main.o: $(SDL_030_OBJDIR)/.rott_version
 %/.rott_version: FORCE
 	@mkdir -p $(@D)
 	@echo "$(ROTT_VERSION)" > "$@.tmp"; \
 	if [ -f "$@" ] && cmp -s "$@.tmp" "$@"; then rm -f "$@.tmp"; else mv "$@.tmp" "$@"; fi
 
--include $(SDL_OBJECTS:.o=.d) $(SDL_030_OBJECTS:.o=.d)
+-include $(SDL_OBJECTS:.o=.d)

@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Neil Rackett
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
-rottpalette.py - the 16 colours ROTT_ST.TOS and the ROTT Accelerator show
+rottpalette.py - the 16 colours ROTT.TOS and the ROTT Accelerator show
 ROTT's game palette with, and how each of its 256 colours is dithered from
 them: rott/atari_palette.c. See README.md.
 

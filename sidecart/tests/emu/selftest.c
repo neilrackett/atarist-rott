@@ -2,7 +2,7 @@
  * Copyright (C) 2026 Neil Rackett
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * selftest.c - drive the MD/ROTT firmware emulator the way ROTT_ST.TOS does,
+ * selftest.c - drive the MD/ROTT firmware emulator the way ROTT.TOS does,
  * encoding each command word for word as sidecart_stubs.S puts it on the bus,
  * and check the answers: HELLO against the real WAD, ECHO packets (M1's
  * "no dropped bytes over 10,000 packets"), a test-pattern frame.

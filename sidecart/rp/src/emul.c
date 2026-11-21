@@ -5,7 +5,7 @@
  * File: emul.c
  * Description: MD/ROTT boot sequence. Brings up the ROM4 emulator, the ROM3
  *              command channel, Core 1 and the SD card, then hands over to
- *              md_main.c, which serves ROTT_ST.TOS's commands for ever.
+ *              md_main.c, which serves ROTT.TOS's commands for ever.
  */
 
 #include "emul.h"

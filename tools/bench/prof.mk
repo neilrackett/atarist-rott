@@ -3,6 +3,6 @@
 # and its symbols as nm lists them, beside it.
 ATARI_LDFLAGS = -nostdlib -L/freemint/libcmini/lib -m68000
 include Makefile
-st: $(BUILDDIR)/ROTT_ST.nm
-$(BUILDDIR)/ROTT_ST.nm: $(ATARI_OUTPUT)
+st: $(BUILDDIR)/ROTT.nm
+$(BUILDDIR)/ROTT.nm: $(ATARI_OUTPUT)
 	m68k-atari-mint-nm -n $< > $@

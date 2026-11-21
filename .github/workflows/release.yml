@@ -3,13 +3,15 @@
 
 name: Release
 
-# Rolling release: build the three games and, when anything it is built
+# Rolling release: build the two games and, when anything it is built
 # from has changed, the ROTT Accelerator firmware; tag the commit with the
 # next v<version>-atarist.N, replace those files on the "latest" release
 # and move the lightweight "latest" tag onto the commit. The release's
 # title and body are left exactly as they are -- `gh release upload`
-# touches assets only -- and the asset names never change, so a download
-# link handed to someone keeps working.
+# touches assets only -- and the asset names stay the same from one
+# release to the next, so a download link handed to someone keeps working.
+# A game no longer built (ROTT_ST.TOS became ROTT.TOS; ROTT_030.TOS became
+# ROTT_SDL.TOS) is taken off the release, so no stale copy is left there.
 
 on:
   # Anything landing on main is a release: a merge, or a direct push.
@@ -180,7 +182,7 @@ jobs:
           echo "Tagged $VERSION."
 
       - name: Replace the files on the latest release
-        # The three games and, if it was built, the firmware image and its
+        # The two games and, if it was built, the firmware image and its
         # Booster app descriptor: dist/ also holds config files and, on a
         # developer's machine, the game data, none of which belongs on the
         # release. A firmware left alone keeps the files already there.
@@ -196,6 +198,15 @@ jobs:
             || gh release create latest --title "Rise of the Triad for Atari ST, TT & Falcon" --notes "Rolling build of the Atari ST port."
           gh release upload latest "${FILES[@]}" --clobber
           echo "Published $VERSION to the latest release: ${FILES[*]}"
+
+          # Games on the release that this build no longer makes.
+          gh release view latest --json assets --jq '.assets[].name' \
+            | grep -i '\.TOS$' | while read -r NAME; do
+              if [ ! -e "dist/$NAME" ]; then
+                gh release delete-asset latest "$NAME" --yes
+                echo "Removed $NAME from the latest release."
+              fi
+            done
 
       - name: Move the latest tag onto this commit
         # The "latest" release is attached to this tag, so moving it keeps

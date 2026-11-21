@@ -1,6 +1,6 @@
 # rottpalette
 
-The 16 colours `ROTT_ST.TOS` and the ROTT Accelerator show ROTT's game
+The 16 colours `ROTT.TOS` and the ROTT Accelerator show ROTT's game
 palette with, and how each of its 256 colours is dithered from them:
 `rott/atari_palette.c`, made by `rottpalette.py`. The game palette is the
 only one in play, and the menus use it too; any other palette (the Apogee
@@ -54,8 +54,8 @@ python3 tools/rottpalette/rottpalette.py generate \
 ```
 
 It takes a minute or two. The palette's hash is in the file, and
-`ROTT_ST.TOS` only uses the table for a palette with that hash, so a WAD
-with a different palette gets the median cut. Only `ROTT_ST.TOS` compiles
+`ROTT.TOS` only uses the table for a palette with that hash, so a WAD
+with a different palette gets the median cut. Only `ROTT.TOS` compiles
 it: the ST sends the ROTT Accelerator how it shows each palette
 (`MD_PAL_PENS`), so a new table needs no new firmware.
 

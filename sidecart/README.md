@@ -2,7 +2,7 @@
 
 Microfirmware for the [SidecarTridge Multi-device](https://sidecartridge.com)
 that renders Rise of the Triad's 3D view for the Atari ST port in this
-repository (`ROTT_ST.TOS`). In the source it goes by MD/ROTT for short.
+repository (`ROTT.TOS`). In the source it goes by MD/ROTT for short.
 
 The ST keeps running the game: logic, input, sound effects, HUD, menus. For each
 frame it sends the Multi-device what changed (doors, pushwalls, lights,
@@ -14,14 +14,14 @@ in the cartridge ROM window, where the ST copies it to the screen. It
 plays ROTT's music as well, with the ST build's own YM2149 player, and
 the ST copies the sound chip's registers from it each VBL.
 
-Without the Multi-device, or if anything goes wrong, `ROTT_ST.TOS` falls
+Without the Multi-device, or if anything goes wrong, `ROTT.TOS` falls
 back to its own renderer, so one executable serves both.
 
 ## Installation
 
 You need a SidecarTridge Multi-device with a microSD card, and the
 shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
-`REMOTE1.RTS` next to `ROTT_ST.TOS` on the ST, as usual).
+`REMOTE1.RTS` next to `ROTT.TOS` on the ST, as usual).
 
 1. Install ROTT Accelerator from the Multi-device's app store in Booster.
    Or install it manually: build the firmware (`make -C sidecart build`,
@@ -30,7 +30,7 @@ shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
 2. Copy `HUNTBGIN.WAD` into `/rott` on the same card. It must be the same
    file the ST uses: the firmware checks its size and directory against
    the ST's copy and refuses a different one. Or leave it out:
-   `ROTT_ST.TOS` copies its own there the first time (step 4).
+   `ROTT.TOS` copies its own there the first time (step 4).
 3. On the Booster screen, press ESC for the app list and select ROTT
    Accelerator. The ST restarts and prints this during boot, with the
    firmware's version (such as `v1.4.0-beta.4`), or `ROTT Accelerator not
@@ -41,11 +41,11 @@ shareware `HUNTBGIN.WAD` (with `HUNTBGIN.RTL`, `HUNTBGIN.RTC` and
    GPLv3 (c)2026 Neil Rackett
 
    Get ROTT from neilrackett.com/atarist
-   and run ROTT_ST.TOS from GEM Desktop
+   and run ROTT.TOS from GEM Desktop
 
    ```
 
-4. Run `ROTT_ST.TOS` from disk as normal. At startup it prints
+4. Run `ROTT.TOS` from disk as normal. At startup it prints
    `ROTT Accelerator <version>` when it will use the Multi-device, or the
    reason it will not, e.g. `ROTT Accelerator: HUNTBGIN.WAD missing`
    followed by `Using the ST renderer`. With firmware v1.4.0-beta.7 or
@@ -72,7 +72,7 @@ appear a frame late the first time you meet it.
 
 ## Troubleshooting
 
-If `ROTT_ST.TOS` doesn't use the Multi-device, or the view looks wrong,
+If `ROTT.TOS` doesn't use the Multi-device, or the view looks wrong,
 two test programs narrow it down (`make -C sidecart tests`, in
 `sidecart/tests/`). Run them in this order:
 
@@ -104,7 +104,7 @@ opens the console.
   Dark areas therefore look much darker than on the ST renderer, and on
   16 colours the darkest shades come out close to black.
 - **TT and Falcon.** With firmware v1.4.0-beta.8 or later and a colour
-  monitor, `ROTT_ST.TOS` runs in the machine's own 256 colours (TT Low, a
+  monitor, `ROTT.TOS` runs in the machine's own 256 colours (TT Low, a
   Falcon's 8-bit mode) and the Multi-device sends the view as it rendered
   it, with no reduction to 16 colours and no dither. Older firmware, or
   `Colours 16` in `CONFIG.ROT`, keeps ST Low as on an ST. So far this has
@@ -123,7 +123,7 @@ opens the console.
   and moving walls only while they move or change state, with a few of
   the rest checked each frame in turn; an object is sent if one bit of
   the MD's spotvis (with the tiles around the player added) is set.
-- **Matching builds.** `ROTT_ST.TOS` and the firmware must come from the
+- **Matching builds.** `ROTT.TOS` and the firmware must come from the
   same sources (`MD_PROTOCOL_VERSION`); with a mismatch the ST says so and
   uses its own renderer.
 
@@ -140,10 +140,10 @@ make -C sidecart build     # release firmware -> dist/<uuid>.uf2 + .json
 make -C sidecart debug     # debug firmware (serial console), bumps the patch version
 make -C sidecart tests     # PINGTEST.TOS, UPTEST.TOS in sidecart/tests/
 make -C sidecart census    # WAD sections vs the flash budget
-make st                    # the game: dist/ROTT_ST.TOS (make sidecart = make -C sidecart build)
+make st                    # the game: dist/ROTT.TOS (make sidecart = make -C sidecart build)
 ```
 
-`ATARI_MD_RENDER=0` builds `ROTT_ST.TOS` without any of this;
+`ATARI_MD_RENDER=0` builds `ROTT.TOS` without any of this;
 `ATARI_MD_PIPELINE=0` makes the ST wait for each frame instead of
 overlapping it with the next.
 
@@ -184,7 +184,7 @@ of four slots in ROM4 with a mask of those that changed; the ST's VBL
 takes the next step from it and writes the changed registers to the
 chip (about 1% of an 8 MHz ST). Firmware without it leaves the
 capability word 0 and the ST plays the music itself, as before.
-`ATARI_MD_MUSIC=0` builds `ROTT_ST.TOS` without this.
+`ATARI_MD_MUSIC=0` builds `ROTT.TOS` without this.
 
 **WAD copy.** When HELLO finds the WAD missing from the card, or
 different from the ST's, firmware that says `MD_CAP_WAD_COPY` is sent the
@@ -204,7 +204,7 @@ see `../tools/rottpalette`), anything else by median cut. With each
 PALETTE command it sends its 16 palette words and each colour's dither, a
 pair of pens and how many of a Bayer cell's 16 pixels get the second
 (`MD_PAL_PENS`), and the firmware does the same, so a new table needs only
-a new `ROTT_ST.TOS`. Firmware that takes them says `MD_CAP_PENS`; an older
+a new `ROTT.TOS`. Firmware that takes them says `MD_CAP_PENS`; an older
 one gets the plain palette and works out the colours by the median cut
 (`md_video.c`, `atari_c2p.c`'s ported line for line), as the ST then does
 too, and so does this firmware for an older ST build that sends none.
@@ -236,7 +236,7 @@ firmware and runs them; `EMU_ARGS` are passed to `mdfw run`. By hand:
 cd sidecart
 emu/emumd/tools/mdfw hatari   # once: EmuMD's Hatari + EmuTOS in ~/.cache/emumd
 emu/emumd/tools/mdfw build    # build/rott-accelerator.mdfw
-emu/emumd/tools/mdfw run      # dist/ROTT_ST.TOS, 16 MHz Mega STE
+emu/emumd/tools/mdfw run      # dist/ROTT.TOS, 16 MHz Mega STE
 ```
 
 The emulated SD card is `tmp/sd`, so the WAD goes in
@@ -262,7 +262,7 @@ cmp ../build/check/LOGIC.TXT /path/to/reference/LOGIC.TXT
 `tests/emu` holds the firmware's self-tests on the host, a couple of
 seconds with no emulator: `libmdemu` is the firmware with the Pico SDK,
 flash and FatFs replaced (and no music); `selftest` drives the command
-protocol word for word the way `ROTT_ST.TOS` does (HELLO against the real
+protocol word for word the way `ROTT.TOS` does (HELLO against the real
 WAD, 10,000 ECHO packets, a test pattern), and `packtest` plays 3,000
 random frames against the level pack and its on-demand loading.
 

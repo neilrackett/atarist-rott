@@ -6,7 +6,7 @@
 ; and atarist-stdoom's DOOM Accelerator stub.
 ;
 ; This image is served by the RP2040 at ROM4 ($FA0000). The ROTT
-; Accelerator has no autostart: ROTT_ST.TOS finds the firmware itself and
+; Accelerator has no autostart: ROTT.TOS finds the firmware itself and
 ; drives it over the cartridge bus. All the stub does is give TOS a valid
 ; cartridge header and, at boot, say whether the firmware is up, then the
 ; licence and where to get ROTT for the ST.
@@ -97,7 +97,7 @@ msg_not_ready:
 msg_footer:
 	dc.b "GPLv3 (c)2026 Neil Rackett",$d,$a,$d,$a
 	dc.b "Get ROTT from neilrackett.com/atarist",$d,$a
-	dc.b "and run ROTT_ST.TOS from GEM Desktop",$d,$a,$d,$a,0
+	dc.b "and run ROTT.TOS from GEM Desktop",$d,$a,$d,$a,0
 	even
 ; Non-zero end marker: firmware.py trims trailing zero bytes and needs an
 ; even length.

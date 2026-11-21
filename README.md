@@ -6,15 +6,16 @@ Ported by [Neil Rackett](https://x.com/neilrackett)
 
 What better way to celebrate the 30th-ish anniversary of ROTT than to port it to a hardware platform currently celebrating its 40th: _Welcome to Rise of the Triad for Atari ST, TT & Falcon!_
 
-This repository contains 3 versions of ROTT:
+This repository contains 2 versions of ROTT:
 
 | Build          | Description                                                                                                           | Target                        |
 | -------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| `ROTT_ST.TOS`  | Aggressively optimised native port for the whole ST family & optional ROTT Accelerator for SidecarTridge Multi-device | ST, STE, Mega STE, TT, Falcon |
-| `ROTT_SDL.TOS` | SDL based port aiming to be as close to original ROTT as possible on all ST-compatible hardware                       | ST, STE, Mega STE, TT, Falcon |
-| `ROTT_030.TOS` | The SDL port, optimised for a 68030 CPU with 68882 FPU                                                                | TT, Falcon                    |
+| `ROTT.TOS`     | Aggressively optimised native port for the whole ST family & optional ROTT Accelerator for SidecarTridge Multi-device | ST, STE, Mega STE, TT, Falcon |
+| `ROTT_SDL.TOS` | SDL based port for 68030 machines, aiming to be as close to original ROTT as possible                                 | TT, Falcon                    |
 
-`ROTT_ST.TOS` can also hand its 3D view over to a [SidecarTridge Multi-device](https://sidecartridge.com), if you have one: see [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device) below.
+If you're not sure which to use, use `ROTT.TOS`. If you have `ROTT_ST.TOS` or `ROTT_030.TOS` from an earlier release, delete them: `ROTT_ST.TOS` is now `ROTT.TOS`, and `ROTT_SDL.TOS` replaces `ROTT_030.TOS` (it no longer needs an FPU, and no longer runs on an ST, where it was too slow to play).
+
+`ROTT.TOS` can also hand its 3D view over to a [SidecarTridge Multi-device](https://sidecartridge.com), if you have one: see [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device) below.
 
 All builds:
 
@@ -60,7 +61,7 @@ Native FPS was recorded at the smallest view size (80x48, zoomed 4x with `ViewZo
 
 Music plays ROTT's MIDI songs on the ST's own sound chip, so it works on any ST. Set `MusicMode` to `0` in `SOUND.ROT` to turn it off, or `MusicVolume` (0-255) to change its volume. With the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device) (firmware v1.4.0-beta.4 or later), the Multi-device plays the songs and your ST just copies the notes to its sound chip, which gives an 8MHz ST about 7% of its time back.
 
-On a TT or a Falcon with a colour monitor, `ROTT_ST.TOS` shows the game's own 256 colours (TT Low, or a Falcon's 8-bit mode on VGA, RGB or a TV) in place of the 16 and their dither; set `Colours` to `16` in `CONFIG.ROT` for ST Low. `ViewZoom` works there too. TT and Falcon support has only been run in an emulator so far.
+On a TT or a Falcon with a colour monitor, `ROTT.TOS` shows the game's own 256 colours (TT Low, or a Falcon's 8-bit mode on VGA, RGB or a TV) in place of the 16 and their dither; set `Colours` to `16` in `CONFIG.ROT` for ST Low. `ViewZoom` works there too. TT and Falcon support has only been run in an emulator so far.
 
 Sound effects use the STE's DMA sound, so they need an STE or Mega STE (an ST just plays without them). Set `FXMode` to `0` in `SOUND.ROT` to turn them off. `NumVoices` sets how many play at once, from 1 to 8; each one costs CPU time while it plays (about 5% of a Mega STE for one), and nothing when it's quiet. The default, `0`, plays one at a time, or two with the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device). On an 8MHz ST they're mixed at 6258Hz rather than 12517Hz, for half the CPU time: set `FXRate` to `12517` for the full rate.
 
@@ -68,19 +69,16 @@ Sound effects use the STE's DMA sound, so they need an STE or Mega STE (an ST ju
 
 <img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/1558c670-be05-427a-b1ce-1ee767a4870e" /> <img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/17067577-e151-4d6d-a9c6-69a1ef9d9837" />
 
-`ROTT_SDL.TOS` and `ROTT_030.TOS` use the Simple DirectMedia Layer (SDL) framework, through [STDL](https://github.com/neilrackett/atarist-stdl)'s SDL 1.2 add-on, to bring ROTT to the Atari ST, TT & Falcon with a minimal number of tweaks and performance optimisations to retain as much of the game's original look and feel as possible, including intro videos and menu animations. TT screenshots shown.
+`ROTT_SDL.TOS` uses the Simple DirectMedia Layer (SDL) framework, through [STDL](https://github.com/neilrackett/atarist-stdl)'s SDL 1.2 add-on, to bring ROTT to the Atari TT & Falcon with a minimal number of tweaks and performance optimisations to retain as much of the game's original look and feel as possible, including intro videos and menu animations. TT screenshots shown.
 
-| Model    | Colours        | Music | SFX | Typical FPS |
-| -------- | -------------- | ----- | --- | ----------- |
-| ST       | 16 (dithered)  | ✅    | ❌  | 1           |
-| STE      | 16 (dithered)  | ✅    | ✅  | 1           |
-| Mega STE | 16 (dithered)  | ✅    | ✅  | 2           |
-| TT       | 256            | ✅    | ✅  | 12          |
-| Falcon   | 256            | ✅    | ✅  | 10          |
+| Model  | Colours | Music | SFX | Typical FPS |
+| ------ | ------- | ----- | --- | ----------- |
+| TT     | 256     | ✅    | ✅  | 12          |
+| Falcon | 256     | ✅    | ✅  | 10          |
 
-FPS based on running ROTT with automatic detail selection enabled. Music and sound effects cost a little of the frame rate: set `MusicMode` and `FXMode` to `0` in `SDLSOUND.ROT` to switch them off.
+It's 68030 code, so it needs a TT or a Falcon, but not an FPU. FPS based on running ROTT with automatic detail selection enabled. Music and sound effects cost a little of the frame rate: set `MusicMode` and `FXMode` to `0` in `SDLSOUND.ROT` to switch them off.
 
-The SDL versions keep their settings in `SDLCONF.ROT` and `SDLSOUND.ROT`, so they can share a folder with `ROTT_ST.TOS`, whose `CONFIG.ROT` and `SOUND.ROT` are tuned for a very different renderer. Edit `SDLCONF.ROT` to adjust rendering and performance settings; `rott/sdlconf_st.rot` is a starting point for an ST.
+The SDL version keeps its settings in `SDLCONF.ROT` and `SDLSOUND.ROT`, so it can share a folder with `ROTT.TOS`, whose `CONFIG.ROT` and `SOUND.ROT` are tuned for a very different renderer. Edit `SDLCONF.ROT` to adjust rendering and performance settings.
 
 ## ROTT Accelerator (SidecarTridge Multi-device)
 
@@ -93,13 +91,13 @@ As well as taking the load off the ST, it brings back some of what the ST versio
 - On-screen messages
 - On a TT or a Falcon, the view in the game's own 256 colours (firmware v1.4.0-beta.8 or later; older firmware keeps ST Low's 16)
 
-`ROTT_ST.TOS` looks for the ROTT Accelerator when it starts and falls back to the ST renderer if it isn't there, so there's still only one version to install. While the Accelerator is rendering, a small yellow lightning bolt shows on the bottom status bar.
+`ROTT.TOS` looks for the ROTT Accelerator when it starts and falls back to the ST renderer if it isn't there, so there's still only one version to install. While the Accelerator is rendering, a small yellow lightning bolt shows on the bottom status bar.
 
 It can be installed from the SidecarTridge Multi-device app store or manually: see the [ROTT Accelerator readme](sidecart/README.md) for installation, testing and build instructions.
 
 ## Gamepads (Xpad)
 
-`ROTT_ST.TOS` also plays with a gamepad through [Xpad](https://downloads.neilrackett.com/atarist-rott), with analogue turning and movement on the left stick. It needs an Xpad driver that reads the pad's hardware directly, such as the STE enhanced port driver or a cartridge-port adapter: the Xpad joystick and keyboard drivers cannot work here, because this version reads the keyboard itself.
+`ROTT.TOS` also plays with a gamepad through [Xpad](https://downloads.neilrackett.com/atarist-rott), with analogue turning and movement on the left stick. It needs an Xpad driver that reads the pad's hardware directly, such as the STE enhanced port driver or a cartridge-port adapter: the Xpad joystick and keyboard drivers cannot work here, because this version reads the keyboard itself.
 
 With a driver that can drive the pad's motors, such as [COMpad](https://github.com/neilrackett/pico-compad) on the modem port, the pad rumbles when you fire (a buzz for the guns, a kick for the missile weapons), take damage (harder for bigger hits), are caught in an explosion or shoved by a moving wall, and when you die.
 
@@ -121,20 +119,19 @@ With a driver that can drive the pad's motors, such as [COMpad](https://github.c
 ## Installation
 
 - Download [`HUNTBGIN.zip`](https://github.com/neilrackett/atarist-rott/releases/download/latest/HUNTBGIN.zip), the ROTT 1.3 shareware release (plus a `SOUND.ROT` with music and sound effects on), from the [releases page](https://github.com/neilrackett/atarist-rott/releases) and unzip it into a folder on your Atari's hard disk (or install the [shareware from archive.org](https://archive.org/details/rott_shareware) for DOS using DOSBox and copy the installation folder across)
-- Copy `ROTT_ST.TOS`, `ROTT_SDL.TOS` and/or `ROTT_030.TOS` to the the same folder (the 030 build runs 20-30% faster on TT/Falcon)
-- Optionally, install the ROTT Accelerator on your SidecarTridge Multi-device (see the [ROTT Accelerator readme](sidecart/README.md)); `ROTT_ST.TOS` copies the WAD to its SD card for you
-- Run `ROTT_ST.TOS`, `ROTT_SDL.TOS` or `ROTT_030.TOS`
+- Copy `ROTT.TOS` and, on a TT or a Falcon, `ROTT_SDL.TOS` if you want it, to the same folder
+- Optionally, install the ROTT Accelerator on your SidecarTridge Multi-device (see the [ROTT Accelerator readme](sidecart/README.md)); `ROTT.TOS` copies the WAD to its SD card for you
+- Run `ROTT.TOS` or `ROTT_SDL.TOS`
 - Enjoy!
 
 ## Build
 
-The quickest way to build ROTT for yourself is to install [atarist-toolkit-docker](https://github.com/sidecartridge/atarist-toolkit-docker), fetch the submodules (`git submodule update --init`, then `git submodule update --init --recursive lib/stdl` for the SDL builds), then run:
+The quickest way to build ROTT for yourself is to install [atarist-toolkit-docker](https://github.com/sidecartridge/atarist-toolkit-docker), fetch the submodules (`git submodule update --init`, then `git submodule update --init --recursive lib/stdl`, which both games use), then run:
 
 ```bash
-make             # the three games
-make st          # ROTT_ST.TOS
+make             # both games
+make st          # ROTT.TOS
 make sdl         # ROTT_SDL.TOS
-make sdl-030     # ROTT_030.TOS
 make sidecart    # the ROTT Accelerator firmware
 make shareware   # HUNTBGIN.zip: the ROTT 1.3 shareware release, from tmp/ROTT_DOS
 ```
@@ -148,7 +145,7 @@ make st ATARI_NOIR=1
 make st ATARI_NOIR=1 ATARI_NOIR_DITHERING=1
 ```
 
-`ROTT_ST.TOS` is optimised for Atari ST computers, but will run on any Atari ST compatible hardware.
+`ROTT.TOS` is one 68000 program for the whole ST family: on a TT or a Falcon it picks its 68030 code and 256-colour screen when it starts.
 
 SidecarTridge Multi-device support is included by default. To build without it:
 

@@ -4,7 +4,7 @@
 name: PR
 
 # Does it build? That is the whole job. This runs the same builds as
-# release.yml, the three games and the ROTT Accelerator firmware, so a pull
+# release.yml, the two games and the ROTT Accelerator firmware, so a pull
 # request that would break the release fails here instead, and it tags
 # nothing, publishes nothing and keeps no artifacts. There is no host test
 # suite in this port: verification is a build plus a run under Hatari or
@@ -71,7 +71,7 @@ jobs:
         run: curl -sL https://github.com/sidecartridge/atarist-toolkit-docker/releases/latest/download/install_atarist_toolkit_docker.sh | bash
 
       - name: Build the games
-        # dist/ROTT_ST.TOS, dist/ROTT_SDL.TOS and dist/ROTT_030.TOS.
+        # dist/ROTT.TOS and dist/ROTT_SDL.TOS.
         run: stcmd make -j4 games
 
       - name: Build the ROTT Accelerator firmware

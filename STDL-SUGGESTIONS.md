@@ -1,6 +1,6 @@
 # STDL suggestions from the ROTT port
 
-Things the native ROTT build (`ROTT_ST.TOS`) found while using STDL's
+Things the native ROTT build (`ROTT.TOS`) found while using STDL's
 SDL2 add-on conversion for its 256-colour TT and Falcon screen, and
 while doing its own speed work, that STDL could do better and that
 other ports would benefit from. All timings are Hatari's (EmuMD's fork,

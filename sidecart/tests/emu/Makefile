@@ -28,7 +28,7 @@ $(OUT)/libmdemu.a: $(OBJS)
 	rm -f $@
 	ar rcs $@ $^
 
-# The command protocol the way ROTT_ST.TOS drives it: HELLO, ECHO, a frame.
+# The command protocol the way ROTT.TOS drives it: HELLO, ECHO, a frame.
 #   build/selftest <sd dir holding rott/HUNTBGIN.WAD> <output dir>
 $(OUT)/selftest: selftest.c $(OUT)/libmdemu.a
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(OUT)/libmdemu.a -o $@

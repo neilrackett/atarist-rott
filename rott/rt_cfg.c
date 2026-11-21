@@ -187,7 +187,7 @@ char *ApogeePath = NULL;
 
 #if ATARI_SDL
 // The SDL builds keep their own settings: they share dist/ (and often a
-// player's ROTT folder) with ROTT_ST.TOS, whose are tuned for another renderer.
+// player's ROTT folder) with ROTT.TOS, whose are tuned for another renderer.
 static char SoundName[13]  = "sdlsound.rot";
 #else
 static char SoundName[13]  = "sound.rot";

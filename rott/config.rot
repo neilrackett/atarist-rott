@@ -221,12 +221,12 @@ DefaultPlayerColor     0
 SecretPassword         7d7e4a2d3b6a0319554654231c
 
 ;
-; Atari ST (ROTT_ST.TOS): show view sizes up to 160 wide twice the size and
+; ROTT.TOS: show view sizes up to 160 wide twice the size and
 ; up to 80 four times (the ST's renderer zooms them; the ROTT Accelerator
 ; renders them that big), 0 or 1. The view size itself is set in the game
 ; (- and +) and starts at the full width between the status bars.
 ViewZoom           0
 
-; Atari TT and Falcon (ROTT_ST.TOS): 256 for the game's own 256 colours
+; Atari TT and Falcon (ROTT.TOS): 256 for the game's own 256 colours
 ; (TT Low or a Falcon's 8-bit mode), 16 for ST Low's 16 as on an ST.
 Colours            256

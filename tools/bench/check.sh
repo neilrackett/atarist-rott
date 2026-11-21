@@ -24,5 +24,5 @@ rm -f "$d/drive/LOGIC.TXT" "$d/drive/RENDER.TXT"
 HOME="$d/home" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$HATARI" --confirm-quit false \
     --tos "$tos" --machine $m --harddrive "$d/drive" --md-sd "$d/sd" \
     --sound off --fast-boot on --fast-forward on --run-vbls $vbls \
-    --memsize 4 $args --auto 'C:\ROTT_ST.TOS' > "$OUT/$name.log" 2>&1 || true
+    --memsize 4 $args --auto 'C:\ROTT.TOS' > "$OUT/$name.log" 2>&1 || true
 echo "$name: $(wc -l < "$d/drive/LOGIC.TXT") logic lines, $(wc -l < "$d/drive/RENDER.TXT") render lines"

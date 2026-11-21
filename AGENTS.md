@@ -4,32 +4,36 @@ Purpose
 
 - Keep this branch focused on the native Atari renderers: the direct C2P
   renderer, and the ROTT Accelerator (SidecarTridge Multi-device) path.
-  The SDL builds (from the old `sdl` branch) share the source but aim to
-  stay close to the original game: see "SDL builds" below.
+  The SDL build (from the old `sdl` branch) shares the source but aims to
+  stay close to the original game: see "SDL build" below.
 - Prioritize playability and responsiveness on 16 MHz Mega STE.
 - Keep non-Atari behavior unchanged unless intentionally doing cross-platform work.
 
 Build + Artifacts
 
-- `make` (= `make games`) builds the three games; `make st` (`ROTT_ST.TOS`),
-  `make sdl` (`ROTT_SDL.TOS`), `make sdl-030` (`ROTT_030.TOS`). From the host
-  they go through stcmd (`JOBS=4` by default); inside stcmd they build directly.
-- The SDL builds need the STDL submodule and its own Xpad:
-  `git submodule update --init --recursive lib/stdl` (see "SDL builds").
+- `make` (= `make games`) builds the two games; `make st` (`ROTT.TOS`, the
+  native build: one 68000 program for the whole ST family, called
+  `ROTT_ST.TOS` up to atarist.9) and `make sdl` (`ROTT_SDL.TOS`, 68030
+  code for a TT or a Falcon; until the rename a 68000 build, with a
+  68030 + 68882 `ROTT_030.TOS` beside it). From the host they go through
+  stcmd (`JOBS=4` by default); inside stcmd they build directly. The
+  release workflow takes any `.TOS` file no longer built off the release.
+- Both games need the STDL submodule and its own Xpad:
+  `git submodule update --init --recursive lib/stdl` (see "SDL build").
 - `make sidecart` builds the firmware, on the host only (Pico toolchain)
 - `make shareware`: `dist/HUNTBGIN.zip`, the ROTT 1.3 shareware release as
   its installer lays it out (`SHAREWARE_DIR`, default `tmp/ROTT_DOS`: a clean
   install, not the played-in `tmp/ROTT`), every file by name. VENDOR.DOC lets
   the shareware be passed on only whole and unmodified; beside its files the
   zip adds `rott/sound.rot` as `SOUND.ROT` (music and effects on for
-  `ROTT_ST.TOS` before atarist.7; DOS ROTT 1.3 deletes it, as version 14).
+  the native build before atarist.7; DOS ROTT 1.3 deletes it, as version 14).
   This is what goes on the release page (uploaded by hand: CI has no shareware).
-- Output: everything in `dist/` (`ROTT_ST.TOS`, the SDL builds, config files,
+- Output: everything in `dist/` (`ROTT.TOS`, `ROTT_SDL.TOS`, config files,
   the data from `tmp/ROTT`, and the firmware's `<uuid>.uf2`/`.json`)
 - Run it in EmuMD (from the host, not stcmd): `make emu` (builds with stcmd
   first; `EMU_ARGS` go to `mdfw run`, e.g. `--headless --frames N --screenshot out.png`)
-- Object files: `obj/atarist`, `obj/sdl`, `obj/sdl-030`
-- All three games' first text is `DrawRottTitle()`'s (`rt_main.c`), the
+- Object files: `obj/atarist`, `obj/sdl`
+- Both games' first text is `DrawRottTitle()`'s (`rt_main.c`), the
   port's own on `__MINT__`: `Rise of the Triad <version>`, the edition
   (`Shareware Version`), the port credit and neilrackett.com/atarist,
   in place of ROTT's `Rise of the Triad Startup  Version 1.4`. The version is
@@ -40,7 +44,7 @@ Build + Artifacts
 - The native build's startup is `rott/atari_crt0.S`, linked first: libcmini's
   crt0 plus a clear of the BSS, as a second run from the desktop on a real
   Mega STE (TOS 2.06) kept the first run's statics.
-- CI (`.github/workflows`): pull requests to `main` build the three games
+- CI (`.github/workflows`): pull requests to `main` build the two games
   and the firmware; anything landing on `main` is also tagged with the next
   `v1.4.0-atarist.N` (REminiscence style: ROTT 1.4, then a count; a tag put
   on the commit by hand wins), replaces the `.TOS` files on the `latest`
@@ -110,7 +114,7 @@ Important Current Behavior
 
 TT and Falcon: 256 colours (`ATARI_EIGHT=1`, `rott/atari_eight.c`)
 
-- `ROTT_ST.TOS` on a TT or a Falcon with a colour monitor shows the game's
+- `ROTT.TOS` on a TT or a Falcon with a colour monitor shows the game's
   own 256 colours: TT Low (each row on two lines) or a Falcon's 8-bit mode
   (320x240 on VGA, 320x200 on RGB or a TV at the desktop's PAL or NTSC),
   eight interleaved planes, the 320x200 picture in the middle. No
@@ -167,7 +171,8 @@ TT and Falcon: 256 colours (`ATARI_EIGHT=1`, `rott/atari_eight.c`)
   (the tic rate: EmuMD's firmware runs at the host's speed, and a real
   TT's copy from the cartridge is what will set it, as md-doom's 12-15);
   the ST renderer 4 on a TT and 3 on a Falcon in 256 colours, 3 and 3 in
-  16. Without an Accelerator `ROTT_030.TOS` is the faster game there.
+  16. Without an Accelerator the 68030 build then was the faster game there
+  (`ROTT_SDL.TOS` is that build now, without the 68882).
 - Where a TT's frame goes with the ST renderer (Hatari's profiler,
   cycle-exact, 20s of the autotest in E1L1, 256 colours, full-width
   view): 227ms a frame, 4.4 a second. Drawing the columns a pixel at a
@@ -472,7 +477,7 @@ Common Pitfalls
 
 ROTT Accelerator (MD/ROTT in the source; SidecarTridge Multi-device renderer)
 
-- `ATARI_MD_RENDER=1` (default): `ROTT_ST.TOS` looks for the MD/ROTT
+- `ATARI_MD_RENDER=1` (default): `ROTT.TOS` looks for the MD/ROTT
   firmware at startup and, if found, the Multi-device renders the 3D view;
   otherwise the C2P renderer runs as before. See `sidecart/README.md`.
 - ST side: `rott/atari_md.c` (+ `sidecart_md.c`, `sidecart_stubs.S`,
@@ -542,29 +547,32 @@ Change Discipline
 - Avoid broad refactors while chasing perf/input regressions.
 - Keep behavior changes documented in commit messages with observed impact.
 
-SDL builds (`ROTT_SDL.TOS`, `ROTT_030.TOS`)
+SDL build (`ROTT_SDL.TOS`)
 
 - ROTT's own renderer through SDL 1.2's API and MiNTLib, as close to the
   original game as the hardware allows. The SDL is STDL's SDL1 add-on,
-  not SDL 1.2 itself (which they used up to atarist.9): `ROTT_SDL.TOS` is
-  68000 code for every machine (256 colours on a TT or a Falcon, 16 on an
-  ST), `ROTT_030.TOS` 68030 + 68882 code for a TT or a Falcon (its
-  `SDL_Init` refuses an ST). SDL-only files: `rott/modexlib_sdl.c`,
-  `atari_sdl.c`, `audio_stubs.c`; sources are listed in `SDL_SOURCES`,
-  settings are `SDL_*` in the Makefile.
+  not SDL 1.2 itself (which it used up to atarist.9). `ROTT_SDL.TOS` is
+  68030 code for a TT or a Falcon (the add-on's TT and Falcon archive,
+  whose `SDL_Init` refuses an ST), soft float so a Falcon needs no 68882:
+  compiled `-m68030 -msoft-float`, linked `-m68000` (the toolchain's
+  68020-60 multilib is hard float), as STDL's `docs/sdl2.md` shows. The
+  68000 build for every machine was dropped: about 1 fps on an ST.
+  SDL-only files: `rott/modexlib_sdl.c`, `atari_sdl.c`, `audio_stubs.c`;
+  sources are listed in `SDL_SOURCES`, settings are `SDL_*` in the
+  Makefile.
 - Both kinds of build are MiNT, so `__MINT__` means "any Atari build". In
   shared code, the native builds' hardware and speed code goes under
   `ATARI_NATIVE` (defined by the native build only) and SDL-only code under
   `ATARI_SDL`. Anything else is in both.
-- The native `ROTT_ST.TOS` must not change when SDL work is done: build it
+- The native `ROTT.TOS` must not change when SDL work is done: build it
   clean before and after and `cmp` (only `STUB_FUNCTION` line numbers may move).
-- SDL builds keep settings in `sdlconf.rot`/`sdlsound.rot` (`rott/sdlconf.rot`,
-  `rott/sdlsound.rot`), so they can share a folder with `ROTT_ST.TOS`.
+- The SDL build keeps its settings in `sdlconf.rot`/`sdlsound.rot`
+  (`rott/sdlconf.rot`, `rott/sdlsound.rot`), so it can share a folder with
+  `ROTT.TOS`.
 - STDL is the submodule `lib/stdl`, pinned to a release (v1.31.0); it
   carries its own `lib/xpad`, so `git submodule update --init --recursive
   lib/stdl`. The Makefile builds its archives with STDL's own Makefile
-  (`libstdl-sdl1.a`, `libstdl-sdl2-st.a` for the 68000 build,
-  `libstdl-sdl2.a` for the 68030 one, `libstdl.a`; stamp `obj/.stdl_libs`),
+  (`libstdl-sdl1.a`, `libstdl-sdl2.a`, `libstdl.a`; stamp `obj/.stdl_libs`),
   from the repository's root: built from inside the submodule, the
   container can't see the repository STDL's start-up line takes its
   version from. Its docs: `lib/stdl/docs/sdl1.md`, and `sdl2.md` for the
@@ -615,4 +623,6 @@ SDL builds (`ROTT_SDL.TOS`, `ROTT_030.TOS`)
   2.3 times Hatari's times, three to four over ST-RAM copies. The SDL
   builds are for a TT first: on an ST the add-on's 16-colour screen is
   for testing (a fade step is 135ms there, a new palette about a second).
-  Nobody had listened to the sound on STDL either.
+  Nobody had listened to the sound on STDL either. The 68030 figures here
+  are the 68882 build's: the soft-float `ROTT_SDL.TOS` that replaced it
+  has not been measured.

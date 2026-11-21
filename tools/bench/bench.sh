@@ -50,6 +50,6 @@ INI
 HOME="$d/home" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$HATARI" --confirm-quit false \
     --tos "$tos" --machine $m --harddrive "$d/drive" --md-sd "$d/sd" \
     --sound off --fast-boot on --fast-forward on --run-vbls $vbls \
-    --memsize 4 --cpu-exact on $args --auto 'C:\ROTT_ST.TOS' \
+    --memsize 4 --cpu-exact on $args --auto 'C:\ROTT.TOS' \
     --parse "$d/start.ini" > "$OUT/$name.log" 2>&1 || true
-python3 "$R/tools/bench/agg.py" "$OUT/$name.log" "$build/ROTT_ST.nm" $((last - first))
+python3 "$R/tools/bench/agg.py" "$OUT/$name.log" "$build/ROTT.nm" $((last - first))
