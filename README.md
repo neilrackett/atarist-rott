@@ -8,11 +8,11 @@ What better way to celebrate the 30th-ish anniversary of ROTT than to port it to
 
 This repository contains 3 versions of ROTT:
 
-| Build          | Description                                                                                            | Target                        |
-| -------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------- |
-| `ROTT_ST.TOS`  | Aggressively optimised native Atari ST port & optional ROTT Accelerator for SidecarTridge Multi-device | ST, STE, Mega STE, TT, Falcon |
-| `ROTT_SDL.TOS` | SDL based port aiming to be as close to original ROTT as possible on all ST-compatible hardware        | ST, STE, Mega STE, TT, Falcon |
-| `ROTT_030.TOS` | The SDL port, optimised for a 68030 CPU with 68882 FPU                                                 | TT, Falcon                    |
+| Build          | Description                                                                                                           | Target                        |
+| -------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| `ROTT_ST.TOS`  | Aggressively optimised native port for the whole ST family & optional ROTT Accelerator for SidecarTridge Multi-device | ST, STE, Mega STE, TT, Falcon |
+| `ROTT_SDL.TOS` | SDL based port aiming to be as close to original ROTT as possible on all ST-compatible hardware                       | ST, STE, Mega STE, TT, Falcon |
+| `ROTT_030.TOS` | The SDL port, optimised for a 68030 CPU with 68882 FPU                                                                | TT, Falcon                    |
 
 `ROTT_ST.TOS` can also hand its 3D view over to a [SidecarTridge Multi-device](https://sidecartridge.com), if you have one: see [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device) below.
 
@@ -26,15 +26,16 @@ Stable builds are avilable on the [releases page](https://github.com/neilrackett
 
 Enjoy!
 
-## Rise of the Triad (Atari ST)
+## Rise of the Triad (Atari ST family)
 
 <img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/f1d21051-bd68-41bb-a2a0-a9e23586cc83" /> <img width="320" height="200" alt="image" src="https://github.com/user-attachments/assets/49880232-74c0-4317-93aa-d295792db07f" />
 
-This port talks directly to the ST's hardware alongside C2P rendering and aggressive code optimisations with the goal of making ROTT as playable as possible on a regular Atari ST, STE or Mega STE (automatically switched to 16Mhz mode).
+This port talks directly to the hardware alongside C2P rendering and aggressive code optimisations with the goal of making ROTT as playable as possible on every machine in the ST family: a regular Atari ST, STE or Mega STE (automatically switched to 16MHz mode), a TT or a Falcon. It's one program for all of them: on a TT or a Falcon it switches to their 256-colour modes and their 68030's faster maths by itself.
 
 To achieve this, optimisations include:
 
-- 16 colours with dithering, chosen for what the game actually draws
+- 16 colours with dithering on an ST, STE or Mega STE, chosen for what the game actually draws (256 colours on a TT or a Falcon)
+- Inner drawing loops and maths hand-written in 68000 assembler, with 68030 versions picked at startup on a TT or a Falcon
 - Low detail (the default) draws the sky, floors, ceilings and railings at half width, as it does the walls
 - Static intro screens
 - Optional 2x or 4x game area zoom for small view sizes (`ViewZoom 1` in `CONFIG.ROT`)
@@ -59,7 +60,7 @@ Native FPS was recorded at the smallest view size (80x48, zoomed 4x with `ViewZo
 
 Music plays ROTT's MIDI songs on the ST's own sound chip, so it works on any ST. Set `MusicMode` to `0` in `SOUND.ROT` to turn it off, or `MusicVolume` (0-255) to change its volume. With the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device) (firmware v1.4.0-beta.4 or later), the Multi-device plays the songs and your ST just copies the notes to its sound chip, which gives an 8MHz ST about 7% of its time back.
 
-On a TT or a Falcon with a colour monitor, `ROTT_ST.TOS` shows the game's own 256 colours (TT Low, or a Falcon's 8-bit mode on VGA, RGB or a TV) in place of the 16 and their dither; set `Colours` to `16` in `CONFIG.ROT` for ST Low. `ViewZoom` works there too, and on a TT or a Falcon `ROTT_ST.TOS` uses the 68030's own multiply and divide. This has only been run in an emulator so far.
+On a TT or a Falcon with a colour monitor, `ROTT_ST.TOS` shows the game's own 256 colours (TT Low, or a Falcon's 8-bit mode on VGA, RGB or a TV) in place of the 16 and their dither; set `Colours` to `16` in `CONFIG.ROT` for ST Low. `ViewZoom` works there too. TT and Falcon support has only been run in an emulator so far.
 
 Sound effects use the STE's DMA sound, so they need an STE or Mega STE (an ST just plays without them). Set `FXMode` to `0` in `SOUND.ROT` to turn them off. `NumVoices` sets how many play at once, from 1 to 8; each one costs CPU time while it plays (about 5% of a Mega STE for one), and nothing when it's quiet. The default, `0`, plays one at a time, or two with the [ROTT Accelerator](#rott-accelerator-sidecartridge-multi-device). On an 8MHz ST they're mixed at 6258Hz rather than 12517Hz, for half the CPU time: set `FXRate` to `12517` for the full rate.
 
