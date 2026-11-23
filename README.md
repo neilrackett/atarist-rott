@@ -10,7 +10,7 @@ This repository contains 2 versions of ROTT:
 
 | Build          | Description                                                                                                           | Target                        |
 | -------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| `ROTT.TOS`     | Aggressively optimised native port for the whole ST family & optional ROTT Accelerator for SidecarTridge Multi-device | ST, STE, Mega STE, TT, Falcon |
+| `ROTT.TOS`     | Aggressively optimised native port for the whole ST family, with support for optional ROTT Accelerator for SidecarTridge Multi-device | ST, STE, Mega STE, TT, Falcon |
 | `ROTT_SDL.TOS` | SDL based port for 68030 machines, aiming to be as close to original ROTT as possible                                 | TT, Falcon                    |
 
 If you're not sure which to use, use `ROTT.TOS`. If you have `ROTT_ST.TOS` or `ROTT_030.TOS` from an earlier release, delete them: `ROTT_ST.TOS` is now `ROTT.TOS`, and `ROTT_SDL.TOS` replaces `ROTT_030.TOS` (it no longer needs an FPU, and no longer runs on an ST, where it was too slow to play).

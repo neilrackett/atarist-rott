@@ -149,10 +149,11 @@ ATARI_CFLAGS ?= -O3 -fomit-frame-pointer -s -std=gnu99 -m68000 \
 	-DATARI_LOWDETAIL_MASKED=$(strip $(ATARI_LOWDETAIL_MASKED)) \
 	-DATARI_PAIR_VERIFY=$(strip $(ATARI_PAIR_VERIFY)) \
 	-DATARI_MD_AUTOTEST_DIE=$(ATARI_MD_AUTOTEST_DIE)
-# libgcc's 32- and 64-bit multiplies and divides go through atari_cpu.S,
-# which takes the 68020's own instructions when the machine has them.
-ATARI_WRAPS := -Wl,--wrap=__mulsi3 -Wl,--wrap=__udivsi3 -Wl,--wrap=__divsi3 \
-	-Wl,--wrap=__umodsi3 -Wl,--wrap=__modsi3 -Wl,--wrap=__muldi3 -Wl,--wrap=__divdi3
+# libgcc's 32- and 64-bit multiplies and divides go through STDL's
+# libstdl-arith020.o (lib/stdl/arith020.mk), which takes the 68020's own
+# instructions when the machine has them.
+include lib/stdl/arith020.mk
+ATARI_WRAPS := $(STDL_ARITH020)
 ATARI_LDFLAGS ?= -s -nostdlib -L/freemint/libcmini/lib -m68000
 ATARI_LIBS ?= -lcmini -lgcc
 ATARI_INCLUDES ?= -I$(SRCDIR) -I$(SRCDIR)/audiolib -Isidecart/include -Ilib/xpad/src -I/freemint/libcmini/include
@@ -333,7 +334,7 @@ SDL_CC ?= m68k-atari-mint-gcc
 SDL_CFLAGS ?= -I$(STDL_DIR)/addons/sdl1/include/SDL1 -I$(STDL_DIR)/include -D_GNU_SOURCE=1
 SDL_LIBS := $(addprefix $(STDL_DIR)/,libstdl-sdl1.a libstdl-sdl2.a libstdl.a)
 # Every archive either game links, made in one go (the stamp below).
-STDL_ARCHIVES := $(SDL_LIBS) $(STDL_DIR)/libstdl-sdl2-cmini.a
+STDL_ARCHIVES := $(SDL_LIBS) $(STDL_DIR)/libstdl-sdl2-cmini.a $(STDL_DIR)/libstdl-arith020.o
 SDL_CPU := -m68030 -msoft-float
 STDL_STAMP ?= obj/.stdl_libs
 # What the archives are built from, so a change in the submodule rebuilds them.
@@ -395,8 +396,8 @@ emu: st
 	cd sidecart && emu/emumd/tools/mdfw run --harddrive $(abspath $(BUILDDIR)) \
 		--sd $(abspath $(EMU_SD)) $(EMU_ARGS)
 
-$(ATARI_OUTPUT): $(ATARI_OBJECTS) $(ATARI_STDL_LIBS) | $(BUILDDIR)
-	$(ATARI_CC) $(ATARI_LDFLAGS) $(ATARI_WRAPS) $(ATARI_OBJECTS) $(ATARI_STDL_LIBS) $(ATARI_LIBS) -o $@
+$(ATARI_OUTPUT): $(ATARI_OBJECTS) $(ATARI_STDL_LIBS) $(STDL_DIR)/libstdl-arith020.o | $(BUILDDIR)
+	$(ATARI_CC) $(ATARI_LDFLAGS) $(ATARI_OBJECTS) $(ATARI_WRAPS) $(ATARI_STDL_LIBS) $(ATARI_LIBS) -o $@
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)

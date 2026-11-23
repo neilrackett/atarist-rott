@@ -132,7 +132,7 @@ TT and Falcon: 256 colours (`ATARI_EIGHT=1`, `rott/atari_eight.c`)
   renderer and no other library call (check the map, `-Wl,-Map`, after
   an STDL update). Their loops are 68000 code; the C round them is built
   for the 68020 and runs only in 256 colours. So `make st` needs
-  `lib/stdl` (`ATARI_EIGHT=0` builds without, the same binary as before).
+  `lib/stdl`, as does `ATARI_EIGHT=0` (STDL's `libstdl-arith020.o`).
 - One page, in ST RAM (`Mxalloc` mode 0, checked against `phystop`),
   allocated before `Z_Init` takes the memory (`atari_eight_prepare`) and
   given back if `Colours 16` or an Accelerator that cannot send 8 planes
@@ -277,10 +277,10 @@ Performance Notes
     (`atari_c2p_view_drawn`, rt_draw.c after WallRefresh): it is drawn
     afresh every frame; the HUD round it is still compared.
   - The 68020's own multiply and divide on a TT or a Falcon, chosen at run
-    time (`rott/atari_cpu.S`, `atari_cpu_init`): libgcc's __mulsi3,
-    __udivsi3, __divsi3, __umodsi3, __modsi3, __muldi3 and __divdi3 are
-    wrapped at the link (`ATARI_WRAPS`; STDL's `libstdl-arith020.o` was
-    tried in their place, below), as are FixedMul and FixedScale,
+    time: libgcc's __mulsi3, __udivsi3, __divsi3, __umodsi3, __modsi3,
+    __muldi3 and __divdi3 are wrapped at the link by STDL's
+    `libstdl-arith020.o` (`ATARI_WRAPS` = `STDL_ARITH020`, below), and
+    `rott/atari_cpu.S` (`atari_cpu_init`) has FixedMul and FixedScale,
     each to the bit what the 68000 path gives (game logic must not depend
     on the machine). FixedScale on a 68000 is four mulu.w and a 64/32
     division of its own (the ray cast's every wall hit, 6,600 cycles each
@@ -419,14 +419,22 @@ Performance Notes
     word loop wraps) and saves nothing in low detail's word loop for
     walls; 64K-entry pair tables for the ST's conversion (512K, and two
     seconds at 8MHz to build at each palette change).
-  - Tried and dropped (2026-11-21): STDL v1.33.0's `libstdl-arith020.o`
-    and `STDL_ARITH020` in place of atari_cpu.S's libgcc wrappers (its
-    FixedMul, FixedScale and atari_mulshift64 kept). Exact (LOGIC.TXT and
-    RENDER.TXT the same on the TT and a Mega STE), but slower everywhere:
-    ST 986.4 -> 987.5ms, TT 101.4 -> 101.5, TT 2+4MB 77.7 -> 77.9. On a
-    68000 its wrapper is a test, a branch and a jmp to libgcc (41 cycles)
-    where ours branches straight there (26), as the flag is set in main;
-    about 630 calls an 8MHz ST frame, libgcc's inner ones included.
+  - STDL's `libstdl-arith020.o` in place of atari_cpu.S's own libgcc
+    wrappers (2026-11-22, STDL v1.33.1; FixedMul, FixedScale and
+    atari_mulshift64 kept). v1.33.0's was slower: on a 68000 a test, a
+    branch and a jmp to libgcc (41 cycles) where ours was a tst.b and a
+    beq.w (26), ST 986.4 -> 987.5ms. v1.33.1's first call on a 68000
+    writes a jmp to libgcc into each wrapper (12 cycles after that):
+    ST 986.4 -> 984.9ms (the wrappers 1.95 -> 0.84ms of the frame, about
+    550 calls), TT 101.5 -> 101.3, TT 2+4MB 77.7 -> 77.7. Exact
+    (LOGIC.TXT and RENDER.TXT the same on the TT and a Mega STE). Not
+    timed at 16MHz, nor run on a real machine with its cache on.
+  - Tried and dropped (2026-11-22): STDL's mixed call (pairs and whole
+    groups chosen by a mask a row, one call a box; never released) in
+    place of `eight_pairs`'s boxes. Exact, but TT 2+4MB's conversion
+    18.51 -> 18.51ms, TT 20.13 -> 19.93: its loops were 0.2ms cheaper
+    and making its lists of runs cost as much, as ROTT's marks give a
+    few tall bands. Patch: tmp/bench/eight_mixed_B.patch.
   - What is left: on an ST the 16-colour conversion (`c2p_1x_lorez` and
     the pairs, 22% of the frame), the post and wall pixels (the walls'
     loop 38 cycles for two pixels), the music player (5.2% of an 8MHz
@@ -584,7 +592,7 @@ SDL build (`ROTT_SDL.TOS`)
 - The SDL build keeps its settings in `sdlconf.rot`/`sdlsound.rot`
   (`rott/sdlconf.rot`, `rott/sdlsound.rot`), so it can share a folder with
   `ROTT.TOS`.
-- STDL is the submodule `lib/stdl`, pinned to a release (v1.33.0); it
+- STDL is the submodule `lib/stdl`, pinned to a release (v1.33.1); it
   carries its own `lib/xpad`, so `git submodule update --init --recursive
   lib/stdl`. The Makefile builds its archives with STDL's own Makefile
   (`libstdl-sdl1.a`, `libstdl-sdl2.a`, `libstdl.a`, and for `ROTT.TOS`'s

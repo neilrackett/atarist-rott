@@ -2,21 +2,17 @@
  * Copyright (C) 2026 Neil Rackett
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
- * atari_cpu.S - the 68020's 32-bit multiply and divide for the native
- * build, chosen at run time, so one 68000 program is quicker on a TT or a
- * Falcon (atari_cpu.h).
+ * atari_cpu.S - the 68020's own multiply and divide for the native build's
+ * fixed-point arithmetic (FixedMul, FixedScale, atari_mulshift64), chosen
+ * at run time, so one 68000 program is quicker on a TT or a Falcon
+ * (atari_cpu.h). Each answer is the 68000 path's, to the bit, as the
+ * game's logic must give the same on every machine.
  *
- * gcc compiles a 32-bit multiply or divide for the 68000 as a call of
- * libgcc's __mulsi3, __udivsi3 and so on: hundreds of cycles to thousands.
- * The link wraps them (-Wl,--wrap, the Makefile): every call comes here
- * first, and on a 68020 or later (_CPU >= 20) the answer is one muls.l or
- * divu.l; on a 68000 it goes on to libgcc's own (__real_...). The 64-bit
- * ones (__muldi3, __divdi3, for FixedScale's (a * b) / c) take the 64-bit
- * forms on a 68020 to 68040: the 68060 has none, and keeps libgcc's.
- * Every answer is libgcc's, to the bit: the low 32 bits of a product
- * whatever the signs, quotients rounded toward zero, a remainder with the
- * dividend's sign; a 64-bit quotient that does not fit 32 bits goes to
- * libgcc. Dividing by 0 traps on either path.
+ * libgcc's own 32- and 64-bit multiplies and divides (__mulsi3,
+ * __udivsi3 and so on) are STDL's libstdl-arith020.o, wrapped at the
+ * link (STDL_ARITH020, the Makefile): libgcc's answers to the bit, the
+ * 68020's instructions where it has them; on a 68000 its first call
+ * writes a jmp to libgcc's routine over each wrapper.
  *
  * The 68020 instructions are written as words, as the game is assembled
  * for the 68000.
@@ -32,101 +28,6 @@ _atari_cpu_l64: .byte 0         | 1: a 68020 to 68040 (and their 64-bit forms)
 
     .text
     .even
-
-    .globl  ___wrap___mulsi3
-___wrap___mulsi3:
-    tst.b   _atari_cpu_l32
-    beq     ___real___mulsi3
-    move.l  4(sp),d0
-    .word   0x4C2F,0x0800,0x0008    | muls.l 8(sp),d0
-    rts
-
-    .globl  ___wrap___udivsi3
-___wrap___udivsi3:
-    tst.b   _atari_cpu_l32
-    beq     ___real___udivsi3
-    move.l  4(sp),d0
-    .word   0x4C6F,0x0000,0x0008    | divu.l 8(sp),d0
-    rts
-
-    .globl  ___wrap___divsi3
-___wrap___divsi3:
-    tst.b   _atari_cpu_l32
-    beq     ___real___divsi3
-    move.l  4(sp),d0
-    .word   0x4C6F,0x0800,0x0008    | divs.l 8(sp),d0
-    bvs.s   1f                      | -2^31 / -1: libgcc's answer
-    rts
-1:  bra     ___real___divsi3
-
-    .globl  ___wrap___umodsi3
-___wrap___umodsi3:
-    tst.b   _atari_cpu_l32
-    beq     ___real___umodsi3
-    move.l  4(sp),d0
-    .word   0x4C6F,0x0001,0x0008    | divul.l 8(sp),d1:d0
-    move.l  d1,d0
-    rts
-
-    .globl  ___wrap___modsi3
-___wrap___modsi3:
-    tst.b   _atari_cpu_l32
-    beq     ___real___modsi3
-    move.l  4(sp),d0
-    .word   0x4C6F,0x0801,0x0008    | divsl.l 8(sp),d1:d0
-    bvs.s   1f
-    move.l  d1,d0
-    rts
-1:  bra     ___real___modsi3
-
-/* long long __muldi3(long long a, long long b): a at 4(sp) (high word
- * first), b at 12(sp); the product's low 64 bits in d0:d1. */
-    .globl  ___wrap___muldi3
-___wrap___muldi3:
-    tst.b   _atari_cpu_l64
-    beq     ___real___muldi3
-    move.l  8(sp),d1                | a's low long
-    .word   0x4C2F,0x1400,0x0010    | mulu.l 16(sp),d0:d1: a_lo * b_lo, 64 bits
-    move.l  d0,a0
-    move.l  4(sp),d0
-    .word   0x4C2F,0x0800,0x0010    | muls.l 16(sp),d0: a_hi * b_lo
-    add.l   d0,a0
-    move.l  8(sp),d0
-    .word   0x4C2F,0x0800,0x000C    | muls.l 12(sp),d0: a_lo * b_hi
-    add.l   a0,d0
-    rts
-
-/* long long __divdi3(long long a, long long b): with b a 32-bit number
- * and the quotient one too, one divs.l of 64 bits by 32. */
-    .globl  ___wrap___divdi3
-___wrap___divdi3:
-    tst.b   _atari_cpu_l64
-    beq     ___real___divdi3
-    move.l  16(sp),d1               | b's low long
-    move.l  12(sp),d0               | and its high: b's sign, or not 32 bits
-    bmi.s   1f
-    tst.l   d1
-    bmi     ___real___divdi3
-    tst.l   d0
-    bne     ___real___divdi3
-    bra.s   2f
-1:  tst.l   d1
-    bpl     ___real___divdi3
-    addq.l  #1,d0
-    bne     ___real___divdi3
-2:  move.l  d2,-(sp)
-    move.l  8(sp),d2                | a's high long
-    move.l  12(sp),d0               | and its low
-    .word   0x4C41,0x0C02           | divs.l d1,d2:d0 (64 / 32)
-    bvs.s   3f                      | the quotient needs more than 32 bits
-    move.l  (sp)+,d2
-    move.l  d0,d1
-    smi     d0
-    ext.w   d0
-    ext.l   d0                      | its sign in the high long
-    rts
-3:  move.l  (sp)+,d2
-    bra     ___real___divdi3
 
 /*
  * fixed FixedMul(fixed a, fixed b): watcom.h's atari_fixed_mul16 to the
