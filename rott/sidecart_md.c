@@ -29,7 +29,10 @@ extern int md_send_sync_write_command(int cmd, const char *buf,
                                       int byte_count, long d3, long d4,
                                       long d5);
 
-long md_command_timeout = MD_TIMEOUT_DETECT;
+/* Until the first HELLO sets it: the first contact's count, unscaled. */
+long md_command_timeout = 0x00040000L;
+/* Stepped by the stubs for each attempt's token (sidecart_stubs.S). */
+unsigned long md_token_salt;
 unsigned short md_command_failures;
 unsigned short md_command_retries;
 
@@ -55,6 +58,14 @@ static int md_cpu(void) {
   long v = 0;
   if (cpu < 0) cpu = Getcookie(C__CPU, &v) == C_FOUND ? (int)v : 0;
   return cpu;
+}
+
+/* The token wait's passes for about the time `passes_at_8mhz` takes an
+ * 8 MHz 68000. On a TT the 68030 runs the loop from its cache, and a pass
+ * is the cartridge read alone, a long on the 16-bit port at the ST bus's
+ * 8 MHz: about a quarter of the 68000's, so 40 ms was 10. */
+long sidecart_md_timeout(long passes_at_8mhz) {
+  return md_cpu() >= 20 ? passes_at_8mhz << 2 : passes_at_8mhz;
 }
 
 /* ── Supervisor ──────────────────────────────────────────────────────── */

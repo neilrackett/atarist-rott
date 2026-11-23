@@ -20,10 +20,16 @@
 #define MD_ROM4(offset) ((volatile unsigned char *)(MD_ROM4_BASE + (offset)))
 #define MD_STATUS ((volatile unsigned short *)(MD_ROM4_BASE + MD_STATUS_OFFSET))
 
-/* Token-wait loop count used by the stubs; about 40 cycles a loop. */
+/* Token-wait loop count used by the stubs; about 40 cycles a loop on an
+ * 8 MHz 68000. A 68020 or later runs the loop from its cache and waits
+ * only on the cartridge read, about a quarter of that on a TT, so it
+ * counts four times as many (sidecart_md_timeout). The usual wait covers
+ * the firmware's flash writes in play, a 4 KB erase with its interrupts
+ * off (45 ms typically): a command sent again may be run twice. */
 extern long md_command_timeout;
-#define MD_TIMEOUT_DETECT 0x00040000L /* ~1 s at 8 MHz, first contact */
-#define MD_TIMEOUT_NORMAL 0x00002000L /* ~40 ms at 8 MHz              */
+long sidecart_md_timeout(long passes_at_8mhz);
+#define MD_TIMEOUT_DETECT sidecart_md_timeout(0x00040000L) /* ~1 s, first contact */
+#define MD_TIMEOUT_NORMAL sidecart_md_timeout(0x0000C000L) /* ~250 ms */
 
 /* True if the ready magic is in ROM4, i.e. some MD/ROTT firmware is up.
  * Cheap: one byte read, no command. */

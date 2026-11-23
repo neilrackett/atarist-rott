@@ -4,9 +4,15 @@
  *
  * sidecart_stubs.S — GAS-syntax wrappers for the SidecarTridge protocol.
  * From atarist-stdoom (linuxdoom-1.10/sidecart_stubs.S), itself from md-js.
- * MD/ROTT change: the token-wait timeout is the C variable
+ * MD/ROTT changes: the token-wait timeout is the C variable
  * _md_command_timeout rather than a constant, so the client can wait longer
- * while the firmware is busy and give up quickly otherwise.
+ * while the firmware is busy and give up quickly otherwise. And the token
+ * is the seed plus a count of attempts (_md_token_salt), not the seed
+ * alone: the seed only changes when the firmware takes a command, so after
+ * one that timed out the next went with the same token, and the late
+ * answer to the first passed for the answer to it, though the firmware
+ * might have dropped it (seen on a TT, while the firmware's flash writes
+ * held its interrupts off).
  *
  * Provides send_sync_command_to_sidecart and send_sync_write_command_to_sidecart
  * as linkable symbols for C code (sidecart_md.c).
@@ -20,7 +26,7 @@
  *   send_sync_command_to_sidecart:
  *     d0.w  = command code
  *     d1.w  = payload size (bytes, EXCLUDING the 4-byte token — added internally)
- *     d2.l  = token seed (loaded from RANDOM_TOKEN_SEED_ADDR internally)
+ *     d2.l  = token (the seed plus _md_token_salt, made internally)
  *     d3.l  = payload word 0 (if d1 >= 6)
  *     d4.l  = payload word 1 (if d1 >= 10)
  *     d5.l  = payload word 2 (if d1 >= 14)
@@ -44,14 +50,21 @@
 #define CMD_MAGIC_NUMBER        0xABCD
 /* The token-wait loop count comes from _md_command_timeout (sidecart_md.c). */
 
+/* d2 = this attempt's token: the seed plus the next step of _md_token_salt,
+ * an odd step, so no two attempts in 2^32 share a salt. */
+#define LOAD_TOKEN \
+    addi.l  #0x9E3779B9,_md_token_salt; \
+    move.l  RANDOM_TOKEN_SEED_ADDR,d2; \
+    add.l   _md_token_salt,d2
+
     .text
     .even
 
 /* ── send_sync_command_to_sidecart ─────────────────────────────────────────── */
     .globl send_sync_command_to_sidecart
 send_sync_command_to_sidecart:
-    | Load random token seed into d2
-    move.l  RANDOM_TOKEN_SEED_ADDR,d2
+    | This attempt's token into d2
+    LOAD_TOKEN
 
     | Add 4 bytes for the token to the payload size
     addq.w  #4,d1
@@ -146,8 +159,8 @@ send_sync_command_to_sidecart:
     | Send checksum
     tst.b   (a0,d7.w)
 
-    | Wait for token: RP2040 writes d2 (token seed) back to RANDOM_TOKEN_ADDR
-    swap    d2                          | restore d2 to original seed value
+    | Wait for token: RP2040 writes d2 (the token) back to RANDOM_TOKEN_ADDR
+    swap    d2                          | restore d2 to the token
     move.l  _md_command_timeout,d7
     moveq   #0,d0                       | assume success
 .Lwait_token:
@@ -186,8 +199,8 @@ _md_send_sync_command:
 /* ── send_sync_write_command_to_sidecart ───────────────────────────────────── */
     .globl send_sync_write_command_to_sidecart
 send_sync_write_command_to_sidecart:
-    | Load random token seed
-    move.l  RANDOM_TOKEN_SEED_ADDR,d2
+    | This attempt's token into d2
+    LOAD_TOKEN
 
     | a1 = token slot, a0 = ROM3 mid-point
     lea     RANDOM_TOKEN_ADDR,a1

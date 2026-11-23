@@ -113,12 +113,21 @@ static int md_gfxlumps; /* lumps below the sounds (DIGISTRT) */
 static unsigned long md_level_serial;
 static int md_snapshot_needed;
 static int md_snapshot_tries;
+/* Where the last snapshot stopped, for the message when it gives up. */
+static const char *md_snapshot_fail = "?";
 static unsigned short md_seq;
 static unsigned short md_copied_seq;
 static int md_blit_ok; /* frames are copied by the blitter */
 static void md_blit_init(void);
 static int md_frame_pending;
 static int md_failures;
+/* The level found lost again before MD_LOST_GOOD frames went through
+ * after the snapshot that sent it, and what the status said the last time
+ * (the message when it gives up). */
+#define MD_LOST_GOOD 50
+#define MD_LOST_TRIES 3
+static int md_lost_count, md_good_frames;
+static unsigned short md_lost_state, md_lost_seq, md_lost_cmds;
 
 /* The frame being assembled */
 static int md_view_x, md_view_y, md_view_w, md_view_h;
@@ -640,21 +649,40 @@ void ATARI_MD_SetPalette(const unsigned char *palette) {
 
 /* Draw a line of progress into the view while the MD builds the pack, with
  * the ST's own renderer's path (the view is black at this point). */
+/* Set by a wait that has gone on: the progress line then shows what the
+ * MD's status says (its state, its level against ours, its main loop's
+ * count, which stands still if the loop is stuck). */
+static int md_progress_status;
+
 static void show_progress(int percent) {
   extern void I_FinishUpdate(void);
   extern byte *bufferofs;
   extern int screenofs;
-  char text[48];
+  char text[80];
   int y, w, h;
   byte *base = bufferofs + screenofs;
 
   for (y = 0; y < viewheight; y++) memset(base + ylookup[y], 0, viewwidth);
-  sprintf(text, "Preparing level %d%%", percent);
+  /* A level sent again because the MD lost it says which time this is. */
+  if (md_lost_count)
+    sprintf(text, "Preparing level %d%% (again %d)", percent, md_lost_count);
+  else
+    sprintf(text, "Preparing level %d%%", percent);
   CurrentFont = smallfont;
   VW_MeasurePropString(text, &w, &h);
   px = (viewwidth - w) / 2 + (screenofs % iGLOBAL_SCREENWIDTH);
   py = (screenofs / iGLOBAL_SCREENWIDTH) + (viewheight / 2) - 4;
   VW_DrawPropString(text);
+  if (md_progress_status) {
+    /* on a line of its own: one line of both is wider than the view */
+    sprintf(text, "MD st %u seq %u/%u hb %04x", MD_STATUS[MD_ST_LEVEL_STATE],
+            MD_STATUS[MD_ST_LEVEL_SEQ], (unsigned short)md_level_serial,
+            MD_STATUS[MD_ST_HEARTBEAT]);
+    VW_MeasurePropString(text, &w, &h);
+    px = (viewwidth - w) / 2 + (screenofs % iGLOBAL_SCREENWIDTH);
+    py = (screenofs / iGLOBAL_SCREENWIDTH) + (viewheight / 2) + 8;
+    VW_DrawPropString(text);
+  }
   {
     /* the plain C2P path, just this once, and not zoomed (which cut the
      * text off) */
@@ -677,18 +705,25 @@ static int wait_level_state(void) {
   long last = -1000;
   int state;
   for (;;) {
+    /* Taken only when two reads agree: one bad read is not the pack. */
     state = MD_STATUS[MD_ST_LEVEL_STATE];
     if (MD_STATUS[MD_ST_LEVEL_SEQ] == (unsigned short)md_level_serial &&
-        state != MD_LEVEL_LOADING) {
+        state != MD_LEVEL_LOADING && MD_STATUS[MD_ST_LEVEL_STATE] == state &&
+        MD_STATUS[MD_ST_LEVEL_SEQ] == (unsigned short)md_level_serial) {
+      md_progress_status = 0;
       return state;
     }
     if (I_GetTimeMS() - last > 250) {
       last = I_GetTimeMS();
+      md_progress_status = last - t0 > 5000;
       I_GetTime(); /* keeps the music going */
       /* the pack is the first 80%; warm_up the rest */
       show_progress(MD_STATUS[MD_ST_PROGRESS] * 4 / 5);
     }
-    if (I_GetTimeMS() - t0 > MD_PACK_WAIT_MS) return MD_LEVEL_ERROR;
+    if (I_GetTimeMS() - t0 > MD_PACK_WAIT_MS) {
+      md_progress_status = 0;
+      return -1; /* no answer */
+    }
   }
 }
 
@@ -757,18 +792,31 @@ static int send_snapshot(void) {
   pkt_reset();
   memcpy(md_pkt, lv, sizeof(lv));
   memcpy(md_pkt + MD_LV_WORDS, md_lumpbits, bitwords * 2);
-  if (sidecart_md_write(MD_CMD_LEVEL_BEGIN, md_pkt,
+  /* The long wait: the MD may be writing flash (a lump loaded in play) with
+   * its interrupts off, and a LEVEL_BEGIN sent again would build the pack
+   * again while the tile map comes in. */
+  md_command_timeout = MD_TIMEOUT_DETECT;
+  i = sidecart_md_write(MD_CMD_LEVEL_BEGIN, md_pkt,
                         (MD_LV_WORDS + bitwords) * 2, (long)md_level_serial,
-                        (long)md_numlumps, 0L)) {
+                        (long)md_numlumps, 0L);
+  md_command_timeout = MD_TIMEOUT_NORMAL;
+  if (i) {
+    md_snapshot_fail = "begin";
     return 0;
   }
   state = wait_level_state();
-  if (state != MD_LEVEL_PACKED) return 0;
+  if (state != MD_LEVEL_PACKED) {
+    md_snapshot_fail = state < 0                ? "pack wait"
+                       : state == MD_LEVEL_ERROR ? "pack"
+                                                 : "pack state";
+    return 0;
+  }
 
   /* TILEMAP, 1024 tiles a command. */
   for (i = 0; i < MAPSIZE * MAPSIZE; i += MD_PKT_WORDS) {
     if (sidecart_md_write(MD_CMD_TILEMAP, &tilemap[0][0] + i,
                           MD_PKT_WORDS * 2, (long)i, (long)MD_PKT_WORDS, 0L)) {
+      md_snapshot_fail = "tilemap";
       return 0;
     }
   }
@@ -797,8 +845,14 @@ static int send_snapshot(void) {
       }
     }
   }
-  if (world_flush()) return 0;
-  if (sidecart_md_command(MD_CMD_LEVEL_END, (long)md_level_serial, 0L)) return 0;
+  if (world_flush()) {
+    md_snapshot_fail = "world";
+    return 0;
+  }
+  if (sidecart_md_command(MD_CMD_LEVEL_END, (long)md_level_serial, 0L)) {
+    md_snapshot_fail = "end";
+    return 0;
+  }
   send_palette();
 
   md_tileq_len = 0;
@@ -1722,6 +1776,18 @@ static void give_up(const char *why) {
   AddMessage((char *)why, MSG_SYSTEM);
 }
 
+/* With the bus open: the level not ready, or another's, on three reads of
+ * the status in a row. */
+static int level_lost(void) {
+  int n;
+  for (n = 0; n < 3; n++) {
+    if (MD_STATUS[MD_ST_LEVEL_STATE] == MD_LEVEL_READY &&
+        MD_STATUS[MD_ST_LEVEL_SEQ] == (unsigned short)md_level_serial)
+      return 0;
+  }
+  return 1;
+}
+
 int ATARI_MD_TakeHudRedraw(void) {
   const int r = md_hud_redraw;
   md_hud_redraw = 0;
@@ -1828,11 +1894,26 @@ int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
   ATARI_MD_BlitWait(); /* the last frame may still be on its way */
   sidecart_md_bus_begin();
 
-  /* The MD lost the level (it was reset, or a command went missing)? */
-  if (!md_snapshot_needed &&
-      (MD_STATUS[MD_ST_LEVEL_STATE] != MD_LEVEL_READY ||
-       MD_STATUS[MD_ST_LEVEL_SEQ] != (unsigned short)md_level_serial)) {
+  /* The MD lost the level (it was reset, or a command went missing)? Read
+   * again before believing it: one bad read of the status must not cost a
+   * whole snapshot. */
+  if (!md_snapshot_needed && level_lost()) {
     md_snapshot_needed = 1;
+    md_lost_state = MD_STATUS[MD_ST_LEVEL_STATE];
+    md_lost_seq = MD_STATUS[MD_ST_LEVEL_SEQ];
+    md_lost_cmds = MD_STATUS[MD_ST_CMDS];
+    if (++md_lost_count >= MD_LOST_TRIES) {
+      char why[64];
+      sidecart_md_bus_end();
+      sidecart_md_super_end(ssp);
+      give_up("ROTT Accelerator lost: ST renderer");
+      /* Under the line above (another kind, or it would replace it), and
+       * short: a message wider than the view wraps over itself. */
+      sprintf(why, "MD lost: st %u seq %u/%u cmd %u", md_lost_state,
+              md_lost_seq, (unsigned short)md_level_serial, md_lost_cmds);
+      AddMessage(why, MSG_MSGSYSTEM);
+      return 0;
+    }
   }
   if (md_snapshot_needed) {
     /* Resending it can show progress through the plain C2P path, which
@@ -1847,12 +1928,24 @@ int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
     I_PauseTime();
     resume = 1;
     if (!send_snapshot()) {
+      /* What it says, read while the cache is still off. */
+      const unsigned short errs = MD_STATUS[MD_ST_ERRORS];
+      const unsigned short chk = MD_STATUS[MD_ST_CHKERRS];
+      const unsigned short drops = MD_STATUS[MD_ST_DROPS];
       I_ResumeTime();
       sidecart_md_bus_end();
-      if (++md_snapshot_tries >= 3) give_up("ROTT Accelerator failed: ST renderer");
+      if (++md_snapshot_tries >= 3) {
+        char why[64];
+        give_up("ROTT Accelerator failed: ST renderer");
+        /* As for a lost level (below): one short line of another kind. */
+        sprintf(why, "MD %s: r%u f%u e%x c%u d%u", md_snapshot_fail,
+                md_command_retries, md_command_failures, errs, chk, drops);
+        AddMessage(why, MSG_MSGSYSTEM);
+      }
       return 0;
     }
     md_snapshot_tries = 0;
+    md_good_frames = 0;
     warm_up();
     sidecart_md_bus_end();
     ssp = sidecart_md_super_begin();
@@ -1892,6 +1985,8 @@ int ATARI_MD_FinishUpdate(unsigned char *screen, const unsigned char *pixels) {
       }
     } else {
       md_failures = 0;
+      if (md_good_frames < MD_LOST_GOOD && ++md_good_frames == MD_LOST_GOOD)
+        md_lost_count = 0;
     }
   }
 

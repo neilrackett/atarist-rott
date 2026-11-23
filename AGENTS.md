@@ -535,6 +535,24 @@ ROTT Accelerator (MD/ROTT in the source; SidecarTridge Multi-device renderer)
   `Super(0L)` calls in that stretch, and supervisor exits go through
   `sidecart_md_super_end` (GEMDOS `Super(ssp)` only works at the same stack depth).
 - Wire protocol: `sidecart/include/rott_md_protocol.h` (both sides; never hard-code offsets).
+- Command tokens (`sidecart_stubs.S`): each attempt sends the seed plus
+  `md_token_salt`, stepped every attempt, not the seed alone. The
+  firmware's flash writes hold its interrupts off (a 4 KB erase in play
+  45 ms typically, a 64 KB one in a pack build up to seconds), and the
+  seed only changes when it takes a command, so with the seed alone a late
+  answer to a timed-out command passed for the answer to the next, which
+  the firmware may have dropped: on a TT, a level start lost and the level
+  sent over and over. The usual wait is ~250 ms (`MD_TIMEOUT_NORMAL`),
+  LEVEL_BEGIN's ~1 s; a resent command may run twice. A 68020 or later
+  counts four times the passes (`sidecart_md_timeout`). EmuMD runs the
+  firmware between ST reads in no time, so none of this shows there.
+- When the Accelerator gives up, a second red line says why: a snapshot
+  step that failed (`MD pack wait: r4 f1 e0 c0 d3`: retries, failed
+  commands, error bits, checksum errors, drops) or a lost level (`MD lost:
+  st 2 seq 2/3 cmd N`: its state and level against the ST's). A level
+  lost three times without 50 good frames between gives up rather than
+  looping; a "Preparing level" wait over 5 s shows the MD's state, level
+  and main-loop count (`hb`, still if the loop is stuck) under it.
 - WAD copy: when HELLO finds the card's WAD missing or different, the ST
   sends its own (`MD_CMD_WAD_WRITE`, firmware with `MD_CAP_WAD_COPY`;
   Esc cancels, read through TOS, which still has the keyboard at
