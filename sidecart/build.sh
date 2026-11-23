@@ -15,8 +15,9 @@ if [ -z "${1:-}" ] || [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
     exit 1
 fi
 
-# Bump the patch version unless SKIP_VERSION_BUMP=1 (make build releases
-# as-is), and sync it into rp/ and target/ either way.
+# Bump the version (a pre-release's number, else the patch) unless
+# SKIP_VERSION_BUMP=1 (make build releases as-is), and sync it into rp/ and
+# target/ either way.
 "$SCRIPT_DIR/tools/bump_version.sh" --repo-root "$SCRIPT_DIR"
 export VERSION=$(cat version.txt)
 export BOARD_TYPE=$1

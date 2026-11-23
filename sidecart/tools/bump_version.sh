@@ -55,8 +55,15 @@ fi
 
 FINAL_VERSION="$CURRENT_VERSION"
 if [ "$SKIP_BUMP" != "1" ]; then
-    NEXT_PATCH=$((VERSION_PATCH + 1))
-    FINAL_VERSION="${VERSION_PREFIX}${VERSION_MAJOR}.${VERSION_MINOR}.${NEXT_PATCH}${VERSION_SUFFIX}"
+    # A pre-release ending in a number (v1.4.0-beta.8) counts that up
+    # (v1.4.0-beta.9); anything else counts the patch up, keeping the suffix.
+    if [[ "$VERSION_SUFFIX" =~ ^(-.*\.)([0-9]+)$ ]]; then
+        NEXT_PRE=$((10#${BASH_REMATCH[2]} + 1))
+        FINAL_VERSION="${VERSION_PREFIX}${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}${BASH_REMATCH[1]}${NEXT_PRE}"
+    else
+        NEXT_PATCH=$((VERSION_PATCH + 1))
+        FINAL_VERSION="${VERSION_PREFIX}${VERSION_MAJOR}.${VERSION_MINOR}.${NEXT_PATCH}${VERSION_SUFFIX}"
+    fi
     printf "%s\n" "$FINAL_VERSION" > "$VERSION_FILE"
     echo "Version incremented: $CURRENT_VERSION -> $FINAL_VERSION"
 else
